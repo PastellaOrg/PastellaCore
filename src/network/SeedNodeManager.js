@@ -53,7 +53,9 @@ class SeedNodeManager {
     return this.seedNodes.filter(seedNode => {
       try {
         const url = new URL(seedNode);
-        if (url.port === this.port.toString()) {
+        // Only skip if BOTH host and port match (true self-connection)
+        const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '0.0.0.0';
+        if (isLocalhost && url.port === this.port.toString()) {
           return false; // Skip self-connection
         }
         return true;
