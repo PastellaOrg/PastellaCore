@@ -1,0 +1,84 @@
+{
+  "name": "Pastella",
+  "ticker": "PAS",
+  "decimals": 8,
+  "networkId": "pastella-14082025",
+  "network": {
+    "port": 22000,
+    "p2pPort": 23000,
+    "maxPeers": 80000,
+    "minSeedConnections": 2,
+    "seedNodes": [
+      "ws://127.0.0.1:23000",
+      "ws://127.0.0.1:23001",
+      "ws://127.0.0.1:23002"
+    ]
+  },
+  "blockchain": {
+    "blockTime": 15000,
+    "maxBlockSize": 8388608,
+    "coinbaseReward": 5000000000,
+    "halvingBlocks": 2102400,
+    "difficultyAlgorithm": "lwma3",
+    "difficultyBlocks": 30,
+    "difficultyMinimum": 100,
+    "genesis": {
+      "timestamp": 1755759184545,
+      "premineAmount": 2100000000000,
+      "premineAddress": "1Ggdo3kTzGvmhSDuoZBuFZQeqDSg57FEf6",
+      "difficulty": 100,
+      "nonce": 5,
+      "hash": "00c0cc0383b990ef3e4aea68eb26fe08f9bda81f6de4033e27fe159e154e112e",
+      "algorithm": "velora",
+      "coinbaseNonce": "mel1op7nf5ebjh5gvecs11q9mvqt",
+      "coinbaseAtomicSequence": "1755759184545-genesis-coinbase-195883"
+    },
+    "difficulty": 100
+  },
+  "wallet": {
+    "defaultFee": 100000,
+    "minFee": 100
+  },
+  "api": {
+    "enabled": true,
+    "port": 22000,
+    "host": "0.0.0.0",
+    "apiKey": "pastella-external-access-2025-secure-key-f8e9a2b5c1d3e4f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
+    "cors": true,
+    "rateLimit": 100
+  },
+  "storage": {
+    "dataDir": "./data",
+    "blockchainFile": "blockchain.json"
+  },
+  "memory": {
+    "maxMemoryUsage": 2048,
+    "maxTransactionSize": 1024,
+    "maxPoolSize": 10000,
+    "memoryThreshold": 0.8,
+    "maxMessageSize": 1024,
+    "maxBlockSize": 1024,
+    "cpuProtection": {
+      "enabled": true,
+      "maxCpuUsage": 80,
+      "cleanupInterval": 60000,
+      "monitoringInterval": 10000,
+      "maxExecutionTime": 5000,
+      "maxValidationComplexity": 1000,
+      "cpuThreshold": 0.8,
+      "validationRateLimit": 100000
+    }
+  },
+  "batchProcessing": {
+    "maxTransactionsPerBatch": 100000,
+    "maxBatchSize": 100000,
+    "cleanupInterval": 300000
+  },
+  "seedNode": {
+    "enabled": false,
+    "port": 23000,
+    "enableAPI": false,
+    "maxConnections": 50,
+    "advertise": true
+  }
+}
