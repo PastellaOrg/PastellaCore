@@ -9,9 +9,7 @@
     "maxPeers": 80000,
     "minSeedConnections": 2,
     "seedNodes": [
-      "ws://127.0.0.1:23000",
-      "ws://127.0.0.1:23001",
-      "ws://127.0.0.1:23002"
+      "ws://pastella.org:23000"
     ]
   },
   "blockchain": {
