@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const logger = require('./logger');
 
 /**
  * Velora Algorithm - GPU-Optimized Memory Walker
@@ -191,10 +192,10 @@ class VeloraUtils {
     timestampBuffer.writeBigUInt64LE(BigInt(timestamp), 0);
 
     // DEBUG: Log the buffer contents for comparison
-    console.log('=== BUFFER DEBUG ===');
-    console.log(`Nonce: ${nonce}, Nonce Buffer (hex): ${nonceBuffer.toString('hex')}`);
-    console.log(`Timestamp: ${timestamp}, Timestamp Buffer (hex): ${timestampBuffer.toString('hex')}`);
-    console.log('=== END BUFFER DEBUG ===');
+    logger.debug('BLOCK', '=== BUFFER DEBUG ===');
+    logger.debug('BLOCK', `Nonce: ${nonce}, Nonce Buffer (hex): ${nonceBuffer.toString('hex')}`);
+    logger.debug('BLOCK', `Timestamp: ${timestamp}, Timestamp Buffer (hex): ${timestampBuffer.toString('hex')}`);
+    logger.debug('BLOCK', '=== END BUFFER DEBUG ===');
 
     for (let i = 0; i < pattern.length; i++) {
       const readPos = pattern[i] % this.SCRATCHPAD_WORDS;
@@ -217,7 +218,7 @@ class VeloraUtils {
 
       // DEBUG: Log the mixing values for comparison
       if (i < 10) {
-        console.log(
+        logger.debug('BLOCK',
           `  Mix[${i}]: nonceIndex=${nonceIndex}, nonceWord=0x${nonceWord.toString(16).padStart(8, '0')}, timestampIndex=${timestampIndex}, timestampWord=0x${timestampWord.toString(16).padStart(8, '0')}`
         );
       }
@@ -265,15 +266,15 @@ class VeloraUtils {
       const pattern = this.generateMemoryPattern(blockNumber, nonce, timestamp, previousHash, merkleRoot, difficulty);
 
       // DEBUG: Log the pattern generation
-      console.log('Pattern first 10 elements:', pattern.slice(0, 10).join(', '));
+      logger.debug('BLOCK', 'Pattern first 10 elements: ' + pattern.slice(0, 10).join(', '));
 
       // DEBUG: Log first 20 scratchpad values for comparison with miner
-      console.log('=== SCRATCHPAD COMPARISON DEBUG ===');
+      logger.debug('BLOCK', '=== SCRATCHPAD COMPARISON DEBUG ===');
       for (let i = 0; i < 20; i++) {
         const scratchpadHex = scratchpad[i].toString(16).padStart(8, '0');
-        console.log(`Scratchpad[${i}] = 0x${scratchpadHex} (${scratchpad[i]})`);
+        logger.debug('BLOCK', `Scratchpad[${i}] = 0x${scratchpadHex} (${scratchpad[i]})`);
       }
-      console.log('=== END SCRATCHPAD COMPARISON DEBUG ===');
+      logger.debug('BLOCK', '=== END SCRATCHPAD COMPARISON DEBUG ===');
 
       // ENHANCED: Execute memory walk with timestamp parameter
       const accumulator = this.executeMemoryWalk(scratchpad, pattern, nonce, timestamp);
@@ -336,35 +337,35 @@ class VeloraUtils {
     ]);
 
     // 🎯 CRITICAL DEBUG: Show exact 96-byte input data for comparison with miner
-    console.log('=== 🎯 DAEMON FINAL HASH - 96-BYTE INPUT DEBUG ===');
-    console.log(`Block number: ${blockNumber}`);
-    console.log(`Nonce: ${nonce}`);
-    console.log(`Timestamp: ${timestamp}`);
-    console.log(`Previous hash: ${previousHash}`);
-    console.log(`Merkle root: ${merkleRoot}`);
-    console.log(`Difficulty: ${difficulty}`);
-    console.log(`Accumulator: ${accumulator}`);
-    console.log(`Final data length: ${finalData.length} bytes (should be 96)`);
+    logger.debug('BLOCK', '=== 🎯 DAEMON FINAL HASH - 96-BYTE INPUT DEBUG ===');
+    logger.debug('BLOCK', `Block number: ${blockNumber}`);
+    logger.debug('BLOCK', `Nonce: ${nonce}`);
+    logger.debug('BLOCK', `Timestamp: ${timestamp}`);
+    logger.debug('BLOCK', `Previous hash: ${previousHash}`);
+    logger.debug('BLOCK', `Merkle root: ${merkleRoot}`);
+    logger.debug('BLOCK', `Difficulty: ${difficulty}`);
+    logger.debug('BLOCK', `Accumulator: ${accumulator}`);
+    logger.debug('BLOCK', `Final data length: ${finalData.length} bytes (should be 96)`);
 
     // Show exact 96-byte input data as hex (matching miner format)
-    console.log('=== EXACT 96-BYTE INPUT FOR SHA-256 (DAEMON) ===');
+    logger.debug('BLOCK', '=== EXACT 96-BYTE INPUT FOR SHA-256 (DAEMON) ===');
     let hexOutput = '';
     for (let i = 0; i < finalData.length; i++) {
       hexOutput += finalData[i].toString(16).padStart(2, '0');
       if ((i + 1) % 16 === 0) {
-        console.log(hexOutput);
+        logger.debug('BLOCK', hexOutput);
         hexOutput = '';
       } else if ((i + 1) % 8 === 0) {
         hexOutput += ' ';
       }
     }
-    if (hexOutput.length > 0) console.log(hexOutput);
-    console.log('=== END 96-BYTE INPUT (DAEMON) ===');
+    if (hexOutput.length > 0) logger.debug('BLOCK', hexOutput);
+    logger.debug('BLOCK', '=== END 96-BYTE INPUT (DAEMON) ===');
 
     const finalHash = crypto.createHash('sha256').update(finalData).digest();
     const finalHashHex = finalHash.toString('hex');
-    console.log(`Daemon computed hash: ${finalHashHex}`);
-    console.log('=== END DAEMON FINAL HASH DEBUG ===');
+    logger.debug('BLOCK', `Daemon computed hash: ${finalHashHex}`);
+    logger.debug('BLOCK', '=== END DAEMON FINAL HASH DEBUG ===');
 
     return finalHashHex;
   }
@@ -382,9 +383,9 @@ class VeloraUtils {
    */
   verifyHash(blockNumber, nonce, timestamp, previousHash, merkleRoot, difficulty, targetHash, cache = null) {
     try {
-      console.log('=== HASH VERIFICATION DEBUG ===');
-      console.log(`Verifying hash for block ${blockNumber}, nonce ${nonce}, difficulty ${difficulty}`);
-      console.log(`Target Hash: ${targetHash}`);
+      logger.debug('BLOCK', '=== HASH VERIFICATION DEBUG ===');
+      logger.debug('BLOCK', `Verifying hash for block ${blockNumber}, nonce ${nonce}, difficulty ${difficulty}`);
+      logger.debug('BLOCK', `Target Hash: ${targetHash}`);
 
       const calculatedHash = this.veloraHash(
         blockNumber,
@@ -395,44 +396,44 @@ class VeloraUtils {
         difficulty,
         cache
       );
-      console.log(`Calculated Hash: ${calculatedHash}`);
+      logger.debug('BLOCK', `Calculated Hash: ${calculatedHash}`);
 
       const hashesMatch = calculatedHash === targetHash;
-      console.log(`Hashes Match: ${hashesMatch}`);
+      logger.debug('BLOCK', `Hashes Match: ${hashesMatch}`);
 
       if (hashesMatch) {
-        console.log('Hash validation passed, proceeding to difficulty check...');
+        logger.debug('BLOCK', 'Hash validation passed, proceeding to difficulty check...');
 
         // Calculate target from difficulty
         const target = this.calculateTarget(difficulty);
-        console.log(`Target for difficulty ${difficulty}: 0x${target}`);
+        logger.debug('BLOCK', `Target for difficulty ${difficulty}: 0x${target}`);
 
         // Convert hash to BigInt for comparison
         const hashBigInt = BigInt(`0x${calculatedHash}`);
         const targetBigInt = BigInt(`0x${target}`);
 
-        console.log(`Hash as BigInt: ${hashBigInt.toString()}`);
-        console.log(`Target as BigInt: ${targetBigInt.toString()}`);
+        logger.debug('BLOCK', `Hash as BigInt: ${hashBigInt.toString()}`);
+        logger.debug('BLOCK', `Target as BigInt: ${targetBigInt.toString()}`);
 
         // Check if hash meets difficulty (hash <= target)
         const meetsDifficulty = hashBigInt <= targetBigInt;
-        console.log(`Hash <= Target: ${hashBigInt.toString()} <= ${targetBigInt.toString()} = ${meetsDifficulty}`);
+        logger.debug('BLOCK', `Hash <= Target: ${hashBigInt.toString()} <= ${targetBigInt.toString()} = ${meetsDifficulty}`);
 
         if (meetsDifficulty) {
-          console.log('✅ Hash meets difficulty requirements');
+          logger.debug('BLOCK', '✅ Hash meets difficulty requirements');
         } else {
-          console.log('❌ Hash does NOT meet difficulty requirements');
+          logger.debug('BLOCK', '❌ Hash does NOT meet difficulty requirements');
         }
 
-        console.log('=== END HASH VERIFICATION DEBUG ===');
+        logger.debug('BLOCK', '=== END HASH VERIFICATION DEBUG ===');
         return meetsDifficulty;
       }
-      console.log('❌ Hash validation failed - hashes do not match');
-      console.log('=== END HASH VERIFICATION DEBUG ===');
+      logger.debug('BLOCK', '❌ Hash validation failed - hashes do not match');
+      logger.debug('BLOCK', '=== END HASH VERIFICATION DEBUG ===');
       return false;
     } catch (error) {
-      console.log(`❌ Hash verification error: ${error.message}`);
-      console.log('=== END HASH VERIFICATION DEBUG ===');
+      logger.debug('BLOCK', `❌ Hash verification error: ${error.message}`);
+      logger.debug('BLOCK', '=== END HASH VERIFICATION DEBUG ===');
       return false;
     }
   }
@@ -447,13 +448,13 @@ class VeloraUtils {
     const target = maxTarget / BigInt(difficulty);
 
     // DEBUG: Add difficulty calculation debugging
-    console.log('=== DIFFICULTY CALCULATION DEBUG ===');
-    console.log(`Input Difficulty: ${difficulty}`);
-    console.log(`Max Target (hex): 0x${maxTarget.toString(16)}`);
-    console.log(`Max Target (decimal): ${maxTarget.toString()}`);
-    console.log(`Calculated Target (hex): 0x${target.toString(16).padStart(64, '0')}`);
-    console.log(`Calculated Target (decimal): ${target.toString()}`);
-    console.log('=== END DIFFICULTY CALCULATION DEBUG ===');
+    logger.debug('BLOCK', '=== DIFFICULTY CALCULATION DEBUG ===');
+    logger.debug('BLOCK', `Input Difficulty: ${difficulty}`);
+    logger.debug('BLOCK', `Max Target (hex): 0x${maxTarget.toString(16)}`);
+    logger.debug('BLOCK', `Max Target (decimal): ${maxTarget.toString()}`);
+    logger.debug('BLOCK', `Calculated Target (hex): 0x${target.toString(16).padStart(64, '0')}`);
+    logger.debug('BLOCK', `Calculated Target (decimal): ${target.toString()}`);
+    logger.debug('BLOCK', '=== END DIFFICULTY CALCULATION DEBUG ===');
 
     return target.toString(16).padStart(64, '0');
   }
