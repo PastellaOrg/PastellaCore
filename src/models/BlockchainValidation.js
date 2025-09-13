@@ -375,9 +375,36 @@ class BlockchainValidation {
         if (!block.merkleRoot || !block.nonce || !block.difficulty || !block.algorithm) {
           return false;
         }
+
+        // CRITICAL: Validate genesis block transaction integrity
+        try {
+          if (typeof block.validateTransactionIntegrity === 'function') {
+            const isIntegrityValid = block.validateTransactionIntegrity();
+            if (!isIntegrityValid) {
+              logger.error('BLOCKCHAIN_VALIDATION', `Genesis block TRANSACTION TAMPERING DETECTED!`);
+              logger.error('BLOCKCHAIN_VALIDATION', `  Genesis transaction data has been modified`);
+              return false;
+            }
+          }
+
+          // Also validate Merkle root for consistency (using original transaction IDs)
+          const storedMerkleRoot = block.merkleRoot;
+          const calculatedMerkleRoot = block.calculateMerkleRoot();
+          
+          if (storedMerkleRoot !== calculatedMerkleRoot) {
+            logger.error('BLOCKCHAIN_VALIDATION', `Genesis block MERKLE ROOT TAMPERING DETECTED!`);
+            logger.error('BLOCKCHAIN_VALIDATION', `  Stored Merkle Root:     ${storedMerkleRoot}`);
+            logger.error('BLOCKCHAIN_VALIDATION', `  Calculated Merkle Root: ${calculatedMerkleRoot}`);
+            logger.error('BLOCKCHAIN_VALIDATION', `  Genesis transaction data has been modified`);
+            return false;
+          }
+        } catch (error) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Genesis block integrity verification failed: ${error.message}`);
+          return false;
+        }
       }
 
-      // For genesis blocks, skip the isValid() call since it's a getter, not a method
+      // For genesis blocks, return true after Merkle root validation
       if (block.index === 0) {
         return true;
       }
@@ -467,6 +494,53 @@ class BlockchainValidation {
         // Check block index sequence
         if (currentBlock.index !== previousBlock.index + 1) {
           logger.error('BLOCKCHAIN_VALIDATION', `Block index sequence broken at index ${i}`);
+          return false;
+        }
+
+        // CRITICAL: Validate transaction integrity (catches address/amount tampering)
+        try {
+          if (typeof currentBlock.validateTransactionIntegrity === 'function') {
+            const isIntegrityValid = currentBlock.validateTransactionIntegrity();
+            if (!isIntegrityValid) {
+              logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} TRANSACTION TAMPERING DETECTED in full validation!`);
+              logger.error('BLOCKCHAIN_VALIDATION', `  Transaction data has been modified (addresses, amounts, etc.)`);
+              return false;
+            }
+            logger.debug('BLOCKCHAIN_VALIDATION', `Block ${i} transaction integrity validation PASSED in full validation`);
+          }
+        } catch (error) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} transaction integrity validation error: ${error.message}`);
+          return false;
+        }
+
+        // CRITICAL: Validate Merkle root for consistency (catches transaction tampering)
+        try {
+          const storedMerkleRoot = currentBlock.merkleRoot;
+          
+          // Calculate merkle root without modifying the block's merkleRoot property
+          const transactionHashes = currentBlock.transactions.map((tx, index) => {
+            if (tx.id) {
+              return tx.id;
+            }
+            if (typeof tx.calculateId === 'function') {
+              return tx.calculateId(true); // true = historical validation mode
+            }
+            return CryptoUtils.hash(JSON.stringify(tx));
+          });
+          
+          const CryptoUtils = require('../utils/crypto');
+          const calculatedMerkleRoot = CryptoUtils.calculateMerkleRoot(transactionHashes);
+          
+          if (storedMerkleRoot !== calculatedMerkleRoot) {
+            logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} MERKLE ROOT TAMPERING DETECTED in full validation!`);
+            logger.error('BLOCKCHAIN_VALIDATION', `  Stored Merkle Root:     ${storedMerkleRoot}`);
+            logger.error('BLOCKCHAIN_VALIDATION', `  Calculated Merkle Root: ${calculatedMerkleRoot}`);
+            logger.error('BLOCKCHAIN_VALIDATION', `  Transaction data has been modified (addresses, amounts, etc.)`);
+            return false;
+          }
+          logger.debug('BLOCKCHAIN_VALIDATION', `Block ${i} merkle root validation PASSED in full validation`);
+        } catch (error) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} merkle root validation error: ${error.message}`);
           return false;
         }
 
@@ -590,6 +664,122 @@ class BlockchainValidation {
       return true;
     } catch (error) {
       logger.error('BLOCKCHAIN_VALIDATION', `Ultra-fast validation error: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Medium validation that includes transaction verification but skips expensive mining operations
+   * This provides security for transaction integrity while maintaining reasonable performance
+   * @param chain
+   * @param config
+   */
+  isValidChainMedium(chain, config) {
+    try {
+      if (!chain || !Array.isArray(chain) || chain.length === 0) {
+        return false;
+      }
+
+      logger.info('BLOCKCHAIN_VALIDATION', `Medium validation for ${chain.length} blocks (transaction validation enabled)...`);
+
+      // Validate genesis block basic structure
+      const genesisBlock = chain[0];
+      if (!genesisBlock || genesisBlock.index !== 0 || genesisBlock.previousHash !== '0') {
+        logger.error('BLOCKCHAIN_VALIDATION', 'Genesis block basic validation failed');
+        return false;
+      }
+
+      // Use Set for O(1) duplicate detection
+      const seenHashes = new Set([genesisBlock.hash]);
+
+      // Medium validation: check chain integrity + transaction validation, skip mining verification
+      for (let i = 1; i < chain.length; i++) {
+        const currentBlock = chain[i];
+        const previousBlock = chain[i - 1];
+
+        // Basic block existence check
+        if (!currentBlock || !previousBlock) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Block missing at index ${i}`);
+          return false;
+        }
+
+        // Check index sequence
+        if (currentBlock.index !== previousBlock.index + 1) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Block index sequence broken at index ${i}`);
+          return false;
+        }
+
+        // Check for duplicates (O(1) operation)
+        if (seenHashes.has(currentBlock.hash)) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Duplicate block hash found at index ${i}`);
+          return false;
+        }
+        seenHashes.add(currentBlock.hash);
+
+        // Check chain linking (most important)
+        if (currentBlock.previousHash !== previousBlock.hash) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Block at index ${i} is not properly linked`);
+          return false;
+        }
+
+        // CRITICAL: Validate block transactions for tampering detection
+        try {
+          const transactionValidation = this.validateBlockTransactions(currentBlock, config, null);
+          if (!transactionValidation.valid) {
+            logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} transaction validation failed: ${transactionValidation.reason}`);
+            return false;
+          }
+        } catch (error) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} transaction validation error: ${error.message}`);
+          return false;
+        }
+
+        // CRITICAL: Transaction ID validation temporarily disabled due to complexity with historical data
+        // Relying on Merkle root validation below to catch transaction content tampering
+
+        // CRITICAL: Validate transaction integrity (catches address/amount tampering)
+        try {
+          if (typeof currentBlock.validateTransactionIntegrity === 'function') {
+            const isIntegrityValid = currentBlock.validateTransactionIntegrity();
+            if (!isIntegrityValid) {
+              logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} TRANSACTION TAMPERING DETECTED!`);
+              logger.error('BLOCKCHAIN_VALIDATION', `  Transaction data has been modified (addresses, amounts, etc.)`);
+              return false;
+            }
+          }
+
+          // Also validate Merkle root for consistency (using original transaction IDs)
+          const storedMerkleRoot = currentBlock.merkleRoot;
+          const calculatedMerkleRoot = currentBlock.calculateMerkleRoot();
+          
+          if (storedMerkleRoot !== calculatedMerkleRoot) {
+            logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} MERKLE ROOT TAMPERING DETECTED!`);
+            logger.error('BLOCKCHAIN_VALIDATION', `  Stored Merkle Root:     ${storedMerkleRoot}`);
+            logger.error('BLOCKCHAIN_VALIDATION', `  Calculated Merkle Root: ${calculatedMerkleRoot}`);
+            logger.error('BLOCKCHAIN_VALIDATION', `  Transaction data has been modified (addresses, amounts, etc.)`);
+            return false;
+          }
+        } catch (error) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} integrity verification failed: ${error.message}`);
+          return false;
+        }
+
+        // SKIP expensive mining operations:
+        // - Velora hash verification (expensive)
+        // - Hash difficulty verification (expensive)
+        // - UTXO rebuilding (expensive)
+
+        // Show progress for large chains
+        if (chain.length > 50 && i % Math.max(1, Math.floor(chain.length / 10)) === 0) {
+          const progress = ((i / chain.length) * 100).toFixed(1);
+          logger.info('BLOCKCHAIN_VALIDATION', `Transaction validation progress: ${i}/${chain.length} blocks (${progress}%)`);
+        }
+      }
+
+      logger.info('BLOCKCHAIN_VALIDATION', 'Medium validation completed successfully - transactions verified');
+      return true;
+    } catch (error) {
+      logger.error('BLOCKCHAIN_VALIDATION', `Medium validation error: ${error.message}`);
       return false;
     }
   }

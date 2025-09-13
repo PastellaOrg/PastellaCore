@@ -911,6 +911,13 @@ class Blockchain {
   }
 
   /**
+   * Medium validation (includes transaction verification)
+   */
+  isValidChainMedium() {
+    return this.blockchainValidation.isValidChainMedium(this.chain, this.config);
+  }
+
+  /**
    * Clean up expired transactions
    */
   cleanupExpiredTransactions() {
@@ -1165,40 +1172,37 @@ class Blockchain {
 
         // Convert loaded blocks to proper Block instances
         if (data.chain && Array.isArray(data.chain)) {
-          logger.debug('BLOCKCHAIN', `Processing ${data.chain.length} blocks from file`);
-          this.chain = data.chain.map((blockData, index) => {
-            logger.debug(
-              'BLOCKCHAIN',
-              `Converting block ${index}: index=${blockData.index}, timestamp=${blockData.timestamp}, transactions=${blockData.transactions?.length || 0}`
-            );
+          logger.info('BLOCKCHAIN', `Processing ${data.chain.length} blocks from file...`);
+          
+          // Use bulk loading with progress indicators for better performance
+          const Block = require('./Block');
+          this.chain = [];
+          
+          for (let index = 0; index < data.chain.length; index++) {
+            const blockData = data.chain[index];
+            
             try {
-              const Block = require('./Block');
-              logger.debug('BLOCKCHAIN', `Block class loaded successfully, calling fromJSON`);
-
               // Get previous block timestamp for historical validation
               const previousBlockTimestamp = index > 0 ? data.chain[index - 1].timestamp : undefined;
-              logger.debug(
-                'BLOCKCHAIN',
-                `Using previous block timestamp: ${previousBlockTimestamp} for block ${index}`
-              );
-
               const blockInstance = Block.fromJSON(blockData, previousBlockTimestamp);
-              logger.debug(
-                'BLOCKCHAIN',
-                `Block ${index} converted successfully: index=${blockInstance.index}, hash=${blockInstance.hash?.substring(0, 16)}...`
-              );
-              return blockInstance;
+              this.chain.push(blockInstance);
+              
+              // Show progress for large chains without excessive logging
+              if (data.chain.length > 50 && index % Math.max(1, Math.floor(data.chain.length / 10)) === 0) {
+                const progress = ((index / data.chain.length) * 100).toFixed(1);
+                logger.info('BLOCKCHAIN', `Block loading progress: ${index}/${data.chain.length} blocks (${progress}%)`);
+              }
             } catch (error) {
               logger.error(
                 'BLOCKCHAIN',
                 `Failed to convert block ${blockData.index || 'unknown'} to Block instance: ${error.message}`
               );
-              logger.error('BLOCKCHAIN', `Error stack: ${error.stack}`);
               logger.warn('BLOCKCHAIN', `Returning original block data for block ${index}`);
-              return blockData; // Return original if conversion fails
+              this.chain.push(blockData); // Return original if conversion fails
             }
-          });
-          logger.debug('BLOCKCHAIN', `Successfully converted ${this.chain.length} blocks to Block instances`);
+          }
+          
+          logger.info('BLOCKCHAIN', `Successfully loaded ${this.chain.length} blocks`);
         } else {
           logger.debug('BLOCKCHAIN', `No chain data found in file or invalid format, initializing empty chain`);
           this.chain = [];
@@ -1272,22 +1276,32 @@ class Blockchain {
 
         logger.debug('BLOCKCHAIN', `Checkpoint validation passed`);
 
-        // CRITICAL SECURITY: Validate blockchain integrity before rebuilding UTXO set
-        logger.debug('BLOCKCHAIN', `Validating loaded blockchain integrity before UTXO rebuild...`);
-        const validationResult = this.blockchainValidation.isValidChain(this.chain, this.config);
+        // CRITICAL SECURITY: Medium validation during startup (includes transaction verification)
+        logger.debug('BLOCKCHAIN', `Running medium blockchain validation during startup (includes transaction verification)...`);
+        const validationResult = this.blockchainValidation.isValidChainMedium(this.chain, this.config);
         
         if (!validationResult) {
-          logger.error('BLOCKCHAIN', '🚨 SECURITY ALERT: Loaded blockchain failed validation!');
-          logger.error('BLOCKCHAIN', 'The blockchain file may have been tampered with or corrupted');
-          logger.error('BLOCKCHAIN', 'This could be a manipulation attempt - rejecting invalid blockchain');
-          logger.error('BLOCKCHAIN', '');
-          logger.error('BLOCKCHAIN', 'SOLUTION:');
-          logger.error('BLOCKCHAIN', '  • Restore blockchain from a trusted backup');
-          logger.error('BLOCKCHAIN', '  • Or delete the blockchain file and resync from network');
-          logger.error('BLOCKCHAIN', '  • If you are forking: node src/index.js --generate-genesis');
+          logger.error('BLOCKCHAIN', '🚨 SECURITY ALERT: Loaded blockchain failed medium validation!');
+          logger.error('BLOCKCHAIN', 'Transaction verification detected issues - running full validation...');
           
-          // Stop the daemon immediately to prevent using manipulated data
-          process.exit(1);
+          // If fast validation fails, run full validation for security
+          const fullValidationResult = this.blockchainValidation.isValidChain(this.chain, this.config);
+          
+          if (!fullValidationResult) {
+            logger.error('BLOCKCHAIN', '🚨 CRITICAL: Blockchain failed full validation!');
+            logger.error('BLOCKCHAIN', 'The blockchain file may have been tampered with or corrupted');
+            logger.error('BLOCKCHAIN', 'This could be a manipulation attempt - rejecting invalid blockchain');
+            logger.error('BLOCKCHAIN', '');
+            logger.error('BLOCKCHAIN', 'SOLUTION:');
+            logger.error('BLOCKCHAIN', '  • Restore blockchain from a trusted backup');
+            logger.error('BLOCKCHAIN', '  • Or delete the blockchain file and resync from network');
+            logger.error('BLOCKCHAIN', '  • If you are forking: node src/index.js --generate-genesis');
+            
+            // Stop the daemon immediately to prevent using manipulated data
+            process.exit(1);
+          } else {
+            logger.warn('BLOCKCHAIN', 'Medium validation failed but full validation passed - continuing with caution');
+          }
         }
         
         logger.info('BLOCKCHAIN', '✅ Blockchain validation passed - proceeding with UTXO rebuild');

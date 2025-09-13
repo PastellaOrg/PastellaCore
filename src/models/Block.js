@@ -27,7 +27,8 @@ class Block {
     nonce = 0,
     difficulty = 4,
     config = null,
-    validationContext = null
+    validationContext = null,
+    skipMerkleCalculation = false
   ) {
     this.index = index;
     this.timestamp = timestamp;
@@ -42,8 +43,10 @@ class Block {
     // CRITICAL: Timestamp validation
     this.validateTimestamp(validationContext);
 
-    // Calculate Merkle root
-    this.calculateMerkleRoot();
+    // Calculate Merkle root (skip when loading from JSON for validation purposes)
+    if (!skipMerkleCalculation) {
+      this.calculateMerkleRoot();
+    }
   }
 
   /**
@@ -178,8 +181,9 @@ class Block {
         return tx.id;
       }
 
+      // If no ID exists, calculate it (for new transactions)
       if (typeof tx.calculateId === 'function') {
-        return tx.calculateId();
+        return tx.calculateId(true); // true = historical validation mode
       }
 
       // If it's a plain object, try to create a transaction from it
@@ -201,6 +205,60 @@ class Block {
 
     this.merkleRoot = CryptoUtils.calculateMerkleRoot(transactionHashes);
     return this.merkleRoot;
+  }
+
+  /**
+   * CRITICAL: Validate that transaction content matches their stored IDs
+   * This detects if transaction data has been tampered with
+   */
+  validateTransactionIntegrity() {
+    logger.debug('BLOCK', `Validating transaction integrity for block ${this.index} with ${this.transactions.length} transactions`);
+    
+    for (let i = 0; i < this.transactions.length; i++) {
+      const tx = this.transactions[i];
+      
+      logger.debug('BLOCK', `  Transaction ${i}: id=${tx.id?.substring(0, 16)}..., hasCalculateId=${typeof tx.calculateId === 'function'}`);
+      
+      if (tx.id && typeof tx.calculateId === 'function') {
+        // Create a temporary copy with original atomic sequence preserved
+        const tempTx = Object.assign(Object.create(Object.getPrototypeOf(tx)), tx);
+        
+        // Temporarily clear the ID to force recalculation
+        const originalId = tempTx.id;
+        tempTx.id = null;
+        
+        logger.debug('BLOCK', `  Recalculating ID for transaction ${i} (original: ${originalId?.substring(0, 16)}...)`);
+        logger.debug('BLOCK', `  Transaction details: outputs=${JSON.stringify(tempTx.outputs)}, atomicSequence=${tempTx._atomicSequence}`);
+        
+        try {
+          // Recalculate ID using the same method as when block was created
+          const calculatedId = tempTx.calculateId(true);
+          
+          logger.debug('BLOCK', `  Calculated ID: ${calculatedId?.substring(0, 16)}...`);
+          
+          // Compare with stored ID
+          if (originalId !== calculatedId) {
+            logger.error('BLOCK', `🚨 TRANSACTION INTEGRITY VIOLATION DETECTED!`);
+            logger.error('BLOCK', `  Block: ${this.index}, Transaction: ${i}`);
+            logger.error('BLOCK', `  Stored ID: ${originalId}`);
+            logger.error('BLOCK', `  Calculated ID: ${calculatedId}`);
+            logger.error('BLOCK', `  Transaction outputs: ${JSON.stringify(tempTx.outputs)}`);
+            logger.error('BLOCK', `  Transaction data has been modified (amounts, addresses, etc.)`);
+            return false;
+          }
+          
+          logger.debug('BLOCK', `  Transaction ${i} integrity verification PASSED`);
+        } catch (error) {
+          logger.error('BLOCK', `Transaction ${i} ID calculation failed: ${error.message}`);
+          return false;
+        }
+      } else {
+        logger.debug('BLOCK', `  Transaction ${i} skipped (no ID or calculateId method)`);
+      }
+    }
+    
+    logger.debug('BLOCK', `Block ${this.index} transaction integrity validation PASSED`);
+    return true;
   }
 
   /**
@@ -672,12 +730,13 @@ class Block {
       data.nonce,
       data.difficulty,
       data.config,
-      validationContext
+      validationContext,
+      true // Skip Merkle calculation when loading from JSON
     );
 
     block.hash = data.hash;
-    // CRITICAL: Don't overwrite the calculated merkle root - let the daemon calculate it
-    // block.merkleRoot = data.merkleRoot; // REMOVED: This was overwriting the calculated merkle root!
+    // CRITICAL: Preserve original merkle root from JSON for validation
+    block.merkleRoot = data.merkleRoot; // Use original from file for validation
     block.algorithm = data.algorithm || 'velora'; // Default to Velora for new blocks
 
     logger.debug(
