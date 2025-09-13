@@ -27,7 +27,6 @@ class UTXOManager {
         outputIndex,
         amount: utxo.amount,
         address: utxo.address,
-        scriptPubKey: utxo.scriptPubKey,
       };
     }
 
@@ -68,7 +67,6 @@ class UTXOManager {
         this.utxoSet.set(utxoKey, {
           address: output.address,
           amount: output.amount,
-          scriptPubKey: output.scriptPubKey,
         });
         logger.debug('UTXO', `Added new UTXO: ${utxoKey} (${output.amount} to ${output.address})`);
       });
@@ -125,7 +123,6 @@ class UTXOManager {
           txHash,
           outputIndex: parseInt(outputIndex),
           amount: utxo.amount,
-          scriptPubKey: utxo.scriptPubKey,
         });
       }
     });
@@ -189,8 +186,7 @@ class UTXOManager {
         txHash,
         outputIndex: parseInt(outputIndex),
         address: utxo.address,
-        amount: utxo.amount,
-        scriptPubKey: utxo.scriptPubKey
+        amount: utxo.amount
       });
     }
     

@@ -74,12 +74,10 @@ class TransactionOutput {
    *
    * @param address
    * @param amount
-   * @param scriptPubKey
    */
-  constructor(address, amount, scriptPubKey = '') {
+  constructor(address, amount) {
     this.address = address; // Recipient address
     this.amount = amount; // Amount in PAS
-    this.scriptPubKey = scriptPubKey || `OP_DUP OP_HASH160 ${address} OP_EQUALVERIFY OP_CHECKSIG`;
   }
 
   /**
@@ -89,7 +87,6 @@ class TransactionOutput {
     return {
       address: this.address,
       amount: this.amount,
-      scriptPubKey: this.scriptPubKey,
     };
   }
 
@@ -111,7 +108,7 @@ class TransactionOutput {
         throw new Error('Invalid transaction output data: amount is not a number');
       }
 
-      return new TransactionOutput(data.address, data.amount, data.scriptPubKey || '');
+      return new TransactionOutput(data.address, data.amount);
     } catch (error) {
       throw new Error(`Failed to create transaction output from JSON: ${error.message}`);
     }
@@ -258,8 +255,9 @@ class Transaction {
 
   /**
    * CRITICAL: Validate atomic sequence to prevent race attacks
+   * @param {boolean} isHistoricalValidation - Skip time-based checks for historical blocks
    */
-  validateAtomicSequence() {
+  validateAtomicSequence(isHistoricalValidation = false) {
     if (!this._atomicSequence) {
       throw new Error('Transaction missing atomic sequence - potential race attack');
     }
@@ -280,10 +278,13 @@ class Transaction {
       throw new Error('Invalid atomic sequence format - potential race attack');
     }
 
-    // Validate timestamp is recent (within 5 minutes)
-    const timestamp = parseInt(parts[0]);
-    if (Date.now() - timestamp > 5 * 60 * 1000) {
-      throw new Error('Atomic sequence timestamp too old - potential race attack');
+    // Skip timestamp validation for historical blocks during blockchain loading
+    if (!isHistoricalValidation) {
+      // Validate timestamp is recent (within 5 minutes) - only for new transactions
+      const timestamp = parseInt(parts[0]);
+      if (Date.now() - timestamp > 5 * 60 * 1000) {
+        throw new Error('Atomic sequence timestamp too old - potential race attack');
+      }
     }
 
     return true;
@@ -346,22 +347,35 @@ class Transaction {
   /**
    * Calculate transaction hash with replay attack protection
    * CRITICAL: This hash is IMMUTABLE and cannot be changed after creation
+   * @param {boolean} isHistoricalValidation - Skip time-based checks for historical blocks
    */
-  calculateId() {
+  calculateId(isHistoricalValidation = false) {
     // CRITICAL: Validate atomic sequence before ID calculation
-    this.validateAtomicSequence();
+    this.validateAtomicSequence(isHistoricalValidation);
 
     // CRITICAL: Use immutable data structure to prevent malleability
+    const mappedOutputs = this.outputs.map(output => ({
+      address: output.address,
+      amount: output.amount,
+    }));
+    
+    // DEBUG: Log output mapping for integrity validation
+    if (isHistoricalValidation) {
+      logger.debug('TRANSACTION', `calculateId DEBUG - original outputs: ${JSON.stringify(this.outputs)}`);
+      logger.debug('TRANSACTION', `calculateId DEBUG - mapped outputs: ${JSON.stringify(mappedOutputs)}`);
+      for (let i = 0; i < this.outputs.length; i++) {
+        const output = this.outputs[i];
+        logger.debug('TRANSACTION', `calculateId DEBUG - output[${i}]: address=${output.address}, amount=${output.amount}, type=${typeof output.amount}`);
+      }
+    }
+    
     const immutableData = {
       inputs: this.inputs.map(input => ({
         txId: input.txId,
         outputIndex: input.outputIndex,
         publicKey: input.publicKey,
       })),
-      outputs: this.outputs.map(output => ({
-        address: output.address,
-        amount: output.amount,
-      })),
+      outputs: mappedOutputs,
       fee: this.fee,
       paymentId: this.paymentId, // Include payment ID in hash calculation
       timestamp: this.timestamp,
@@ -377,7 +391,25 @@ class Transaction {
     Object.freeze(immutableData);
 
     // CRITICAL: Use deterministic JSON stringification to prevent malleability
-    const dataString = JSON.stringify(immutableData, Object.keys(immutableData).sort());
+    // Custom replacer that sorts only top-level keys to prevent nested object corruption
+    const deterministicReplacer = (key, value) => {
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        // Sort keys for objects to ensure deterministic output
+        const sorted = {};
+        Object.keys(value).sort().forEach(k => {
+          sorted[k] = value[k];
+        });
+        return sorted;
+      }
+      return value;
+    };
+    const dataString = JSON.stringify(immutableData, deterministicReplacer);
+    
+    // DEBUG: Log the data being hashed for integrity validation
+    if (isHistoricalValidation) {
+      logger.debug('TRANSACTION', `calculateId DEBUG - outputs: ${JSON.stringify(immutableData.outputs)}`);
+      logger.debug('TRANSACTION', `calculateId DEBUG - dataString: ${dataString.substring(0, 200)}...`);
+    }
 
     // CRITICAL: Double hash for additional security
     this.id = CryptoUtils.doubleHash(dataString);
@@ -814,7 +846,7 @@ class Transaction {
         data.tag || TRANSACTION_TAGS.TRANSACTION,
         data.timestamp || null,
         data.nonce || null,
-        data._atomicSequence || null,
+        data.atomicSequence || null, // Preserve atomic sequence for validation
         data._isGenesisBlock || false,
         data.paymentId || null
       );
@@ -832,6 +864,7 @@ class Transaction {
       if (data.sequence !== undefined) {
         transaction.sequence = data.sequence;
       }
+      // CRITICAL: Preserve atomicSequence for transaction integrity validation
       if (data.atomicSequence) {
         transaction._atomicSequence = data.atomicSequence;
       }
