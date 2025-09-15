@@ -305,11 +305,12 @@ class Transaction {
       }
 
       // CRITICAL: Validate random component strength even for historical blocks
+      // Skip randomness validation for genesis transactions
+      if (!isGenesisTransaction) {
       const randomPart = parts[1];
-      // Exception for genesis transactions which use "genesis" as identifier
-      const isGenesisTransaction = randomPart === 'genesis';
-      if (!randomPart || (!isGenesisTransaction && randomPart.length < 8)) {
+        if (!randomPart || randomPart.length < 8) {
         throw new Error('Historical atomic sequence has weak randomness - potential manipulation');
+        }
       }
     }
 
