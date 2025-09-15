@@ -80,8 +80,9 @@ class PastellaDaemon {
   /**
    * Initialize the daemon
    * @param updatedConfig
+   * @param customApiKey
    */
-  async initialize(updatedConfig = null) {
+  async initialize(updatedConfig = null, customApiKey = null) {
     // Use updated config if provided, otherwise use global config
     const currentConfig = updatedConfig || config;
     // Display comprehensive intro
@@ -153,7 +154,7 @@ class PastellaDaemon {
     logger.info('SYSTEM', 'Initializing system components...');
 
     this.p2pNetwork = new P2PNetwork(this.blockchain, currentConfig.network.p2pPort, currentConfig);
-    this.apiServer = new APIServer(this.blockchain, null, null, this.p2pNetwork, currentConfig.api.port, currentConfig);
+    this.apiServer = new APIServer(this.blockchain, null, null, this.p2pNetwork, currentConfig.api.port, currentConfig, customApiKey);
 
     // Safe logging of blockchain height
     const chainLength = this.blockchain.chain ? this.blockchain.chain.length : 0;
@@ -163,14 +164,15 @@ class PastellaDaemon {
   /**
    * Start the daemon
    * @param updatedConfig
+   * @param customApiKey
    */
-  async start(updatedConfig = null) {
+  async start(updatedConfig = null, customApiKey = null) {
     if (this.isRunning) {
       logger.info('SYSTEM', 'Daemon is already running');
       return;
     }
 
-    await this.initialize(updatedConfig);
+    await this.initialize(updatedConfig, customApiKey);
 
     // Start P2P network
     if (config.network.enabled !== false) {
@@ -1268,8 +1270,7 @@ async function main() {
 
   const apiKey = parseArgValue('--api-key');
   if (apiKey) {
-    logger.warn('SYSTEM', 'Note: API keys are now generated automatically on startup for security.');
-    logger.warn('SYSTEM', 'The --api-key flag is deprecated and will be ignored.');
+    logger.info('SYSTEM', `Using custom API key: ${apiKey}`);
   }
 
   // Parse host binding argument
@@ -1317,7 +1318,7 @@ async function main() {
   }
 
   try {
-    await daemon.start(config);
+    await daemon.start(config, apiKey);
   } catch (error) {
     logger.error('SYSTEM', `Failed to start daemon: ${error.message}`);
     process.exit(1);
