@@ -325,14 +325,14 @@ class Blockchain {
         return false;
       }
 
-      // CRITICAL: Add transactions to historical database for replay attack protection
-      this.addTransactionsToHistoricalDatabase(block);
-
       // Add block to chain
       this.chain.push(block);
 
-      // Update UTXO set
+      // CRITICAL: Update UTXO set BEFORE historical database to prevent race condition double-spend attacks
       this.utxoManager.updateUTXOSet(block);
+
+      // Add transactions to historical database for replay attack protection (after UTXO update)
+      this.addTransactionsToHistoricalDatabase(block);
 
       // Remove transactions from pending pool
       this.memoryPool.removeTransactions(block.transactions);
