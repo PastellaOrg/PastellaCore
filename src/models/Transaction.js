@@ -279,7 +279,12 @@ class Transaction {
     }
     // For regular transactions, use strict validation
     const parts = this._atomicSequence.split('-');
-    if (parts.length !== 4) {
+
+    // Check for genesis transaction format: timestamp-genesis-coinbase-sequence
+    const isGenesisTransaction = parts.length === 4 && parts[1] === 'genesis' && parts[2] === 'coinbase';
+
+    // All transactions must have exactly 4 parts
+    if (!isGenesisTransaction && parts.length !== 4) {
       throw new Error('Invalid atomic sequence format - potential race attack');
     }
 
