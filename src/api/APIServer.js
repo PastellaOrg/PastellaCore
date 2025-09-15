@@ -37,8 +37,13 @@ class APIServer {
     // Initialize rate limiter for DoS protection
     this.rateLimiter = new RateLimiter();
 
-    // Initialize authentication middleware (no API key initially)
-    this.auth = new AuthMiddleware();
+    // CRITICAL: Generate dynamic API key on startup for security
+    this.apiKey = this.generateSecureApiKey();
+    this.auth = new AuthMiddleware(this.apiKey);
+
+    // Display API key to user on startup
+    logger.info('API_SERVER', `🔑 Generated secure API key: ${this.apiKey}`);
+    logger.info('API_SERVER', '⚠️  IMPORTANT: Save this API key - it will be required for protected endpoints');
 
     // Block submission synchronization
     this.blockSubmissionLock = false;
@@ -904,18 +909,22 @@ class APIServer {
       const { difficulty } = this.blockchain;
       const previousHash = latest ? latest.hash : '0';
 
-      // Build coinbase for the provided address
-      const { Transaction } = require('../models/Transaction');
-      const reward = this.blockchain.getCurrentMiningReward();
-      const timestamp = Date.now();
-      const coinbase = Transaction.createCoinbase(address, reward, timestamp);
-
       // Select mempool transactions by age (oldest first) as per user preference
       const mempoolTxs = this.blockchain
         .getPendingTransactions()
         .slice()
         .sort((a, b) => a.timestamp - b.timestamp)
         .slice(0, this.config?.blockchain?.maxTxPerBlock || 1000);
+
+      // Calculate total fees from selected transactions
+      const totalFees = mempoolTxs.reduce((sum, tx) => sum + (tx.fee || 0), 0);
+      
+      // Build coinbase for the provided address (mining reward + transaction fees)
+      const { Transaction } = require('../models/Transaction');
+      const baseReward = this.blockchain.getCurrentMiningReward();
+      const totalReward = baseReward + totalFees;
+      const timestamp = Date.now();
+      const coinbase = Transaction.createCoinbase(address, totalReward, timestamp);
 
       const transactions = [coinbase, ...mempoolTxs];
 
@@ -1714,6 +1723,30 @@ class APIServer {
 
         // ALWAYS end the debug section after validation
         logger.info('API', `=== END MERKLE ROOT VALIDATION DEBUG ===`);
+
+        // Coinbase verification for submitted block
+        logger.debug('API', `Starting coinbase verification for block ${blockObj.index}`);
+        try {
+          const coinbaseVerificationResult = this.verifyCoinbaseTransaction(blockObj);
+          if (!coinbaseVerificationResult.valid) {
+            logger.error('API', `Coinbase verification failed: ${coinbaseVerificationResult.reason}`);
+            return res.status(400).json({
+              error: 'Invalid coinbase transaction',
+              details: coinbaseVerificationResult.reason,
+              expected: coinbaseVerificationResult.expected,
+              actual: coinbaseVerificationResult.actual,
+              code: 'COINBASE_VERIFICATION_FAILED',
+            });
+          }
+          logger.debug('API', `Coinbase verification passed for block ${blockObj.index}`);
+        } catch (coinbaseError) {
+          logger.error('API', `Coinbase verification error: ${coinbaseError.message}`);
+          return res.status(400).json({
+            error: 'Coinbase verification error',
+            details: coinbaseError.message,
+            code: 'COINBASE_VERIFICATION_ERROR',
+          });
+        }
       } catch (validationError) {
         logger.error('API', `Block validation error: ${validationError.message}`);
         logger.error('API', `Validation error stack: ${validationError.stack}`);
@@ -1797,6 +1830,134 @@ class APIServer {
       this.blockSubmissionLock = false;
       logger.debug('API', `Block submission lock released`);
     }
+  }
+
+  /**
+   * CRITICAL: Generate cryptographically secure API key
+   * @returns {string} Secure API key
+   */
+  generateSecureApiKey() {
+    const crypto = require('crypto');
+    // Generate 32 bytes (256 bits) of cryptographically secure random data
+    const randomBytes = crypto.randomBytes(32);
+    // Convert to base64 for easy handling
+    const apiKey = randomBytes.toString('base64').replace(/[+/=]/g, (char) => {
+      // Replace URL-unsafe characters with safe alternatives
+      switch (char) {
+        case '+': return '-';
+        case '/': return '_';
+        case '=': return '';
+        default: return char;
+      }
+    });
+
+    return `pastella-${apiKey}`;
+  }
+
+  /**
+   * Verify coinbase transaction amount includes correct base reward and fees with halving logic
+   * @param {Block} block - The block to verify
+   * @returns {object} Verification result with valid flag and details
+   */
+  verifyCoinbaseTransaction(block) {
+    const { calculateHalvedReward } = require('../utils/atomicUnits');
+
+    // Find coinbase transaction
+    const coinbase = block.transactions.find(tx => tx.isCoinbase);
+    if (!coinbase) {
+      return {
+        valid: false,
+        reason: 'No coinbase transaction found in block',
+        expected: null,
+        actual: null,
+      };
+    }
+
+    if (coinbase.outputs.length !== 1) {
+      return {
+        valid: false,
+        reason: `Coinbase transaction must have exactly 1 output, found ${coinbase.outputs.length}`,
+        expected: 1,
+        actual: coinbase.outputs.length,
+      };
+    }
+
+    // Calculate expected base reward with halving logic
+    const baseReward = this.config?.blockchain?.coinbaseReward || 5000000000;
+    const halvingBlocks = this.config?.blockchain?.halvingBlocks || 2102400;
+    const expectedBaseReward = calculateHalvedReward(block.index, baseReward, halvingBlocks);
+
+    // Calculate total fees from non-coinbase transactions
+    const regularTransactions = block.transactions.filter(tx => !tx.isCoinbase);
+    const totalFees = regularTransactions.reduce((sum, tx) => sum + (tx.fee || 0), 0);
+
+    // Expected total reward = base reward + fees
+    const expectedTotalReward = expectedBaseReward + totalFees;
+    const actualReward = coinbase.outputs[0].amount;
+
+    logger.debug('API', `Coinbase verification details:`);
+    logger.debug('API', `  Block height: ${block.index}`);
+    logger.debug('API', `  Base reward (with halving): ${expectedBaseReward} atomic units`);
+    logger.debug('API', `  Total fees: ${totalFees} atomic units`);
+    logger.debug('API', `  Expected total reward: ${expectedTotalReward} atomic units`);
+    logger.debug('API', `  Actual coinbase amount: ${actualReward} atomic units`);
+
+    if (actualReward !== expectedTotalReward) {
+      return {
+        valid: false,
+        reason: 'Coinbase reward amount incorrect',
+        expected: {
+          baseReward: expectedBaseReward,
+          totalFees,
+          totalReward: expectedTotalReward,
+        },
+        actual: {
+          coinbaseAmount: actualReward,
+          difference: actualReward - expectedTotalReward,
+        },
+      };
+    }
+
+    // Verify coinbase transaction is properly formatted
+    if (!coinbase.tag || coinbase.tag !== 'COINBASE') {
+      return {
+        valid: false,
+        reason: 'Coinbase transaction must have tag "COINBASE"',
+        expected: 'COINBASE',
+        actual: coinbase.tag,
+      };
+    }
+
+    if (coinbase.inputs.length !== 0) {
+      return {
+        valid: false,
+        reason: 'Coinbase transaction must have zero inputs',
+        expected: 0,
+        actual: coinbase.inputs.length,
+      };
+    }
+
+    if (coinbase.fee !== 0) {
+      return {
+        valid: false,
+        reason: 'Coinbase transaction must have zero fee',
+        expected: 0,
+        actual: coinbase.fee,
+      };
+    }
+
+    return {
+      valid: true,
+      reason: 'Coinbase transaction verification passed',
+      expected: {
+        baseReward: expectedBaseReward,
+        totalFees,
+        totalReward: expectedTotalReward,
+      },
+      actual: {
+        coinbaseAmount: actualReward,
+      },
+    };
   }
 
   /**
