@@ -216,6 +216,7 @@ class MessageValidator {
               timestamp: { type: 'number', minimum: 0, description: 'Transaction timestamp' },
               signature: { type: 'string', minLength: 1, description: 'Transaction signature' },
               fee: { type: 'number', minimum: 0, description: 'Transaction fee' },
+              paymentId: { type: 'string', pattern: '^[a-fA-F0-9]{64}$', description: 'Payment ID (64-character hash)' },
               isCoinbase: { type: 'boolean', description: 'Is coinbase transaction' },
               tag: { type: 'string', description: 'Transaction tag' },
               nonce: { type: 'string', description: 'Transaction nonce' },
@@ -575,6 +576,11 @@ class MessageValidator {
    * @param messageType
    */
   validateField(value, schema, fieldName, messageType = 'unknown') {
+    // Special handling for paymentId - allow null values (when not used) or 64-char hash
+    if (fieldName === 'paymentId' && value === null) {
+      return { valid: true };
+    }
+
     // Type validation
     if (schema.type) {
       let isValidType = false;
