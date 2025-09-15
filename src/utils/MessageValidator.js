@@ -216,7 +216,6 @@ class MessageValidator {
               timestamp: { type: 'number', minimum: 0, description: 'Transaction timestamp' },
               signature: { type: 'string', minLength: 1, description: 'Transaction signature' },
               fee: { type: 'number', minimum: 0, description: 'Transaction fee' },
-              paymentId: { type: ['string', 'null'], description: 'Payment ID' },
               isCoinbase: { type: 'boolean', description: 'Is coinbase transaction' },
               tag: { type: 'string', description: 'Transaction tag' },
               nonce: { type: 'string', description: 'Transaction nonce' },
