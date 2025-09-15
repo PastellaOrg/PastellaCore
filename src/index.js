@@ -928,8 +928,9 @@ async function main() {
         );
         premineTransaction.tag = TRANSACTION_TAGS.PREMINE;
 
-        // Override the atomicSequence for genesis blocks to use custom format
-        const randomNumber = Math.floor(Math.random() * 1000000);
+        // Override the atomicSequence for genesis blocks to use custom format with crypto-secure randomness
+        const crypto = require('crypto');
+        const randomNumber = crypto.randomBytes(4).readUInt32BE(0) % 1000000;
         premineTransaction._atomicSequence = `${genesisTimestamp}-genesis-coinbase-${randomNumber}`;
 
         // Don't override the timestamp - keep the config timestamp for determinism

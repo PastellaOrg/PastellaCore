@@ -2297,7 +2297,9 @@ class CryptoUtils {
 
     const selectedWords = [];
     for (let i = 0; i < 12; i++) {
-      const randomIndex = Math.floor(Math.random() * words.length);
+      // CRITICAL: Use cryptographically secure randomness for seed phrase generation
+      const randomBytes = crypto.randomBytes(4);
+      const randomIndex = randomBytes.readUInt32BE(0) % words.length;
       selectedWords.push(words[randomIndex]);
     }
 

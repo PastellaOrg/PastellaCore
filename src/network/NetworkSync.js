@@ -161,7 +161,12 @@ class NetworkSync {
    * @param count
    */
   selectRandomPeers(peers, count) {
-    const shuffled = [...peers].sort(() => 0.5 - Math.random());
+    // CRITICAL: Use cryptographically secure randomness for peer selection
+    const crypto = require('crypto');
+    const shuffled = [...peers].sort(() => {
+      const randomBytes = crypto.randomBytes(1);
+      return randomBytes[0] - 128; // Returns value between -128 and 127
+    });
     return shuffled.slice(0, count);
   }
 

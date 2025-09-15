@@ -554,8 +554,10 @@ class P2PNetwork {
         return `${url.hostname}:${url.port}`;
       }
 
-      // If we can't determine the address, generate a unique identifier
-      return `peer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // If we can't determine the address, generate a unique identifier with crypto-secure randomness
+      const crypto = require('crypto');
+      const randomBytes = crypto.randomBytes(6).toString('hex');
+      return `peer-${Date.now()}-${randomBytes}`;
     } catch (error) {
       logger.warn('P2P_NETWORK', `Could not extract peer address: ${error.message}`);
       return `unknown-${Date.now()}`;
