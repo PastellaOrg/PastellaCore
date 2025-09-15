@@ -394,9 +394,8 @@ class MessageHandler {
     const receivedTransactions = message.data;
     receivedTransactions.forEach(transaction => {
       try {
-        // Convert plain object to proper Transaction instance
-        const newTransaction = Transaction.fromJSON(transaction);
-        this.blockchain.addPendingTransaction(newTransaction);
+        // Pass transaction data directly - addPendingTransaction handles conversion
+        this.blockchain.addPendingTransaction(transaction);
       } catch (error) {
         logger.warn('MESSAGE_HANDLER', `Failed to add transaction from peer: ${error.message}`);
         logger.warn('MESSAGE_HANDLER', `Error stack: ${error.stack}`);
@@ -486,17 +485,17 @@ class MessageHandler {
     logger.debug('MESSAGE_HANDLER', `Transaction ID: ${message.data?.id || 'unknown'}`);
 
     try {
-      // Convert plain object to proper Transaction instance
-      const newTransaction = Transaction.fromJSON(message.data);
-      logger.debug('MESSAGE_HANDLER', `Transaction converted successfully: ${newTransaction.id}`);
+      // Pass transaction data directly - addPendingTransaction handles conversion
+      const transactionData = message.data;
+      logger.debug('MESSAGE_HANDLER', `Processing transaction: ${transactionData.id}`);
 
-      if (this.blockchain.addPendingTransaction(newTransaction)) {
-        logger.info('MESSAGE_HANDLER', `✅ New transaction ${newTransaction.id} added to mempool from peer ${peerAddress}`);
+      if (this.blockchain.addPendingTransaction(transactionData)) {
+        logger.info('MESSAGE_HANDLER', `✅ New transaction ${transactionData.id} added to mempool from peer ${peerAddress}`);
 
         // CRITICAL: Broadcast to other peers (Bitcoin-style relay)
-        this.broadcastTransactionToOtherPeers(newTransaction, peerAddress);
+        this.broadcastTransactionToOtherPeers(transactionData, peerAddress);
       } else {
-        logger.warn('MESSAGE_HANDLER', `❌ Transaction ${newTransaction.id} rejected by mempool (duplicate/invalid)`);
+        logger.warn('MESSAGE_HANDLER', `❌ Transaction ${transactionData.id} rejected by mempool (duplicate/invalid)`);
       }
     } catch (error) {
       logger.error('MESSAGE_HANDLER', `💥 Failed to process new transaction from ${peerAddress}: ${error.message}`);
@@ -630,11 +629,8 @@ class MessageHandler {
       const transactionData = message.data.transaction;
       const transactionHash = message.data.hash;
 
-      // Convert plain object to proper Transaction instance
-      const newTransaction = Transaction.fromJSON(transactionData);
-
-      // Validate transaction hash
-      if (newTransaction.hash !== transactionHash) {
+      // Validate transaction hash directly from data
+      if (transactionData.hash !== transactionHash) {
         logger.warn('MESSAGE_HANDLER', `Transaction hash mismatch from ${peerAddress}`);
         this.sendMessage(ws, {
           type: 'MEMPOOL_REJECT',
@@ -648,11 +644,11 @@ class MessageHandler {
       }
 
       // Add transaction to mempool
-      if (this.blockchain.addPendingTransaction(newTransaction)) {
+      if (this.blockchain.addPendingTransaction(transactionData)) {
         logger.info('MESSAGE_HANDLER', `Transaction ${transactionHash} added to mempool from ${peerAddress}`);
 
         // Relay to other peers (Bitcoin-style)
-        this.broadcastTransactionToOtherPeers(newTransaction, peerAddress);
+        this.broadcastTransactionToOtherPeers(transactionData, peerAddress);
       } else {
         logger.warn('MESSAGE_HANDLER', `Failed to add transaction ${transactionHash} to mempool`);
       }
