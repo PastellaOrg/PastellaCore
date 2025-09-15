@@ -387,24 +387,45 @@ class Blockchain {
   }
 
   /**
-   * CRITICAL: Get sender address from transaction inputs
+   * CRITICAL: Get sender address from transaction inputs with cryptographic validation
    * @param transaction
    */
   getTransactionSenderAddress(transaction) {
     if (!transaction.inputs || transaction.inputs.length === 0) {
+      logger.warn('BLOCKCHAIN', 'Cannot extract sender address: no transaction inputs');
       return null;
     }
 
-    // For now, use the first input's public key as sender identifier
-    // In a more robust implementation, you'd derive the address from the public key
     const firstInput = transaction.inputs[0];
-    if (firstInput && firstInput.publicKey) {
-      // Create a simple hash of the public key as a sender identifier
-      const { CryptoUtils } = require('../utils/crypto');
-      return CryptoUtils.hash(firstInput.publicKey).substring(0, 16);
+    if (!firstInput || !firstInput.publicKey) {
+      logger.warn('BLOCKCHAIN', 'Cannot extract sender address: missing public key in first input');
+      return null;
     }
 
-    return null;
+    try {
+      // CRITICAL: Properly derive address from public key using the same method as wallet generation
+      const { CryptoUtils } = require('../utils/crypto');
+      
+      // Validate public key format (should be 130 hex chars for uncompressed secp256k1)
+      if (typeof firstInput.publicKey !== 'string' || 
+          !/^[0-9a-fA-F]{130}$/.test(firstInput.publicKey)) {
+        logger.error('BLOCKCHAIN', `Invalid public key format: ${firstInput.publicKey?.substring(0, 20)}...`);
+        return null;
+      }
+
+      // Use the same address derivation as the crypto utils
+      const derivedAddress = CryptoUtils.publicKeyToAddress(firstInput.publicKey);
+      
+      if (!derivedAddress) {
+        logger.error('BLOCKCHAIN', 'Failed to derive address from public key');
+        return null;
+      }
+
+      return derivedAddress;
+    } catch (error) {
+      logger.error('BLOCKCHAIN', `Error extracting sender address: ${error.message}`);
+      return null;
+    }
   }
 
   /**
@@ -429,17 +450,21 @@ class Blockchain {
 
     // Check if nonce from same sender already exists
     const senderAddress = this.getTransactionSenderAddress(transaction);
-    if (senderAddress) {
-      const key = `${transaction.nonce}:${senderAddress}`;
-      const existing = this.historicalTransactions.get(key);
+    if (!senderAddress) {
+      // CRITICAL SECURITY: If we can't extract sender address, fail safely by rejecting transaction
+      logger.error('BLOCKCHAIN', `SECURITY FAILURE: Cannot extract sender address for transaction ${transaction.id} - rejecting as potential attack`);
+      return true; // Treat as replay attack to fail safely
+    }
 
-      if (existing) {
-        logger.warn(
-          'BLOCKCHAIN',
-          `Replay attack detected: Transaction ${transaction.id} uses nonce ${transaction.nonce} already used by ${senderAddress} in block ${existing.blockHeight}`
-        );
-        return true;
-      }
+    const key = `${transaction.nonce}:${senderAddress}`;
+    const existing = this.historicalTransactions.get(key);
+
+    if (existing) {
+      logger.warn(
+        'BLOCKCHAIN',
+        `Replay attack detected: Transaction ${transaction.id} uses nonce ${transaction.nonce} already used by ${senderAddress} in block ${existing.blockHeight}`
+      );
+      return true;
     }
 
     return false;
