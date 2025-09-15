@@ -840,10 +840,8 @@ class MessageHandler {
       try {
         const mempoolSyncMessage = {
           type: 'MEMPOOL_SYNC_REQUEST',
-          data: {
-            timestamp: Date.now(),
-            networkId: this.blockchain.config?.networkId || 'unknown',
-          },
+          timestamp: Date.now(),
+          networkId: this.blockchain.config?.networkId || 'unknown',
         };
 
         this.sendMessage(ws, mempoolSyncMessage);

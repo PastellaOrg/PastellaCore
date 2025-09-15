@@ -132,10 +132,6 @@ class NetworkSync {
         try {
           const message = {
             type: 'QUERY_LATEST',
-            data: {
-              timestamp: Date.now(),
-              networkId: this.blockchain.config?.networkId || 'unknown',
-            },
           };
 
           if (this.sendMessage(peer, message)) {
@@ -170,10 +166,8 @@ class NetworkSync {
           // Send mempool sync request
           const message = {
             type: 'MEMPOOL_SYNC_REQUEST',
-            data: {
-              timestamp: Date.now(),
-              networkId: this.blockchain.config?.networkId || 'unknown',
-            },
+            timestamp: Date.now(),
+            networkId: this.blockchain.config?.networkId || 'unknown',
           };
 
           if (this.sendMessage(peer, message)) {
