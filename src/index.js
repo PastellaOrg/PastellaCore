@@ -183,14 +183,8 @@ class PastellaDaemon {
       }
     }
 
-    // Start API server
+    // Start API server (API key is automatically generated in constructor)
     if (config.api.enabled !== false) {
-      // Set API key if provided via CLI
-      if (config.api?.apiKey) {
-        this.apiServer.setApiKey(config.api.apiKey);
-        logger.info('API', `API authentication enabled with key: ${config.api.apiKey.substring(0, 8)}...`);
-      }
-
       this.apiServer.start();
       // The API server will log its own binding information with the correct host
     }
@@ -1273,13 +1267,8 @@ async function main() {
 
   const apiKey = parseArgValue('--api-key');
   if (apiKey) {
-    if (apiKey.length < 8) {
-      logger.error('SYSTEM', 'API key must be at least 8 characters long.');
-      process.exit(1);
-    }
-    config.api = config.api || {};
-    config.api.apiKey = apiKey;
-    logger.info('SYSTEM', 'API authentication enabled');
+    logger.warn('SYSTEM', 'Note: API keys are now generated automatically on startup for security.');
+    logger.warn('SYSTEM', 'The --api-key flag is deprecated and will be ignored.');
   }
 
   // Parse host binding argument
