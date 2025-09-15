@@ -118,6 +118,41 @@ class NetworkSync {
   }
 
   /**
+   * Sync blockchain state with peers
+   */
+  async syncBlockchainState() {
+    try {
+      const peers = this.peerManager.getAllPeers();
+      if (peers.length === 0) return;
+
+      logger.debug('NETWORK_SYNC', 'Starting blockchain state synchronization with peers');
+
+      // Query latest block from all peers to check if we're behind
+      for (const peer of peers) {
+        try {
+          const message = {
+            type: 'QUERY_LATEST',
+            data: {
+              timestamp: Date.now(),
+              networkId: this.blockchain.config?.networkId || 'unknown',
+            },
+          };
+
+          if (this.sendMessage(peer, message)) {
+            logger.debug('NETWORK_SYNC', `Blockchain sync request sent to peer ${peer.url || 'unknown'}`);
+          }
+        } catch (error) {
+          logger.debug('NETWORK_SYNC', `Failed to send blockchain sync request to peer: ${error.message}`);
+        }
+      }
+
+      logger.debug('NETWORK_SYNC', 'Blockchain state sync requests completed');
+    } catch (error) {
+      logger.error('NETWORK_SYNC', `Blockchain state sync failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Sync mempool state with peers (Bitcoin-style)
    */
   async syncMempoolState() {
@@ -277,8 +312,10 @@ class NetworkSync {
    */
   broadcastNewTransaction(transaction) {
     const peers = this.peerManager.getAllPeers();
+    logger.info('NETWORK_SYNC', `🚀 Broadcasting transaction ${transaction.id} to ${peers.length} peers`);
+
     if (peers.length === 0) {
-      logger.debug('NETWORK_SYNC', 'No peers to broadcast new transaction to');
+      logger.warn('NETWORK_SYNC', '❌ No peers connected to broadcast transaction to!');
       return 0;
     }
 
@@ -290,11 +327,15 @@ class NetworkSync {
     let broadcastCount = 0;
     for (const peer of peers) {
       try {
+        logger.debug('NETWORK_SYNC', `📤 Sending transaction to peer ${peer.remoteAddress || 'unknown'}`);
         if (this.sendMessage(peer, message)) {
           broadcastCount++;
+          logger.info('NETWORK_SYNC', `✅ Transaction sent to peer ${peer.remoteAddress || 'unknown'}`);
+        } else {
+          logger.warn('NETWORK_SYNC', `❌ Failed to send transaction to peer ${peer.remoteAddress || 'unknown'}`);
         }
       } catch (error) {
-        logger.debug('NETWORK_SYNC', `Failed to broadcast transaction to peer: ${error.message}`);
+        logger.error('NETWORK_SYNC', `💥 Error broadcasting transaction to peer: ${error.message}`);
       }
     }
 

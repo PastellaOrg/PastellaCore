@@ -6,6 +6,7 @@
  * - GOVERNANCE: For governance/proposal transactions
  * - COINBASE: For mining rewards (automatically applied)
  * - PREMINE: For genesis block premine (automatically applied)
+ * - CONTRACT: For smart contract operations (automatically applied)
  *
  * User Tags:
  * - TRANSACTION: For regular user transactions (only tag users can create)
@@ -16,6 +17,7 @@ const TRANSACTION_TAGS = {
   COINBASE: 'COINBASE',
   TRANSACTION: 'TRANSACTION',
   PREMINE: 'PREMINE',
+  CONTRACT: 'CONTRACT',
 };
 
 module.exports = {

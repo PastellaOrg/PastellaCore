@@ -3,6 +3,7 @@ const express = require('express');
 
 const Block = require('../models/Block.js');
 const { Transaction, TransactionInput, TransactionOutput } = require('../models/Transaction.js');
+const ContractTransaction = require('../contracts/ContractTransaction.js');
 const { toAtomicUnits, fromAtomicUnits, formatAtomicUnits } = require('../utils/atomicUnits.js');
 const AuthMiddleware = require('../utils/auth.js');
 const { TRANSACTION_TAGS } = require('../utils/constants.js');
@@ -46,8 +47,8 @@ class APIServer {
     if (customApiKey) {
       logger.info('API_SERVER', `🔑 Using custom API key: ${this.apiKey}`);
     } else {
-    logger.info('API_SERVER', `🔑 Generated secure API key: ${this.apiKey}`);
-    logger.info('API_SERVER', '⚠️  IMPORTANT: Save this API key - it will be required for protected endpoints');
+      logger.info('API_SERVER', `🔑 Generated secure API key: ${this.apiKey}`);
+      logger.info('API_SERVER', '⚠️  IMPORTANT: Save this API key - it will be required for protected endpoints');
     }
 
     // Block submission synchronization
@@ -200,6 +201,9 @@ class APIServer {
     this.app.get('/api/network/message-validation', this.getMessageValidationStats.bind(this));
     this.app.post('/api/network/message-validation/reset', this.resetMessageValidationStats.bind(this)); // Behind Key
 
+    // Network diagnostics endpoint
+    this.app.get('/api/network/diagnostics', this.getNetworkDiagnostics.bind(this));
+
     // Partition handling endpoints
     this.app.get('/api/network/partition-stats', this.getPartitionStats.bind(this));
     this.app.post('/api/network/partition-reset', this.resetPartitionStats.bind(this)); // Behind Key
@@ -225,6 +229,30 @@ class APIServer {
 
     // Batch Processing configuration route (protected by API key)
     this.app.get('/api/batch-processing/config', this.getBatchProcessingConfig.bind(this)); // Behind Key
+
+    // SMART CONTRACT ENDPOINTS
+    // Contract fee information (public)
+    this.app.get('/api/contracts/fees', this.getContractFees.bind(this)); // Public
+
+    // Contract management routes (public read, protected write)
+    this.app.get('/api/contracts', this.getAllContracts.bind(this)); // Public
+    this.app.get('/api/contracts/:address', this.getContract.bind(this)); // Public
+    this.app.post('/api/contracts/deploy', this.auth.validateApiKey.bind(this.auth), this.deployContract.bind(this)); // Behind Key
+
+    // Token contract routes (public read, protected write)
+    this.app.get('/api/contracts/:address/tokens', this.getContractTokens.bind(this)); // Public
+    this.app.get('/api/contracts/:address/tokens/:tokenId', this.getToken.bind(this)); // Public
+    this.app.get('/api/contracts/:address/balance/:tokenId/:walletAddress', this.getTokenBalance.bind(this)); // Public
+
+    // Token operations (protected by API key)
+    this.app.post('/api/contracts/:address/createToken', this.auth.validateApiKey.bind(this.auth), this.createToken.bind(this)); // Behind Key
+    this.app.post('/api/contracts/:address/mint', this.auth.validateApiKey.bind(this.auth), this.mintTokens.bind(this)); // Behind Key
+    this.app.post('/api/contracts/:address/burn', this.auth.validateApiKey.bind(this.auth), this.burnTokens.bind(this)); // Behind Key
+    this.app.post('/api/contracts/:address/transfer', this.auth.validateApiKey.bind(this.auth), this.transferTokens.bind(this)); // Behind Key
+
+    // Permission management (protected by API key)
+    this.app.post('/api/contracts/:address/grantPermission', this.auth.validateApiKey.bind(this.auth), this.grantPermission.bind(this)); // Behind Key
+    this.app.post('/api/contracts/:address/revokePermission', this.auth.validateApiKey.bind(this.auth), this.revokePermission.bind(this)); // Behind Key
 
     // Checkpoint endpoints
     this.app.get('/api/blockchain/checkpoints', this.getCheckpoints.bind(this));
@@ -3248,6 +3276,965 @@ class APIServer {
         details: error.message,
       });
     }
+  }
+
+  // ================================
+  // SMART CONTRACT API ENDPOINTS
+  // ================================
+
+  /**
+   * Get contract fees information (public endpoint)
+   */
+  getContractFees(req, res) {
+    try {
+      const config = this.blockchain.config;
+
+      if (!config || !config.smartContracts) {
+        return res.status(404).json({
+          error: 'Smart contracts not configured'
+        });
+      }
+
+      const deploymentFees = {};
+      const executionFees = {};
+
+      // Convert deployment fees to human-readable format
+      if (config.smartContracts.deploymentFees) {
+        for (const [contractType, fee] of Object.entries(config.smartContracts.deploymentFees)) {
+          deploymentFees[contractType] = {
+            atomic: fee,
+            formatted: fromAtomicUnits(fee) + ' PAS'
+          };
+        }
+      }
+
+      // Convert execution fees to human-readable format
+      if (config.smartContracts.executionFees) {
+        for (const [method, fee] of Object.entries(config.smartContracts.executionFees)) {
+          executionFees[method] = {
+            atomic: fee,
+            formatted: fee === 0 ? 'Free' : fromAtomicUnits(fee) + ' PAS'
+          };
+        }
+      }
+
+      res.json({
+        enabled: config.smartContracts.enabled,
+        developmentAddress: config.smartContracts.developmentAddress,
+        requiredConfirmations: config.smartContracts.requiredConfirmations || 20,
+        minDevelopmentPayment: {
+          atomic: config.smartContracts.minDevelopmentPayment || 1,
+          formatted: fromAtomicUnits(config.smartContracts.minDevelopmentPayment || 1) + ' PAS'
+        },
+        deploymentFees,
+        executionFees,
+        paymentModel: {
+          deployment: {
+            type: 'full_to_dev',
+            description: 'Full deployment fee must be sent to development address',
+            example: 'Send 1.00 PAS to development address for TOKEN deployment'
+          },
+          execution: {
+            type: 'min_to_dev_plus_fee',
+            description: 'Minimum 0.00000001 PAS to development address + operation fee as transaction fee',
+            example: 'Send 0.00000001 PAS to dev address + 0.10 PAS transaction fee for createToken'
+          }
+        },
+        paymentRequirements: {
+          address: config.smartContracts.developmentAddress,
+          confirmations: config.smartContracts.requiredConfirmations || 20,
+          deployment: 'Send full fee amount to development address',
+          execution: 'Send minimum 0.00000001 PAS to development address + set transaction fee to operation cost'
+        },
+        note: 'Deployment fees go to developers, execution fees go to miners (with small dev payment)',
+        feeStructure: {
+          deployment: 'Full fee to development address (developers earn from contract creation)',
+          execution: 'Minimum amount to dev address + transaction fee to miners (miners earn from operations)',
+          readOperations: 'Free operations that only read data'
+        }
+      });
+    } catch (error) {
+      logger.error('API', `Error getting contract fees: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Get all contracts
+   */
+  getAllContracts(req, res) {
+    try {
+      const contracts = this.blockchain.getAllContracts();
+      res.json({
+        contracts,
+        count: contracts.length
+      });
+    } catch (error) {
+      logger.error('API', `Error getting contracts: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Get specific contract information
+   */
+  getContract(req, res) {
+    try {
+      const { address } = req.params;
+
+      if (!address) {
+        return res.status(400).json({
+          error: 'Contract address is required'
+        });
+      }
+
+      const contract = this.blockchain.getContract(address);
+      res.json(contract);
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        return res.status(404).json({
+          error: error.message
+        });
+      }
+
+      logger.error('API', `Error getting contract: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Deploy a new contract with mandatory payment verification
+   */
+  async deployContract(req, res) {
+    try {
+      const { contractType, initData, owner, paymentTxId } = req.body;
+
+      // Validate input
+      if (!contractType) {
+        return res.status(400).json({
+          error: 'Contract type is required'
+        });
+      }
+
+      if (!owner) {
+        return res.status(400).json({
+          error: 'Owner address is required'
+        });
+      }
+
+      if (!paymentTxId) {
+        return res.status(400).json({
+          error: 'Payment transaction ID is required for contract deployment'
+        });
+      }
+
+      // Validate owner address
+      if (!InputValidator.validateCryptocurrencyAddress(owner)) {
+        return res.status(400).json({
+          error: 'Invalid owner address format'
+        });
+      }
+
+      // Check if this payment has already been used for contract deployment
+      const existingPayment = this.blockchain.contractEngine.getPaymentStatus(paymentTxId);
+      if (existingPayment.verified || existingPayment.status === 'pending') {
+        const status = existingPayment.verified ? 'deployed' : 'pending deployment';
+        return res.status(409).json({
+          error: 'Payment transaction already used',
+          details: `Payment ${paymentTxId} was already used for ${existingPayment.operation} (${status})`,
+          existingContract: existingPayment.contractAddress || null,
+          status: existingPayment.status || 'deployed'
+        });
+      }
+
+      // PAYMENT SYSTEM: Get required deployment fee and inform user
+      let requiredFee;
+      try {
+        requiredFee = this.blockchain.contractEngine.getDeploymentFee(contractType);
+      } catch (error) {
+        return res.status(400).json({
+          error: `Deployment fee configuration error: ${error.message}`
+        });
+      }
+
+      // PAYMENT VERIFICATION: Check if payment transaction has enough confirmations
+      const requiredConfirmations = this.blockchain.config.smartContracts?.requiredConfirmations || 20;
+      const confirmations = this.blockchain.contractEngine.getTransactionConfirmations(paymentTxId);
+
+      if (confirmations < requiredConfirmations) {
+        return res.status(400).json({
+          error: 'Insufficient payment confirmations',
+          details: `Payment transaction requires ${requiredConfirmations} confirmations, currently has ${confirmations}`,
+          paymentTxId,
+          currentConfirmations: confirmations,
+          requiredConfirmations
+        });
+      }
+
+      // Create contract deployment transaction with payment reference
+      // Contract transactions have zero fee - payment is verified separately
+      const contractTx = ContractTransaction.createDeployment(
+        contractType,
+        initData,
+        owner,
+        0 // Contract transactions don't create fees from nothing
+      );
+
+      // PAYMENT SYSTEM: Store the payment transaction ID for verification during execution
+      contractTx.paymentTxId = paymentTxId;
+
+      // Generate predictable contract address
+      const contractAddress = this.blockchain.contractEngine.generateContractAddress();
+
+      // Add contract address to transaction data
+      contractTx.contractData.contractAddress = contractAddress;
+
+      // Add transaction to mempool
+      const added = await this.blockchain.addPendingTransaction(contractTx);
+
+      if (!added) {
+        return res.status(400).json({
+          error: 'Failed to add contract deployment transaction to mempool'
+        });
+      }
+
+      // PAYMENT TRACKING: Immediately track payment to prevent duplicates
+      // This prevents duplicate contract deployments using the same payment
+      this.blockchain.contractEngine.paymentTracker.set(paymentTxId, {
+        contractAddress,
+        operation: 'deployment',
+        type: contractType,
+        paidAmount: requiredFee,
+        verified: false, // Will be set to true when block is mined
+        timestamp: Date.now(),
+        owner,
+        status: 'pending' // Indicates transaction is in mempool
+      });
+
+      res.json({
+        success: true,
+        message: 'Contract deployment transaction created with payment verification',
+        transactionId: contractTx.id,
+        contractAddress: contractAddress,
+        contractType,
+        owner,
+        paymentTxId,
+        requiredFee: fromAtomicUnits(requiredFee) + ' PAS',
+        initData: initData || {},
+        note: 'Contract will be deployed to ' + contractAddress + ' once transaction is mined and payment is verified'
+      });
+    } catch (error) {
+      logger.error('API', `Error deploying contract: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Get contract tokens
+   */
+  getContractTokens(req, res) {
+    try {
+      const { address } = req.params;
+
+      if (!address) {
+        return res.status(400).json({
+          error: 'Contract address is required'
+        });
+      }
+
+      const contract = this.blockchain.getContract(address);
+
+      if (contract.type !== 'TOKEN') {
+        return res.status(400).json({
+          error: 'Contract is not a token contract'
+        });
+      }
+
+      res.json({
+        contractAddress: address,
+        tokens: contract.state.tokens || {},
+        tokenCount: contract.state.tokenCount || 0
+      });
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        return res.status(404).json({
+          error: error.message
+        });
+      }
+
+      logger.error('API', `Error getting contract tokens: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Get specific token information
+   */
+  getToken(req, res) {
+    try {
+      const { address, tokenId } = req.params;
+
+      if (!address || !tokenId) {
+        return res.status(400).json({
+          error: 'Contract address and token ID are required'
+        });
+      }
+
+      // Execute contract method to get token info
+      const result = this.blockchain.contractEngine.executeContract(
+        address,
+        'getToken',
+        { tokenId },
+        'system' // System call for read operations
+      );
+
+      res.json({
+        contractAddress: address,
+        tokenId,
+        tokenInfo: result.result
+      });
+    } catch (error) {
+      if (error.message.includes('not found') || error.message.includes('does not exist')) {
+        return res.status(404).json({
+          error: error.message
+        });
+      }
+
+      logger.error('API', `Error getting token: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Get token balance for a wallet address
+   */
+  getTokenBalance(req, res) {
+    try {
+      const { address, tokenId, walletAddress } = req.params;
+
+      if (!address || !tokenId || !walletAddress) {
+        return res.status(400).json({
+          error: 'Contract address, token ID, and wallet address are required'
+        });
+      }
+
+      // Execute contract method to get balance
+      const result = this.blockchain.contractEngine.executeContract(
+        address,
+        'getBalance',
+        { tokenId, address: walletAddress },
+        'system' // System call for read operations
+      );
+
+      res.json({
+        contractAddress: address,
+        tokenId,
+        walletAddress,
+        balance: result.result
+      });
+    } catch (error) {
+      if (error.message.includes('not found') || error.message.includes('does not exist')) {
+        return res.status(404).json({
+          error: error.message
+        });
+      }
+
+      logger.error('API', `Error getting token balance: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Create a new token in a contract with mandatory payment verification
+   */
+  async createToken(req, res) {
+    try {
+      const { address } = req.params;
+      const { name, symbol, decimals, maxSupply, caller, paymentTxId } = req.body;
+
+      if (!address || !name || !symbol || !caller) {
+        return res.status(400).json({
+          error: 'Contract address, name, symbol, and caller are required'
+        });
+      }
+
+      if (!paymentTxId) {
+        return res.status(400).json({
+          error: 'Payment transaction ID is required for createToken operation'
+        });
+      }
+
+      // Validate caller address
+      if (!InputValidator.validateCryptocurrencyAddress(caller)) {
+        return res.status(400).json({
+          error: 'Invalid caller address format'
+        });
+      }
+
+      // PAYMENT SYSTEM: Get required execution fee
+      let requiredFee;
+      try {
+        requiredFee = this.blockchain.contractEngine.getExecutionFee('createToken');
+      } catch (error) {
+        return res.status(400).json({
+          error: `Execution fee configuration error: ${error.message}`
+        });
+      }
+
+      // Create contract execution transaction with payment reference
+      const contractTx = ContractTransaction.createExecution(
+        address,
+        'createToken',
+        { name, symbol, decimals, maxSupply },
+        caller,
+        requiredFee // Set the actual required fee
+      );
+
+      // PAYMENT SYSTEM: Store the payment transaction ID for verification during execution
+      contractTx.paymentTxId = paymentTxId;
+
+      // Add transaction to mempool
+      const added = await this.blockchain.addPendingTransaction(contractTx);
+
+      if (!added) {
+        return res.status(400).json({
+          error: 'Failed to add token creation transaction to mempool'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Token creation transaction created with payment verification',
+        transactionId: contractTx.id,
+        contractAddress: address,
+        tokenSymbol: symbol,
+        caller,
+        paymentTxId,
+        requiredFee: fromAtomicUnits(requiredFee) + ' PAS'
+      });
+    } catch (error) {
+      logger.error('API', `Error creating token: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Mint tokens
+   */
+  async mintTokens(req, res) {
+    try {
+      const { address } = req.params;
+      const { tokenId, to, amount, caller, paymentTxId } = req.body;
+
+      if (!address || !tokenId || !to || !amount || !caller) {
+        return res.status(400).json({
+          error: 'Contract address, token ID, recipient address, amount, and caller are required'
+        });
+      }
+
+      if (!paymentTxId) {
+        return res.status(400).json({
+          error: 'Payment transaction ID is required for mint operation'
+        });
+      }
+
+      // Validate addresses
+      if (!InputValidator.validateCryptocurrencyAddress(caller) || !InputValidator.validateCryptocurrencyAddress(to)) {
+        return res.status(400).json({
+          error: 'Invalid address format'
+        });
+      }
+
+      // Validate amount
+      const validAmount = InputValidator.validateAmount(amount, { min: 0 });
+      if (validAmount === null || validAmount <= 0) {
+        return res.status(400).json({
+          error: 'Invalid amount'
+        });
+      }
+
+      // PAYMENT SYSTEM: Get required execution fee
+      let requiredFee;
+      try {
+        requiredFee = this.blockchain.contractEngine.getExecutionFee('mint');
+      } catch (error) {
+        return res.status(400).json({
+          error: `Execution fee configuration error: ${error.message}`
+        });
+      }
+
+      // Create contract execution transaction with payment reference
+      const contractTx = ContractTransaction.createExecution(
+        address,
+        'mint',
+        { tokenId, to, amount: validAmount },
+        caller,
+        requiredFee
+      );
+
+      // PAYMENT SYSTEM: Store the payment transaction ID for verification
+      contractTx.paymentTxId = paymentTxId;
+
+      // Add transaction to mempool
+      const added = await this.blockchain.addPendingTransaction(contractTx);
+
+      if (!added) {
+        return res.status(400).json({
+          error: 'Failed to add mint transaction to mempool'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Token mint transaction created with payment verification',
+        transactionId: contractTx.id,
+        contractAddress: address,
+        tokenId,
+        to,
+        amount: validAmount,
+        caller,
+        paymentTxId,
+        requiredFee: fromAtomicUnits(requiredFee) + ' PAS'
+      });
+    } catch (error) {
+      logger.error('API', `Error minting tokens: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Burn tokens
+   */
+  async burnTokens(req, res) {
+    try {
+      const { address } = req.params;
+      const { tokenId, from, amount, caller, paymentTxId } = req.body;
+
+      if (!address || !tokenId || !from || !amount || !caller) {
+        return res.status(400).json({
+          error: 'Contract address, token ID, source address, amount, and caller are required'
+        });
+      }
+
+      if (!paymentTxId) {
+        return res.status(400).json({
+          error: 'Payment transaction ID is required for burn operation'
+        });
+      }
+
+      // Validate addresses
+      if (!InputValidator.validateCryptocurrencyAddress(caller) || !InputValidator.validateCryptocurrencyAddress(from)) {
+        return res.status(400).json({
+          error: 'Invalid address format'
+        });
+      }
+
+      // Validate amount
+      const validAmount = InputValidator.validateAmount(amount, { min: 0 });
+      if (validAmount === null || validAmount <= 0) {
+        return res.status(400).json({
+          error: 'Invalid amount'
+        });
+      }
+
+      // PAYMENT SYSTEM: Get required execution fee
+      let requiredFee;
+      try {
+        requiredFee = this.blockchain.contractEngine.getExecutionFee('burn');
+      } catch (error) {
+        return res.status(400).json({
+          error: `Execution fee configuration error: ${error.message}`
+        });
+      }
+
+      // Create contract execution transaction with payment reference
+      const contractTx = ContractTransaction.createExecution(
+        address,
+        'burn',
+        { tokenId, from, amount: validAmount },
+        caller,
+        requiredFee
+      );
+
+      // PAYMENT SYSTEM: Store the payment transaction ID for verification
+      contractTx.paymentTxId = paymentTxId;
+
+      // Add transaction to mempool
+      const added = await this.blockchain.addPendingTransaction(contractTx);
+
+      if (!added) {
+        return res.status(400).json({
+          error: 'Failed to add burn transaction to mempool'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Token burn transaction created with payment verification',
+        transactionId: contractTx.id,
+        contractAddress: address,
+        tokenId,
+        from,
+        amount: validAmount,
+        caller,
+        paymentTxId,
+        requiredFee: fromAtomicUnits(requiredFee) + ' PAS'
+      });
+    } catch (error) {
+      logger.error('API', `Error burning tokens: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Transfer tokens
+   */
+  async transferTokens(req, res) {
+    try {
+      const { address } = req.params;
+      const { tokenId, from, to, amount, caller, paymentTxId } = req.body;
+
+      if (!address || !tokenId || !from || !to || !amount || !caller) {
+        return res.status(400).json({
+          error: 'Contract address, token ID, from/to addresses, amount, and caller are required'
+        });
+      }
+
+      if (!paymentTxId) {
+        return res.status(400).json({
+          error: 'Payment transaction ID is required for transfer operation'
+        });
+      }
+
+      // Validate addresses
+      if (!InputValidator.validateCryptocurrencyAddress(caller) ||
+          !InputValidator.validateCryptocurrencyAddress(from) ||
+          !InputValidator.validateCryptocurrencyAddress(to)) {
+        return res.status(400).json({
+          error: 'Invalid address format'
+        });
+      }
+
+      // Validate amount
+      const validAmount = InputValidator.validateAmount(amount, { min: 0 });
+      if (validAmount === null || validAmount <= 0) {
+        return res.status(400).json({
+          error: 'Invalid amount'
+        });
+      }
+
+      // PAYMENT SYSTEM: Get required execution fee
+      let requiredFee;
+      try {
+        requiredFee = this.blockchain.contractEngine.getExecutionFee('transfer');
+      } catch (error) {
+        return res.status(400).json({
+          error: `Execution fee configuration error: ${error.message}`
+        });
+      }
+
+      // Create contract execution transaction with payment reference
+      const contractTx = ContractTransaction.createExecution(
+        address,
+        'transfer',
+        { tokenId, from, to, amount: validAmount },
+        caller,
+        requiredFee
+      );
+
+      // PAYMENT SYSTEM: Store the payment transaction ID for verification
+      contractTx.paymentTxId = paymentTxId;
+
+      // Add transaction to mempool
+      const added = await this.blockchain.addPendingTransaction(contractTx);
+
+      if (!added) {
+        return res.status(400).json({
+          error: 'Failed to add transfer transaction to mempool'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Token transfer transaction created with payment verification',
+        transactionId: contractTx.id,
+        contractAddress: address,
+        tokenId,
+        from,
+        to,
+        amount: validAmount,
+        caller,
+        paymentTxId,
+        requiredFee: fromAtomicUnits(requiredFee) + ' PAS'
+      });
+    } catch (error) {
+      logger.error('API', `Error transferring tokens: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Grant permission to an address
+   */
+  async grantPermission(req, res) {
+    try {
+      const { address } = req.params;
+      const { to, permission, caller, paymentTxId } = req.body;
+
+      if (!address || !to || !permission || !caller) {
+        return res.status(400).json({
+          error: 'Contract address, recipient address, permission, and caller are required'
+        });
+      }
+
+      if (!paymentTxId) {
+        return res.status(400).json({
+          error: 'Payment transaction ID is required for grantPermission operation'
+        });
+      }
+
+      // Validate addresses
+      if (!InputValidator.validateCryptocurrencyAddress(caller) || !InputValidator.validateCryptocurrencyAddress(to)) {
+        return res.status(400).json({
+          error: 'Invalid address format'
+        });
+      }
+
+      // PAYMENT SYSTEM: Get required execution fee
+      let requiredFee;
+      try {
+        requiredFee = this.blockchain.contractEngine.getExecutionFee('grantPermission');
+      } catch (error) {
+        return res.status(400).json({
+          error: `Execution fee configuration error: ${error.message}`
+        });
+      }
+
+      // Create contract execution transaction with payment reference
+      const contractTx = ContractTransaction.createExecution(
+        address,
+        'grantPermission',
+        { to, permission },
+        caller,
+        requiredFee
+      );
+
+      // PAYMENT SYSTEM: Store the payment transaction ID for verification
+      contractTx.paymentTxId = paymentTxId;
+
+      // Add transaction to mempool
+      const added = await this.blockchain.addPendingTransaction(contractTx);
+
+      if (!added) {
+        return res.status(400).json({
+          error: 'Failed to add permission grant transaction to mempool'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Permission grant transaction created with payment verification',
+        transactionId: contractTx.id,
+        contractAddress: address,
+        to,
+        permission,
+        caller,
+        paymentTxId,
+        requiredFee: fromAtomicUnits(requiredFee) + ' PAS'
+      });
+    } catch (error) {
+      logger.error('API', `Error granting permission: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Revoke permission from an address
+   */
+  async revokePermission(req, res) {
+    try {
+      const { address } = req.params;
+      const { from, permission, caller, paymentTxId } = req.body;
+
+      if (!address || !from || !permission || !caller) {
+        return res.status(400).json({
+          error: 'Contract address, target address, permission, and caller are required'
+        });
+      }
+
+      if (!paymentTxId) {
+        return res.status(400).json({
+          error: 'Payment transaction ID is required for revokePermission operation'
+        });
+      }
+
+      // Validate addresses
+      if (!InputValidator.validateCryptocurrencyAddress(caller) || !InputValidator.validateCryptocurrencyAddress(from)) {
+        return res.status(400).json({
+          error: 'Invalid address format'
+        });
+      }
+
+      // PAYMENT SYSTEM: Get required execution fee
+      let requiredFee;
+      try {
+        requiredFee = this.blockchain.contractEngine.getExecutionFee('revokePermission');
+      } catch (error) {
+        return res.status(400).json({
+          error: `Execution fee configuration error: ${error.message}`
+        });
+      }
+
+      // Create contract execution transaction with payment reference
+      const contractTx = ContractTransaction.createExecution(
+        address,
+        'revokePermission',
+        { from, permission },
+        caller,
+        requiredFee
+      );
+
+      // PAYMENT SYSTEM: Store the payment transaction ID for verification
+      contractTx.paymentTxId = paymentTxId;
+
+      // Add transaction to mempool
+      const added = await this.blockchain.addPendingTransaction(contractTx);
+
+      if (!added) {
+        return res.status(400).json({
+          error: 'Failed to add permission revoke transaction to mempool'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Permission revoke transaction created with payment verification',
+        transactionId: contractTx.id,
+        contractAddress: address,
+        from,
+        permission,
+        caller,
+        paymentTxId,
+        requiredFee: fromAtomicUnits(requiredFee) + ' PAS'
+      });
+    } catch (error) {
+      logger.error('API', `Error revoking permission: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Get comprehensive network diagnostics for debugging P2P issues
+   */
+  getNetworkDiagnostics(req, res) {
+    try {
+      const networkSync = this.networkSync;
+      const peerManager = this.peerManager;
+      const memoryPoolManager = this.blockchain.memoryPoolManager;
+
+      // Get all peers and their connection states
+      const peers = peerManager.getAllPeers();
+      const peerDetails = peers.map(peer => ({
+        remoteAddress: peer.remoteAddress || 'unknown',
+        url: peer.url || 'unknown',
+        readyState: peer.readyState,
+        readyStateText: this.getReadyStateText(peer.readyState),
+        isConnected: peer.readyState === 1, // WebSocket.OPEN
+        connectionTime: peer.connectionTime || null,
+        lastMessageTime: peer.lastMessageTime || null
+      }));
+
+      // Get mempool status
+      const mempoolStatus = {
+        pendingTransactions: memoryPoolManager.getPendingTransactions(),
+        mempoolSize: memoryPoolManager.pendingTransactions.size,
+        recentTransactions: Array.from(memoryPoolManager.pendingTransactions.values()).slice(-5).map(tx => ({
+          id: tx.id,
+          type: tx.type,
+          tag: tx.tag,
+          timestamp: tx.timestamp
+        }))
+      };
+
+      // Get network sync status
+      const syncStatus = networkSync.getNetworkSyncStatus();
+
+      // Get last broadcast attempts (if available)
+      const diagnostics = {
+        timestamp: Date.now(),
+        peerConnectivity: {
+          totalPeers: peers.length,
+          connectedPeers: peerDetails.filter(p => p.isConnected).length,
+          peerDetails
+        },
+        mempool: mempoolStatus,
+        networkSync: syncStatus,
+        broadcastCapability: {
+          canBroadcast: peers.length > 0 && peerDetails.some(p => p.isConnected),
+          lastBroadcastTest: 'Not implemented yet'
+        }
+      };
+
+      res.json(diagnostics);
+    } catch (error) {
+      logger.error('API', `Error getting network diagnostics: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Convert WebSocket readyState to human-readable text
+   */
+  getReadyStateText(readyState) {
+    const states = {
+      0: 'CONNECTING',
+      1: 'OPEN',
+      2: 'CLOSING',
+      3: 'CLOSED'
+    };
+    return states[readyState] || 'UNKNOWN';
   }
 }
 

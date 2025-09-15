@@ -663,7 +663,7 @@ class Block {
     return {
       index: this.index,
       timestamp: this.timestamp,
-      transactions: this.transactions,
+      transactions: this.transactions.map(tx => tx.toJSON ? tx.toJSON() : tx),
       previousHash: this.previousHash,
       nonce: this.nonce,
       difficulty: this.difficulty,

@@ -149,21 +149,30 @@ class TransactionManager {
         return { valid: false, reason: 'Transaction has expired' };
       }
 
-      // Validate outputs
+      // Validate outputs (allow contract transactions to have no outputs)
       if (!transaction.outputs || transaction.outputs.length === 0) {
-        return { valid: false, reason: 'Transaction has no outputs' };
+        // Contract transactions don't need traditional outputs
+        if (transaction.tag !== 'CONTRACT') {
+          return { valid: false, reason: 'Transaction has no outputs' };
+        }
       }
 
-      // Calculate total output amount
+      // Calculate total output amount (allow zero for contract transactions)
       const totalOutputAmount = transaction.outputs.reduce((sum, output) => sum + (output.amount || 0), 0);
       if (totalOutputAmount <= 0) {
-        return { valid: false, reason: 'Transaction output amount must be positive' };
+        // Contract transactions can have zero output amount
+        if (transaction.tag !== 'CONTRACT') {
+          return { valid: false, reason: 'Transaction output amount must be positive' };
+        }
       }
 
-      // For non-coinbase transactions, validate inputs and UTXOs
+      // For non-coinbase transactions, validate inputs and UTXOs (except contract transactions)
       if (!transaction.isCoinbase) {
         if (!transaction.inputs || transaction.inputs.length === 0) {
-          return { valid: false, reason: 'Non-coinbase transaction must have inputs' };
+          // Contract transactions don't need traditional inputs
+          if (transaction.tag !== 'CONTRACT') {
+            return { valid: false, reason: 'Non-coinbase transaction must have inputs' };
+          }
         }
 
         // Calculate total input amount from UTXOs
@@ -184,12 +193,15 @@ class TransactionManager {
           totalInputAmount += utxo.amount;
         }
 
-        // Validate input/output balance (input must cover output + fee)
+        // Validate input/output balance (input must cover output + fee) - except for contract transactions
         if (totalInputAmount < totalOutputAmount + transaction.fee) {
-          return {
-            valid: false,
-            reason: `Insufficient input amount. Input: ${totalInputAmount}, Output: ${totalOutputAmount}, Fee: ${transaction.fee}`,
-          };
+          // Contract transactions handle fees through separate payment verification
+          if (transaction.tag !== 'CONTRACT') {
+            return {
+              valid: false,
+              reason: `Insufficient input amount. Input: ${totalInputAmount}, Output: ${totalOutputAmount}, Fee: ${transaction.fee}`,
+            };
+          }
         }
       }
 

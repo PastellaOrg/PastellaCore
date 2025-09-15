@@ -77,5 +77,28 @@
     "enableAPI": false,
     "maxConnections": 50,
     "advertise": true
+  },
+  "smartContracts": {
+    "enabled": true,
+    "developmentAddress": "1MtcD8Tmq69oobt4kA9wYGgBhfgTmcnRwC",
+    "requiredConfirmations": 20,
+    "minDevelopmentPayment": 1,
+    "deploymentFees": {
+      "TOKEN": 100000000
+    },
+    "executionFees": {
+      "createToken": 10000000,
+      "mint": 5000000,
+      "burn": 2000000,
+      "transfer": 1000000,
+      "grantPermission": 7500000,
+      "revokePermission": 7500000,
+      "getBalance": 0,
+      "getToken": 0
+    },
+    "paymentModel": {
+      "deployment": "full_to_dev",
+      "execution": "min_to_dev_plus_fee"
+    }
   }
 }

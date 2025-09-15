@@ -448,7 +448,7 @@ class MessageHandler {
       }
 
       const blockTransactionHashes = block.transactions.map(tx => tx.hash);
-      const pendingTransactions = this.blockchain.memoryPool.getPendingTransactions();
+      const pendingTransactions = this.blockchain.memoryPoolManager.getPendingTransactions();
 
       // Find transactions in mempool that are now in the block
       const transactionsToRemove = pendingTransactions.filter(tx => blockTransactionHashes.includes(tx.hash));
@@ -460,7 +460,7 @@ class MessageHandler {
         );
 
         // Remove transactions from mempool
-        this.blockchain.memoryPool.removeTransactions(transactionsToRemove);
+        this.blockchain.memoryPoolManager.removeTransactions(transactionsToRemove);
 
         // Log the cleanup
         transactionsToRemove.forEach(tx => {
@@ -482,20 +482,24 @@ class MessageHandler {
    * @param peerAddress
    */
   handleNewTransaction(ws, message, peerAddress) {
-    logger.debug('MESSAGE_HANDLER', `New transaction announced by ${peerAddress}`);
+    logger.info('MESSAGE_HANDLER', `📥 NEW TRANSACTION received from ${peerAddress}`);
+    logger.debug('MESSAGE_HANDLER', `Transaction ID: ${message.data?.id || 'unknown'}`);
 
     try {
       // Convert plain object to proper Transaction instance
       const newTransaction = Transaction.fromJSON(message.data);
+      logger.debug('MESSAGE_HANDLER', `Transaction converted successfully: ${newTransaction.id}`);
 
       if (this.blockchain.addPendingTransaction(newTransaction)) {
-        logger.info('MESSAGE_HANDLER', 'New transaction added from peer');
+        logger.info('MESSAGE_HANDLER', `✅ New transaction ${newTransaction.id} added to mempool from peer ${peerAddress}`);
 
         // CRITICAL: Broadcast to other peers (Bitcoin-style relay)
         this.broadcastTransactionToOtherPeers(newTransaction, peerAddress);
+      } else {
+        logger.warn('MESSAGE_HANDLER', `❌ Transaction ${newTransaction.id} rejected by mempool (duplicate/invalid)`);
       }
     } catch (error) {
-      logger.error('MESSAGE_HANDLER', `Failed to process new transaction from ${peerAddress}: ${error.message}`);
+      logger.error('MESSAGE_HANDLER', `💥 Failed to process new transaction from ${peerAddress}: ${error.message}`);
       logger.error('MESSAGE_HANDLER', `Error stack: ${error.stack}`);
     }
   }
@@ -510,7 +514,7 @@ class MessageHandler {
     logger.debug('MESSAGE_HANDLER', `Mempool sync request from ${peerAddress}`);
 
     try {
-      const pendingTransactions = this.blockchain.memoryPool.getPendingTransactions();
+      const pendingTransactions = this.blockchain.memoryPoolManager.getPendingTransactions();
       const mempoolHashes = pendingTransactions.map(tx => tx.hash);
 
       // Send mempool inventory (list of transaction hashes)
@@ -540,7 +544,7 @@ class MessageHandler {
 
     try {
       const peerTransactionHashes = message.data.transactionHashes || [];
-      const localTransactionHashes = this.blockchain.memoryPool.getPendingTransactions().map(tx => tx.hash);
+      const localTransactionHashes = this.blockchain.memoryPoolManager.getPendingTransactions().map(tx => tx.hash);
 
       // Find transactions we don't have
       const missingTransactions = peerTransactionHashes.filter(hash => !localTransactionHashes.includes(hash));
@@ -578,7 +582,7 @@ class MessageHandler {
 
     try {
       const requestedHashes = message.data.transactionHashes || [];
-      const pendingTransactions = this.blockchain.memoryPool.getPendingTransactions();
+      const pendingTransactions = this.blockchain.memoryPoolManager.getPendingTransactions();
 
       // Send requested transactions
       for (const hash of requestedHashes) {
@@ -831,6 +835,22 @@ class MessageHandler {
       }
 
       logger.info('MESSAGE_HANDLER', `Handshake completed successfully with ${peerAddress}`);
+
+      // MEMPOOL SYNC: Request current mempool from newly connected peer
+      try {
+        const mempoolSyncMessage = {
+          type: 'MEMPOOL_SYNC_REQUEST',
+          data: {
+            timestamp: Date.now(),
+            networkId: this.blockchain.config?.networkId || 'unknown',
+          },
+        };
+
+        this.sendMessage(ws, mempoolSyncMessage);
+        logger.debug('MESSAGE_HANDLER', `Mempool sync request sent to newly connected peer ${peerAddress}`);
+      } catch (error) {
+        logger.debug('MESSAGE_HANDLER', `Failed to request mempool sync from ${peerAddress}: ${error.message}`);
+      }
     } catch (error) {
       logger.error('MESSAGE_HANDLER', `Error during handshake with ${peerAddress}: ${error.message}`);
 

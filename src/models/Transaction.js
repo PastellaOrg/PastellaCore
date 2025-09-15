@@ -312,9 +312,9 @@ class Transaction {
       // CRITICAL: Validate random component strength even for historical blocks
       // Skip randomness validation for genesis transactions
       if (!isGenesisTransaction) {
-      const randomPart = parts[1];
+        const randomPart = parts[1];
         if (!randomPart || randomPart.length < 8) {
-        throw new Error('Historical atomic sequence has weak randomness - potential manipulation');
+          throw new Error('Historical atomic sequence has weak randomness - potential manipulation');
         }
       }
     }
@@ -574,6 +574,8 @@ class Transaction {
    */
   verify() {
     if (this.isCoinbase) return true;
+    // Contract transactions don't have traditional signatures to verify
+    if (this.tag === 'CONTRACT') return true;
 
     return this.inputs.every(input => {
       const dataToSign = this.getDataToSign();
@@ -698,10 +700,13 @@ class Transaction {
       `Transaction data: timestamp=${this.timestamp}, expiresAt=${this.expiresAt}, fee=${this.fee}, nonce=${this.nonce}`
     );
 
-    // Check outputs exist
+    // Check outputs exist (allow contract transactions to have no outputs)
     if (this.outputs.length === 0) {
-      logger.debug('TRANSACTION', `Transaction validation failed: no outputs`);
-      return false;
+      // Contract transactions don't need traditional outputs
+      if (this.tag !== 'CONTRACT') {
+        logger.debug('TRANSACTION', `Transaction validation failed: no outputs`);
+        return false;
+      }
     }
     logger.debug('TRANSACTION', `Outputs check passed: ${this.outputs.length} outputs`);
 
@@ -763,8 +768,8 @@ class Transaction {
 
     logger.debug('TRANSACTION', `Validating non-coinbase transaction...`);
 
-    // Validate minimum fee if config is provided
-    if (config && config.wallet && config.wallet.minFee !== undefined) {
+    // Validate minimum fee if config is provided (except contract transactions)
+    if (config && config.wallet && config.wallet.minFee !== undefined && this.tag !== 'CONTRACT') {
       logger.debug(
         'TRANSACTION',
         `Checking minimum fee requirement: minFee=${config.wallet.minFee}, actualFee=${this.fee}`
@@ -776,6 +781,8 @@ class Transaction {
         return false;
       }
       logger.debug('TRANSACTION', `Minimum fee check passed`);
+    } else if (this.tag === 'CONTRACT') {
+      logger.debug('TRANSACTION', `Skipping minimum fee check for contract transaction`);
     }
 
     // Validate fee is a positive number
@@ -787,20 +794,26 @@ class Transaction {
     }
     logger.debug('TRANSACTION', `Fee validation passed`);
 
-    // For non-coinbase transactions, validate inputs and outputs
+    // For non-coinbase transactions, validate inputs and outputs (except contract transactions)
     logger.debug('TRANSACTION', `Validating inputs: ${this.inputs.length} inputs`);
     if (this.inputs.length === 0) {
-      logger.debug('TRANSACTION', `Transaction validation failed: no inputs for non-coinbase transaction`);
-      return false; // Must have inputs
+      // Contract transactions don't need traditional inputs
+      if (this.tag !== 'CONTRACT') {
+        logger.debug('TRANSACTION', `Transaction validation failed: no inputs for non-coinbase transaction`);
+        return false; // Must have inputs
+      }
     }
     logger.debug('TRANSACTION', `Inputs validation passed`);
 
-    // Validate output amount is positive
+    // Validate output amount is positive (allow zero for contract transactions)
     logger.debug('TRANSACTION', `Validating output amount: ${outputAmount}`);
     if (outputAmount <= 0) {
-      logger.debug('TRANSACTION', `Transaction validation failed: invalid output amount`);
-      logger.debug('TRANSACTION', `  outputAmount: ${outputAmount}`);
-      return false;
+      // Contract transactions can have zero output amount
+      if (this.tag !== 'CONTRACT') {
+        logger.debug('TRANSACTION', `Transaction validation failed: invalid output amount`);
+        logger.debug('TRANSACTION', `  outputAmount: ${outputAmount}`);
+        return false;
+      }
     }
     logger.debug('TRANSACTION', `Output amount validation passed`);
 

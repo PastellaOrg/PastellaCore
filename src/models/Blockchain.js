@@ -22,6 +22,10 @@ const { Transaction } = require('./Transaction');
 const TransactionManager = require('./TransactionManager');
 const UTXOManager = require('./UTXOManager');
 
+// Import contract system
+const { ContractEngine } = require('../contracts/ContractEngine');
+const ContractTransaction = require('../contracts/ContractTransaction');
+
 /**
  * MODULAR & SECURE BLOCKCHAIN CLASS
  *
@@ -64,6 +68,9 @@ class Blockchain {
 
     // CRITICAL: Initialize checkpoint manager for blockchain validation
     this.checkpointManager = new CheckpointManager(dataDir);
+
+    // Initialize contract engine for smart contract support
+    this.contractEngine = new ContractEngine(this);
 
     // CRITICAL: Historical transaction database for replay attack protection
     this.historicalTransactions = new Map(); // Key: "nonce:senderAddress", Value: {txId, blockHeight, timestamp}
@@ -337,6 +344,9 @@ class Blockchain {
       // CRITICAL: Update UTXO set BEFORE historical database to prevent race condition double-spend attacks
       this.utxoManager.updateUTXOSet(block);
 
+      // Process contract transactions in the block
+      this.processContractTransactions(block);
+
       // Add transactions to historical database for replay attack protection (after UTXO update)
       this.addTransactionsToHistoricalDatabase(block);
 
@@ -420,9 +430,21 @@ class Blockchain {
 
   /**
    * CRITICAL: Get sender address from transaction inputs with cryptographic validation
+   * For contract transactions, extract from contractData instead of inputs
    * @param transaction
    */
   getTransactionSenderAddress(transaction) {
+    // SPECIAL HANDLING: Contract transactions store sender in contractData
+    if (transaction.contractData && transaction.tag === 'CONTRACT') {
+      const contractSender = transaction.contractData.owner || transaction.contractData.caller;
+      if (contractSender) {
+        logger.debug('BLOCKCHAIN', `Extracted contract sender address: ${contractSender}`);
+        return contractSender;
+      }
+      logger.warn('BLOCKCHAIN', 'Contract transaction missing owner/caller in contractData');
+      return null;
+    }
+
     if (!transaction.inputs || transaction.inputs.length === 0) {
       logger.warn('BLOCKCHAIN', 'Cannot extract sender address: no transaction inputs');
       return null;
@@ -1130,6 +1152,8 @@ class Blockchain {
         // CRITICAL: Save historical transaction database for replay attack protection
         historicalTransactions: Array.from(this.historicalTransactions.entries()),
         historicalTransactionIds: Array.from(this.historicalTransactionIds),
+        // Save contract engine state
+        contracts: this.contractEngine.serialize(),
         // CRITICAL: Save nonce collision tracking data
         globalNonceUsage: Array.from(this.globalNonceUsage.entries()),
       };
@@ -1386,6 +1410,21 @@ class Blockchain {
           logger.debug('BLOCKCHAIN', `No historical transaction IDs data found in file`);
         }
 
+        // SMART CONTRACTS: Restore contract engine state
+        if (data.contracts) {
+          logger.debug('BLOCKCHAIN', `Loading contract engine state from file`);
+          this.contractEngine.deserialize(data.contracts);
+          logger.info('BLOCKCHAIN', `Loaded ${this.contractEngine.contracts.size} contracts from file`);
+
+          // Clean up any failed contract deployments
+          const cleanedCount = this.contractEngine.cleanupFailedDeployments();
+          if (cleanedCount > 0) {
+            logger.info('BLOCKCHAIN', `Cleaned up ${cleanedCount} failed contract deployment payments on startup`);
+          }
+        } else {
+          logger.debug('BLOCKCHAIN', `No contract data found in file`);
+        }
+
         // CRITICAL: Load nonce collision tracking data
         if (data.globalNonceUsage && Array.isArray(data.globalNonceUsage)) {
           logger.debug('BLOCKCHAIN', `Loading ${data.globalNonceUsage.length} nonce usage entries from file`);
@@ -1503,6 +1542,130 @@ class Blockchain {
   }
 
   /**
+   * Process contract transactions in a block
+   * @param {Block} block - Block containing transactions to process
+   */
+  processContractTransactions(block) {
+    try {
+      // Filter for contract transactions
+      const contractTransactions = block.transactions.filter(tx =>
+        tx.tag === 'CONTRACT' || tx instanceof ContractTransaction
+      );
+
+      if (contractTransactions.length === 0) {
+        return; // No contract transactions to process
+      }
+
+      logger.debug('BLOCKCHAIN', `Processing ${contractTransactions.length} contract transactions in block ${block.index}`);
+
+      for (const transaction of contractTransactions) {
+        try {
+          // Convert to ContractTransaction if needed
+          let contractTx = transaction;
+          if (!(transaction instanceof ContractTransaction)) {
+            if (transaction.contractData) {
+              contractTx = ContractTransaction.fromJSON(transaction);
+            } else {
+              // Handle legacy contract transactions that may be missing contractData
+              logger.warn('BLOCKCHAIN', `Contract transaction ${transaction.id} missing contractData field - skipping processing`);
+              continue;
+            }
+          }
+
+          if (contractTx.isDeployment()) {
+            // Handle contract deployment
+            this.executeContractDeployment(contractTx);
+          } else if (contractTx.isExecution()) {
+            // Handle contract execution
+            this.executeContractMethod(contractTx);
+          }
+
+          logger.debug('BLOCKCHAIN', `Successfully processed contract transaction ${transaction.id}`);
+        } catch (error) {
+          logger.error('BLOCKCHAIN', `Failed to process contract transaction ${transaction.id}: ${error.message}`);
+          // Contract execution failures don't invalidate the block but are recorded
+        }
+      }
+    } catch (error) {
+      logger.error('BLOCKCHAIN', `Error processing contract transactions: ${error.message}`);
+    }
+  }
+
+  /**
+   * Execute contract deployment transaction
+   * @param {ContractTransaction} contractTx - Contract deployment transaction
+   */
+  executeContractDeployment(contractTx) {
+    const { contractType, initData, owner } = contractTx.contractData;
+
+    logger.info('BLOCKCHAIN', `Deploying ${contractType} contract for ${owner} with payment ${contractTx.id}`);
+
+    // PAYMENT SYSTEM: Pass the transaction ID as payment verification
+    const result = this.contractEngine.deployContract(contractType, initData, owner, contractTx.id);
+
+    logger.info('BLOCKCHAIN', `Contract deployed at address ${result.contractAddress} with verified payment`);
+    return result;
+  }
+
+  /**
+   * Execute contract method call transaction
+   * @param {ContractTransaction} contractTx - Contract execution transaction
+   */
+  executeContractMethod(contractTx) {
+    const { contractAddress, method, params, caller } = contractTx.contractData;
+
+    logger.debug('BLOCKCHAIN', `Executing ${method} on contract ${contractAddress} by ${caller} with payment ${contractTx.id}`);
+
+    // PAYMENT SYSTEM: Pass the transaction ID as payment verification
+    const result = this.contractEngine.executeContract(contractAddress, method, params, caller, contractTx.id);
+
+    logger.debug('BLOCKCHAIN', `Contract method executed successfully with verified payment`);
+    return result;
+  }
+
+  /**
+   * Get contract information
+   * @param {string} contractAddress - Contract address
+   * @returns {Object} - Contract information
+   */
+  getContract(contractAddress) {
+    return this.contractEngine.getContract(contractAddress);
+  }
+
+  /**
+   * Get all contracts
+   * @returns {Array} - Array of contract information
+   */
+  getAllContracts() {
+    return this.contractEngine.getAllContracts();
+  }
+
+  /**
+   * Deploy a new contract (creates a transaction)
+   * @param {string} contractType - Type of contract to deploy
+   * @param {Object} initData - Initial contract data
+   * @param {string} owner - Contract owner address
+   * @param {number} fee - Transaction fee
+   * @returns {ContractTransaction} - Contract deployment transaction
+   */
+  createContractDeployment(contractType, initData, owner, fee = 0) {
+    return ContractTransaction.createDeployment(contractType, initData, owner, fee);
+  }
+
+  /**
+   * Create a contract execution transaction
+   * @param {string} contractAddress - Contract address
+   * @param {string} method - Method to call
+   * @param {Object} params - Method parameters
+   * @param {string} caller - Caller address
+   * @param {number} fee - Transaction fee
+   * @returns {ContractTransaction} - Contract execution transaction
+   */
+  createContractExecution(contractAddress, method, params, caller, fee = 0) {
+    return ContractTransaction.createExecution(contractAddress, method, params, caller, fee);
+  }
+
+  /**
    * Clear blockchain (for testing/reset purposes)
    */
   clearChain() {
@@ -1516,7 +1679,10 @@ class Blockchain {
     this.memoryPool.clear();
     this.spamProtection.reset();
 
-    logger.info('BLOCKCHAIN', 'Blockchain cleared successfully');
+    // Clear contract engine
+    this.contractEngine = new ContractEngine(this);
+
+    logger.info('BLOCKCHAIN', 'Blockchain and contracts cleared successfully');
     return true;
   }
 
