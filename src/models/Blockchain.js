@@ -395,6 +395,15 @@ class Blockchain {
             );
           }
 
+          // CRITICAL: Transaction ID collision detection
+          if (this.historicalTransactionIds.has(transaction.id)) {
+            logger.error(
+              'BLOCKCHAIN',
+              `🚨 TRANSACTION ID COLLISION DETECTED! Transaction ID ${transaction.id} already exists in blockchain`
+            );
+            throw new Error(`Transaction ID collision detected: ${transaction.id}`);
+          }
+
           // Also track by transaction ID for duplicate detection
           this.historicalTransactionIds.add(transaction.id);
 

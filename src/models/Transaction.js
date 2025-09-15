@@ -414,20 +414,8 @@ class Transaction {
     // CRITICAL: Freeze the data to prevent modification
     Object.freeze(immutableData);
 
-    // CRITICAL: Use deterministic JSON stringification to prevent malleability
-    // Custom replacer that sorts only top-level keys to prevent nested object corruption
-    const deterministicReplacer = (key, value) => {
-      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        // Sort keys for objects to ensure deterministic output
-        const sorted = {};
-        Object.keys(value).sort().forEach(k => {
-          sorted[k] = value[k];
-        });
-        return sorted;
-      }
-      return value;
-    };
-    const dataString = JSON.stringify(immutableData, deterministicReplacer);
+    // CRITICAL: Use canonical JSON serialization to prevent collision attacks
+    const dataString = this.canonicalJSONStringify(immutableData);
     
     // DEBUG: Log the data being hashed for integrity validation
     if (isHistoricalValidation) {
@@ -442,6 +430,44 @@ class Transaction {
     this._isImmutable = true;
 
     return this.id;
+  }
+
+  /**
+   * CRITICAL: Canonical JSON stringification to prevent collision attacks
+   * Implements RFC 7515 JSON Web Signature (JWS) canonical JSON rules
+   * @param {any} obj - Object to serialize
+   * @returns {string} Canonical JSON string
+   */
+  canonicalJSONStringify(obj) {
+    // Handle null, undefined, primitives
+    if (obj === null) return 'null';
+    if (obj === undefined) return 'undefined';
+    if (typeof obj === 'string') return JSON.stringify(obj);
+    if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
+
+    // Handle arrays
+    if (Array.isArray(obj)) {
+      const serializedElements = obj.map(element => this.canonicalJSONStringify(element));
+      return `[${serializedElements.join(',')}]`;
+    }
+
+    // Handle objects
+    if (typeof obj === 'object') {
+      // Get all enumerable property names and sort them
+      const sortedKeys = Object.keys(obj).sort();
+
+      // Build canonical key-value pairs
+      const serializedPairs = sortedKeys.map(key => {
+        const serializedKey = JSON.stringify(key);
+        const serializedValue = this.canonicalJSONStringify(obj[key]);
+        return `${serializedKey}:${serializedValue}`;
+      });
+
+      return `{${serializedPairs.join(',')}}`;
+    }
+
+    // Fallback for other types
+    return JSON.stringify(obj);
   }
 
   /**
