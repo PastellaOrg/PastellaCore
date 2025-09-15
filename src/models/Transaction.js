@@ -283,12 +283,31 @@ class Transaction {
       throw new Error('Invalid atomic sequence format - potential race attack');
     }
 
-    // Skip timestamp validation for historical blocks during blockchain loading
+    // CRITICAL: Enhanced validation for historical vs new transactions
+    const timestamp = parseInt(parts[0]);
     if (!isHistoricalValidation) {
       // Validate timestamp is recent (within 5 minutes) - only for new transactions
-      const timestamp = parseInt(parts[0]);
       if (Date.now() - timestamp > 5 * 60 * 1000) {
         throw new Error('Atomic sequence timestamp too old - potential race attack');
+      }
+    } else {
+      // CRITICAL: For historical blocks, validate timestamp is reasonable (not in future, not ancient)
+      const currentTime = Date.now();
+      const yearInMs = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
+
+      if (timestamp > currentTime) {
+        throw new Error('Historical atomic sequence timestamp is in the future - invalid historical block');
+      }
+
+      // Allow up to 10 years in the past for historical blocks
+      if (currentTime - timestamp > (10 * yearInMs)) {
+        throw new Error('Historical atomic sequence timestamp is too ancient - potential manipulation');
+      }
+
+      // CRITICAL: Validate random component strength even for historical blocks
+      const randomPart = parts[1];
+      if (!randomPart || randomPart.length < 8) {
+        throw new Error('Historical atomic sequence has weak randomness - potential manipulation');
       }
     }
 
@@ -530,9 +549,11 @@ class Transaction {
 
   /**
    * Check if transaction has expired (replay attack protection)
+   * @param {number} contextTime - Optional timestamp to check expiry against (defaults to current time)
    */
-  isExpired() {
-    return Date.now() > this.expiresAt;
+  isExpired(contextTime = null) {
+    const checkTime = contextTime || Date.now();
+    return checkTime > this.expiresAt;
   }
 
   /**
@@ -660,19 +681,25 @@ class Transaction {
     }
     logger.debug('TRANSACTION', `Replay protection check passed`);
 
-    // REPLAY ATTACK PROTECTION: Check if transaction has expired (skip for genesis block)
-    if (!this._isGenesisBlock) {
+    // REPLAY ATTACK PROTECTION: Check if transaction has expired (skip for genesis block and early blocks)
+    const isEarlyBlock = config?.isEarlyBlock || this._isGenesisBlock;
+    if (!isEarlyBlock) {
       logger.debug('TRANSACTION', `Checking if transaction is expired...`);
-      if (this.isExpired()) {
+      
+      // Use block timestamp for historical validation, current time for new transactions
+      const contextTime = config?.blockTimestamp || Date.now();
+      const isHistoricalValidation = config?.blockTimestamp !== undefined;
+      
+      if (this.isExpired(contextTime)) {
         logger.debug('TRANSACTION', `Transaction validation failed: transaction expired`);
-        logger.debug('TRANSACTION', `  Current time: ${Date.now()}`);
+        logger.debug('TRANSACTION', `  Context time: ${contextTime} (${isHistoricalValidation ? 'historical' : 'current'})`);
         logger.debug('TRANSACTION', `  Expires at: ${this.expiresAt}`);
-        logger.debug('TRANSACTION', `  Age: ${this.expiresAt ? Date.now() - this.expiresAt : 'N/A'}ms`);
+        logger.debug('TRANSACTION', `  Age: ${this.expiresAt ? contextTime - this.expiresAt : 'N/A'}ms`);
         return false;
       }
       logger.debug('TRANSACTION', `Expiration check passed`);
     } else {
-      logger.debug('TRANSACTION', `Skipping expiration check for genesis block transaction`);
+      logger.debug('TRANSACTION', `Skipping expiration check for early block transaction (block ${config?.blockIndex || 'genesis'})`);
     }
 
     // Verify transaction signature

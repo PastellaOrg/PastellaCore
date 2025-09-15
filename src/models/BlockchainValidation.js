@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { CryptoUtils } = require('../utils/crypto');
 
 /**
  * CRITICAL: CPU exhaustion protection system
@@ -234,24 +235,36 @@ class BlockchainValidation {
           throw new Error('Only first transaction can be coinbase');
         }
 
-        // Validate transaction - handle both Transaction instances and plain objects
-        if (typeof transaction.isValid === 'function') {
-          // Transaction instance - call isValid method
-          if (!transaction.isValid()) {
-            throw new Error(`Transaction ${i} is invalid: ${transaction.id}`);
-          }
-        } else {
+        // STANDARDIZED VALIDATION ORDER FOR SECURITY:
+        // 1. STRUCTURAL VALIDATION (Basic format checks first)
+        if (typeof transaction.isValid !== 'function') {
           // Plain object - do basic validation
           if (!transaction.id || !transaction.outputs || transaction.outputs.length === 0) {
             throw new Error(`Transaction ${i} basic validation failed: missing required fields`);
           }
         }
 
-        // CRITICAL SECURITY: Validate UTXOs for non-coinbase transactions
+        // 2. UTXO VALIDATION (Prevent double-spending before expensive operations)
         if (!transaction.isCoinbase && utxoManager) {
           const utxoValidation = this.validateTransactionInputsAgainstUTXO(transaction, utxoManager);
           if (!utxoValidation.valid) {
             throw new Error(`Transaction ${i} UTXO validation failed: ${utxoValidation.reason}`);
+          }
+        }
+
+        // 3. CRYPTOGRAPHIC VALIDATION (Expensive operations last)
+        if (typeof transaction.isValid === 'function') {
+          // Pass block context for historical validation
+          const transactionConfig = {
+            ...config,
+            blockIndex: block.index,
+            blockTimestamp: block.timestamp,
+            isEarlyBlock: block.index <= 1
+          };
+
+          // Transaction instance - call isValid method with historical context
+          if (!transaction.isValid(transactionConfig)) {
+            throw new Error(`Transaction ${i} is invalid: ${transaction.id}`);
           }
         }
       }
@@ -528,7 +541,6 @@ class BlockchainValidation {
             return CryptoUtils.hash(JSON.stringify(tx));
           });
           
-          const CryptoUtils = require('../utils/crypto');
           const calculatedMerkleRoot = CryptoUtils.calculateMerkleRoot(transactionHashes);
           
           if (storedMerkleRoot !== calculatedMerkleRoot) {

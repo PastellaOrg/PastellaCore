@@ -773,7 +773,7 @@ async function main() {
     console.log(chalk.white('  Pastella (PAS) is a complete cryptocurrency implementation featuring'));
     console.log(chalk.white('  Proof-of-Work mining, UTXO model, and peer-to-peer networking.'));
     console.log('');
-    console.log(chalk.cyan.bold('🚀 USAGE:'), chalk.white('node src/index.js [options]'));
+    console.log(chalk.cyan.bold('🚀 USAGE:'), chalk.white('pastellad.exe [options]'));
     console.log('');
     console.log(chalk.yellow.bold('⚙️  OPTIONS:'));
     console.log(chalk.cyan('  --help, -h           '), chalk.white('Show this help message'));
@@ -794,36 +794,36 @@ async function main() {
     console.log(chalk.yellow.bold('💡 EXAMPLES:'));
     console.log(
       chalk.cyan('  node src/index.js                                     '),
-      chalk.white('# Start with all services')
+      chalk.white('Start with all services')
     );
     console.log(
       chalk.cyan('  node src/index.js --debug                             '),
-      chalk.white('# Start with debug logging')
+      chalk.white('Start with debug logging')
     );
     console.log(
       chalk.cyan('  node src/index.js --no-api --no-p2p                   '),
-      chalk.white('# Blockchain only mode')
+      chalk.white('Blockchain only mode')
     );
-    console.log(chalk.cyan('  node src/index.js --api-port 8080 --p2p-port 8081     '), chalk.white('# Custom ports'));
+    console.log(chalk.cyan('  node src/index.js --api-port 8080 --p2p-port 8081     '), chalk.white('Custom ports'));
     console.log(
       chalk.cyan('  node src/index.js --data-dir /path/to/data            '),
-      chalk.white('# Custom data directory')
+      chalk.white('Custom data directory')
     );
     console.log(
       chalk.cyan('  node src/index.js --min-seed-conn 1                   '),
-      chalk.white('# Require only 1 seed connection')
+      chalk.white('Require only 1 seed connection')
     );
     console.log(
       chalk.cyan('  node src/index.js --api-key mysecretkey               '),
-      chalk.white('# Enable API authentication')
+      chalk.white('Enable API authentication')
     );
     console.log(
       chalk.cyan('  node src/index.js --host 192.168.1.100 --api-key key  '),
-      chalk.white('# Bind to specific network interface')
+      chalk.white('Bind to specific network interface')
     );
     console.log(
       chalk.cyan('  node src/index.js --generate-genesis                  '),
-      chalk.white('# Generate new genesis configuration')
+      chalk.white('Generate new genesis configuration')
     );
     console.log('');
     console.log(chalk.yellow.bold('🔗 SERVICES:'));
@@ -836,7 +836,7 @@ async function main() {
     console.log(chalk.yellow.bold('🔒 SECURITY:'));
     console.log(chalk.red('  • API Server:     '), chalk.white('Defaults to localhost-only (127.0.0.1)'));
     console.log(chalk.red('  • External Access:'), chalk.white('Requires --host + --api-key for security'));
-    console.log(chalk.red('  • Authentication:  '), chalk.white('API key required for non-localhost binding'));
+    console.log(chalk.red('  • Authentication: '), chalk.white('API key required for non-localhost binding'));
     console.log('');
     console.log(chalk.yellow.bold('📞 SUPPORT:'));
     console.log(chalk.white('  • License:        '), chalk.cyan(packageJson.license));

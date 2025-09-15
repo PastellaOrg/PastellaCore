@@ -471,7 +471,15 @@ class Block {
       if (typeof transaction.isValid === 'function') {
         logger.debug('BLOCK', `Transaction ${i} has isValid method, calling it with config`);
         try {
-          if (!transaction.isValid(config)) {
+          // Pass block context to transaction validation for proper historical expiry validation
+          const transactionConfig = {
+            ...config,
+            blockIndex: this.index,
+            blockTimestamp: this.timestamp,
+            isEarlyBlock: this.index <= 1
+          };
+          
+          if (!transaction.isValid(transactionConfig)) {
             logger.debug('BLOCK', `Transaction ${i} validation failed: isValid() returned false`);
             return false;
           }

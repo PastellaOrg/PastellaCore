@@ -69,6 +69,10 @@ class Blockchain {
     this.historicalTransactions = new Map(); // Key: "nonce:senderAddress", Value: {txId, blockHeight, timestamp}
     this.historicalTransactionIds = new Set(); // Track all transaction IDs ever processed
 
+    // CRITICAL: Nonce collision detection and tracking
+    this.globalNonceUsage = new Map(); // nonce -> count of how many times used globally
+    this.nonceCollisionThreshold = 100; // Maximum times a nonce can be used globally before considering it an attack
+
     // CRITICAL: 51% Attack Protection System
     this.consensusManager = {
       // Track mining power distribution
@@ -374,6 +378,23 @@ class Blockchain {
             senderAddress,
           });
 
+          // CRITICAL: Track nonce usage for collision detection
+          const currentUsage = this.globalNonceUsage.get(transaction.nonce) || 0;
+          this.globalNonceUsage.set(transaction.nonce, currentUsage + 1);
+
+          // Log potential nonce collision attacks
+          if (currentUsage + 1 > this.nonceCollisionThreshold) {
+            logger.warn(
+              'BLOCKCHAIN',
+              `🚨 NONCE COLLISION ATTACK DETECTED: Nonce ${transaction.nonce} used ${currentUsage + 1} times (threshold: ${this.nonceCollisionThreshold})`
+            );
+          } else if (currentUsage + 1 > 10) {
+            logger.debug(
+              'BLOCKCHAIN',
+              `Nonce collision warning: Nonce ${transaction.nonce} used ${currentUsage + 1} times`
+            );
+          }
+
           // Also track by transaction ID for duplicate detection
           this.historicalTransactionIds.add(transaction.id);
 
@@ -467,7 +488,83 @@ class Blockchain {
       return true;
     }
 
+    // CRITICAL: Check for nonce collision attacks (same nonce used by too many different senders)
+    const globalUsage = this.globalNonceUsage.get(transaction.nonce) || 0;
+    if (globalUsage >= this.nonceCollisionThreshold) {
+      logger.error(
+        'BLOCKCHAIN',
+        `🚨 NONCE COLLISION ATTACK: Transaction ${transaction.id} rejected - nonce ${transaction.nonce} already used ${globalUsage} times (threshold: ${this.nonceCollisionThreshold})`
+      );
+      return true; // Treat as replay attack to reject transaction
+    }
+
     return false;
+  }
+
+  /**
+   * CRITICAL: Enhanced validation for historical blocks during sync to prevent manipulation
+   * @param {Block} block - The block to validate
+   * @param {number} blockIndex - The index of the block in the chain
+   * @returns {boolean} - True if block passes enhanced historical validation
+   */
+  validateHistoricalBlock(block, blockIndex) {
+    try {
+      // Validate block structure
+      if (!block || typeof block !== 'object') {
+        logger.error('BLOCKCHAIN', `Historical block ${blockIndex} has invalid structure`);
+        return false;
+      }
+
+      // Validate required fields
+      if (!block.hash || !block.previousHash || !block.merkleRoot || block.index !== blockIndex) {
+        logger.error('BLOCKCHAIN', `Historical block ${blockIndex} missing required fields or index mismatch`);
+        return false;
+      }
+
+      // Validate timestamp is reasonable
+      const currentTime = Date.now();
+      const tenYearsMs = 10 * 365 * 24 * 60 * 60 * 1000;
+
+      if (block.timestamp > currentTime) {
+        logger.error('BLOCKCHAIN', `Historical block ${blockIndex} timestamp ${block.timestamp} is in the future`);
+        return false;
+      }
+
+      if (currentTime - block.timestamp > tenYearsMs) {
+        logger.error('BLOCKCHAIN', `Historical block ${blockIndex} timestamp ${block.timestamp} is too ancient`);
+        return false;
+      }
+
+      // Validate transaction count is reasonable
+      if (!block.transactions || !Array.isArray(block.transactions) || block.transactions.length === 0) {
+        logger.error('BLOCKCHAIN', `Historical block ${blockIndex} has no valid transactions`);
+        return false;
+      }
+
+      if (block.transactions.length > 10000) {
+        logger.error('BLOCKCHAIN', `Historical block ${blockIndex} has too many transactions: ${block.transactions.length}`);
+        return false;
+      }
+
+      // Validate first transaction is coinbase
+      if (!block.transactions[0] || !block.transactions[0].isCoinbase) {
+        logger.error('BLOCKCHAIN', `Historical block ${blockIndex} first transaction is not coinbase`);
+        return false;
+      }
+
+      // Validate difficulty is reasonable
+      if (typeof block.difficulty !== 'number' || block.difficulty < 100 || block.difficulty > 1000000000) {
+        logger.error('BLOCKCHAIN', `Historical block ${blockIndex} has invalid difficulty: ${block.difficulty}`);
+        return false;
+      }
+
+      logger.debug('BLOCKCHAIN', `Historical block ${blockIndex} passed enhanced validation`);
+      return true;
+
+    } catch (error) {
+      logger.error('BLOCKCHAIN', `Historical block ${blockIndex} validation error: ${error.message}`);
+      return false;
+    }
   }
 
   /**
@@ -1022,6 +1119,8 @@ class Blockchain {
         // CRITICAL: Save historical transaction database for replay attack protection
         historicalTransactions: Array.from(this.historicalTransactions.entries()),
         historicalTransactionIds: Array.from(this.historicalTransactionIds),
+        // CRITICAL: Save nonce collision tracking data
+        globalNonceUsage: Array.from(this.globalNonceUsage.entries()),
       };
 
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
@@ -1207,9 +1306,21 @@ class Blockchain {
             const blockData = data.chain[index];
             
             try {
-              // Get previous block timestamp for historical validation
+              // CRITICAL: Enhanced historical sync validation for security
               const previousBlockTimestamp = index > 0 ? data.chain[index - 1].timestamp : undefined;
+
+              // Validate block timestamp sequence for historical blocks
+              if (index > 0 && blockData.timestamp <= previousBlockTimestamp) {
+                throw new Error(`Historical block ${index} timestamp ${blockData.timestamp} is not after previous block ${previousBlockTimestamp} - potential manipulation`);
+              }
+
               const blockInstance = Block.fromJSON(blockData, previousBlockTimestamp);
+
+              // CRITICAL: Additional validation for historical blocks during sync
+              if (!this.validateHistoricalBlock(blockInstance, index)) {
+                throw new Error(`Historical block ${index} failed enhanced validation - potential manipulation`);
+              }
+
               this.chain.push(blockInstance);
               
               // Show progress for large chains without excessive logging
@@ -1262,6 +1373,15 @@ class Blockchain {
           );
         } else {
           logger.debug('BLOCKCHAIN', `No historical transaction IDs data found in file`);
+        }
+
+        // CRITICAL: Load nonce collision tracking data
+        if (data.globalNonceUsage && Array.isArray(data.globalNonceUsage)) {
+          logger.debug('BLOCKCHAIN', `Loading ${data.globalNonceUsage.length} nonce usage entries from file`);
+          this.globalNonceUsage = new Map(data.globalNonceUsage);
+          logger.info('BLOCKCHAIN', `Loaded ${this.globalNonceUsage.size} nonce usage entries from file`);
+        } else {
+          logger.debug('BLOCKCHAIN', `No nonce usage data found in file`);
         }
 
         // If no historical data in file, rebuild from chain

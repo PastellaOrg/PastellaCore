@@ -84,7 +84,8 @@ class TransactionManager {
       return false;
     }
 
-    // REPLAY ATTACK PROTECTION: Check if transaction has expired
+    // STANDARDIZED VALIDATION ORDER FOR SECURITY:
+    // 1. REPLAY PROTECTION (Critical security, check early)
     if (transactionInstance.isExpired && typeof transactionInstance.isExpired === 'function') {
       if (transactionInstance.isExpired()) {
         logger.warn('TRANSACTION_MANAGER', `Transaction ${transactionInstance.id} has expired and cannot be added`);
@@ -92,7 +93,6 @@ class TransactionManager {
       }
     }
 
-    // REPLAY ATTACK PROTECTION: Check for duplicate nonces from same sender in pending pool
     if (transactionInstance.isReplayAttack && typeof transactionInstance.isReplayAttack === 'function') {
       if (transactionInstance.isReplayAttack(this.memoryPool.getPendingTransactions())) {
         logger.warn(
@@ -103,18 +103,7 @@ class TransactionManager {
       }
     }
 
-    // CRITICAL: REPLAY ATTACK PROTECTION against historical blockchain
-    // This requires access to the blockchain instance, so we'll need to pass it
-    // For now, we'll handle this at the blockchain level when adding transactions
-
-    // CRITICAL SECURITY: Validate transaction including UTXO checks
-    const validationResult = this.validateTransaction(transactionInstance);
-    if (!validationResult.valid) {
-      logger.error('TRANSACTION_MANAGER', `Transaction ${transactionInstance.id} REJECTED: ${validationResult.reason}`);
-      return false;
-    }
-
-    // CRITICAL SECURITY: Validate UTXOs before accepting transaction
+    // 2. UTXO VALIDATION (Prevent double-spending before expensive operations)
     if (!this.validateTransactionInputs(transactionInstance)) {
       logger.error(
         'TRANSACTION_MANAGER',
@@ -123,7 +112,14 @@ class TransactionManager {
       return false;
     }
 
-    // Additional basic validation
+    // 3. STRUCTURAL VALIDATION (Basic format and field validation)
+    const validationResult = this.validateTransaction(transactionInstance);
+    if (!validationResult.valid) {
+      logger.error('TRANSACTION_MANAGER', `Transaction ${transactionInstance.id} REJECTED: ${validationResult.reason}`);
+      return false;
+    }
+
+    // 4. CRYPTOGRAPHIC VALIDATION (Expensive operations last)
     if (transactionInstance.isValid()) {
       this.memoryPool.addTransaction(transactionInstance);
       logger.info(
