@@ -178,24 +178,29 @@ class Transaction {
   }
 
   /**
-   * Generate unique nonce for replay attack protection
+   * Generate unique nonce for replay attack protection using cryptographically secure randomness
    */
   generateNonce() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2) + Math.random().toString(36).substr(2);
+    const crypto = require('crypto');
+    const timestamp = Date.now().toString(36);
+    const randomBytes1 = crypto.randomBytes(8).toString('hex');
+    const randomBytes2 = crypto.randomBytes(8).toString('hex');
+    return timestamp + randomBytes1 + randomBytes2;
   }
 
   /**
-   * CRITICAL: Generate atomic sequence number for race attack protection
+   * CRITICAL: Generate atomic sequence number for race attack protection using cryptographically secure randomness
    */
   generateAtomicSequence() {
-    // Combine timestamp, random value, and process ID for uniqueness
+    const crypto = require('crypto');
+    // Combine timestamp, cryptographically secure random value, and process ID for uniqueness
     const timestamp = Date.now();
-    const random = Math.random().toString(36).substr(2, 9);
+    const randomBytes = crypto.randomBytes(12).toString('hex'); // 12 bytes = 24 hex chars
     const processId = process.pid || 0;
-    const threadId = (Math.random() * 1000000) | 0;
+    const threadId = crypto.randomBytes(4).readUInt32BE(0); // Crypto-secure thread ID
 
-    // Create a unique sequence that's impossible to duplicate
-    return `${timestamp}-${random}-${processId}-${threadId}`;
+    // Create a unique sequence that's cryptographically impossible to duplicate
+    return `${timestamp}-${randomBytes}-${processId}-${threadId}`;
   }
 
   /**
