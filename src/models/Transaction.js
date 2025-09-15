@@ -472,10 +472,20 @@ class Transaction {
   }
 
   /**
-   * Get data to sign for transaction with replay attack protection
+   * Get data to sign for transaction with replay attack protection including network ID
    */
   getDataToSign() {
+    // Get network ID from config for cross-chain replay protection
+    let networkId = 'pastella-mainnet'; // Default fallback
+    try {
+      const config = require('../../config.json');
+      networkId = config.networkId || networkId;
+    } catch (error) {
+      // Use default if config unavailable
+    }
+
     return JSON.stringify({
+      networkId: networkId, // CRITICAL: Include network ID to prevent cross-chain replay attacks
       inputs: this.inputs.map(input => ({
         txId: input.txId,
         outputIndex: input.outputIndex,
