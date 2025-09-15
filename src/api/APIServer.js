@@ -22,8 +22,9 @@ class APIServer {
    * @param p2pNetwork
    * @param port
    * @param config
+   * @param customApiKey
    */
-  constructor(blockchain, wallet, miner, p2pNetwork, port = 3002, config = {}) {
+  constructor(blockchain, wallet, miner, p2pNetwork, port = 3002, config = {}, customApiKey = null) {
     this.blockchain = blockchain;
     this.wallet = wallet;
     this.miner = miner;
@@ -37,13 +38,17 @@ class APIServer {
     // Initialize rate limiter for DoS protection
     this.rateLimiter = new RateLimiter();
 
-    // CRITICAL: Generate dynamic API key on startup for security
-    this.apiKey = this.generateSecureApiKey();
+    // CRITICAL: Use custom API key if provided, otherwise generate secure API key
+    this.apiKey = customApiKey || this.generateSecureApiKey();
     this.auth = new AuthMiddleware(this.apiKey);
 
     // Display API key to user on startup
+    if (customApiKey) {
+      logger.info('API_SERVER', `🔑 Using custom API key: ${this.apiKey}`);
+    } else {
     logger.info('API_SERVER', `🔑 Generated secure API key: ${this.apiKey}`);
     logger.info('API_SERVER', '⚠️  IMPORTANT: Save this API key - it will be required for protected endpoints');
+    }
 
     // Block submission synchronization
     this.blockSubmissionLock = false;
