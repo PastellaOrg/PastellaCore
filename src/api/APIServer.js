@@ -4169,7 +4169,7 @@ class APIServer {
     try {
       const networkSync = this.networkSync;
       const peerManager = this.peerManager;
-      const memoryPoolManager = this.blockchain.memoryPoolManager;
+      const memoryPoolManager = this.blockchain.memoryPool;
 
       // Get all peers and their connection states
       const peers = peerManager.getAllPeers();
@@ -4185,7 +4185,7 @@ class APIServer {
 
       // Get mempool status
       const mempoolStatus = {
-        pendingTransactions: memoryPoolManager.getPendingTransactions(),
+        pendingTransactions: memoryPoolManager.getPendingTransactionCount(),
         mempoolSize: memoryPoolManager.pendingTransactions.size,
         recentTransactions: Array.from(memoryPoolManager.pendingTransactions.values()).slice(-5).map(tx => ({
           id: tx.id,

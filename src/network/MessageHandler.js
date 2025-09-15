@@ -448,7 +448,7 @@ class MessageHandler {
       }
 
       const blockTransactionHashes = block.transactions.map(tx => tx.hash);
-      const pendingTransactions = this.blockchain.memoryPoolManager.getPendingTransactions();
+      const pendingTransactions = this.blockchain.memoryPool.getPendingTransactions();
 
       // Find transactions in mempool that are now in the block
       const transactionsToRemove = pendingTransactions.filter(tx => blockTransactionHashes.includes(tx.hash));
@@ -460,7 +460,7 @@ class MessageHandler {
         );
 
         // Remove transactions from mempool
-        this.blockchain.memoryPoolManager.removeTransactions(transactionsToRemove);
+        this.blockchain.memoryPool.removeTransactions(transactionsToRemove);
 
         // Log the cleanup
         transactionsToRemove.forEach(tx => {
@@ -514,7 +514,7 @@ class MessageHandler {
     logger.debug('MESSAGE_HANDLER', `Mempool sync request from ${peerAddress}`);
 
     try {
-      const pendingTransactions = this.blockchain.memoryPoolManager.getPendingTransactions();
+      const pendingTransactions = this.blockchain.memoryPool.getPendingTransactions();
       const mempoolHashes = pendingTransactions.map(tx => tx.hash);
 
       // Send mempool inventory (list of transaction hashes)
@@ -544,7 +544,7 @@ class MessageHandler {
 
     try {
       const peerTransactionHashes = message.data.transactionHashes || [];
-      const localTransactionHashes = this.blockchain.memoryPoolManager.getPendingTransactions().map(tx => tx.hash);
+      const localTransactionHashes = this.blockchain.memoryPool.getPendingTransactions().map(tx => tx.hash);
 
       // Find transactions we don't have
       const missingTransactions = peerTransactionHashes.filter(hash => !localTransactionHashes.includes(hash));
@@ -582,7 +582,7 @@ class MessageHandler {
 
     try {
       const requestedHashes = message.data.transactionHashes || [];
-      const pendingTransactions = this.blockchain.memoryPoolManager.getPendingTransactions();
+      const pendingTransactions = this.blockchain.memoryPool.getPendingTransactions();
 
       // Send requested transactions
       for (const hash of requestedHashes) {
