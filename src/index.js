@@ -8,6 +8,7 @@ const APIServer = require('./api/APIServer');
 const Blockchain = require('./models/Blockchain');
 const P2PNetwork = require('./network/P2PNetwork');
 const logger = require('./utils/logger');
+const { fromAtomicUnits } = require('./utils/atomicUnits');
 
 // Import core modules
 
@@ -592,7 +593,7 @@ class PastellaDaemon {
     console.log(chalk.cyan('  Height:'), chalk.white(this.blockchain.chain.length));
     console.log(chalk.cyan('  Difficulty:'), chalk.white(this.blockchain.difficulty));
     console.log(chalk.cyan('  Block Time:'), chalk.white(`${config.blockchain.blockTime / 1000}s`));
-    console.log(chalk.cyan('  Total Supply:'), chalk.white(`${totalSupply} PAS`));
+    console.log(chalk.cyan('  Total Supply:'), chalk.white(`${fromAtomicUnits(totalSupply)} PAS`));
     console.log(chalk.cyan('  Pending TXs:'), chalk.white(this.blockchain.memoryPool.getPendingTransactionCount()));
     console.log('');
 

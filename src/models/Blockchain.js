@@ -229,6 +229,8 @@ class Blockchain {
       difficulty: this.difficulty,
       miningReward: this.miningReward,
       blockTime: this.blockTime,
+      totalSupply: this.getTotalSupply(),
+      totalSupplyFormatted: fromAtomicUnits(this.getTotalSupply()),
       pendingTransactions: this.memoryPool.getPendingTransactionCount(),
       utxoCount: this.utxoManager.getUTXOCount(),
       spamProtection: this.spamProtection.getStatus(),
@@ -1539,6 +1541,14 @@ class Blockchain {
     );
 
     return totalMiningRewards;
+  }
+
+  /**
+   * Get total supply in circulation
+   * @returns {number} Total supply in atomic units
+   */
+  getTotalSupply() {
+    return this.calculateTotalSupply();
   }
 
   /**

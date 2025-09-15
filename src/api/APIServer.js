@@ -152,6 +152,7 @@ class APIServer {
 
     // Blockchain routes
     this.app.get('/api/blockchain/status', this.getBlockchainStatus.bind(this));
+    this.app.get('/api/blockchain/supply', this.getTotalSupply.bind(this));
     this.app.get('/api/blockchain/blocks/:identifier', this.getBlock.bind(this));
     this.app.get('/api/blockchain/blocks-range/:start/:count', this.getBlocksRange.bind(this)); // New batch endpoint
     this.app.post('/api/blocks/submit', this.submitBlock.bind(this)); // Behind Key
@@ -736,6 +737,31 @@ class APIServer {
 
       res.json({
         blocks,
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: error.message,
+      });
+    }
+  }
+
+  /**
+   * Get total supply information
+   * @param req
+   * @param res
+   */
+  getTotalSupply(req, res) {
+    try {
+      const totalSupplyAtomic = this.blockchain.getTotalSupply();
+      const totalSupplyFormatted = fromAtomicUnits(totalSupplyAtomic);
+
+      res.json({
+        totalSupply: totalSupplyAtomic,
+        totalSupplyFormatted,
+        totalSupplyDisplay: `${totalSupplyFormatted} PAS`,
+        chainHeight: this.blockchain.getHeight(),
+        currency: 'PAS',
+        decimals: 8
       });
     } catch (error) {
       res.status(500).json({
