@@ -1,6 +1,6 @@
 const crypto = require('crypto');
-
 const secp256k1 = require('secp256k1');
+const path = require('path');
 const { WordList } = require('./wordList');
 
 /**
@@ -176,6 +176,84 @@ class SafeMath {
 }
 
 /**
+ * CRITICAL: Security utilities for preventing common vulnerabilities
+ */
+class SecurityUtils {
+  /**
+   * Validate file path to prevent directory traversal attacks
+   * @param {string} userPath - User-provided path
+   * @param {string} allowedDir - Allowed base directory
+   * @param {string} fileExtension - Expected file extension (optional)
+   * @returns {string} - Validated safe path
+   */
+  static validateFilePath(userPath, allowedDir, fileExtension = null) {
+    if (!userPath || typeof userPath !== 'string') {
+      throw new Error('Invalid file path: must be a non-empty string');
+    }
+
+    if (!allowedDir || typeof allowedDir !== 'string') {
+      throw new Error('Invalid allowed directory: must be a non-empty string');
+    }
+
+    // Remove any path traversal attempts
+    const sanitizedPath = userPath.replace(/\.\./g, '').replace(/[\/\\]/g, '');
+
+    // Validate filename contains only safe characters
+    if (!/^[a-zA-Z0-9._-]+$/.test(sanitizedPath)) {
+      throw new Error(`Invalid characters in filename: "${sanitizedPath}". Only alphanumeric, dots, hyphens, and underscores allowed.`);
+    }
+
+    // Validate file extension if specified
+    if (fileExtension && !sanitizedPath.endsWith(fileExtension)) {
+      throw new Error(`Invalid file extension. Expected: ${fileExtension}`);
+    }
+
+    // Construct the full path
+    const fullPath = path.join(allowedDir, sanitizedPath);
+    const resolvedPath = path.resolve(fullPath);
+    const resolvedAllowedDir = path.resolve(allowedDir);
+
+    // Ensure the resolved path is within the allowed directory
+    if (!resolvedPath.startsWith(resolvedAllowedDir + path.sep) && resolvedPath !== resolvedAllowedDir) {
+      throw new Error('Path traversal attempt detected: access outside allowed directory forbidden');
+    }
+
+    return resolvedPath;
+  }
+
+  /**
+   * Validate wallet name for secure file operations
+   * @param {string} walletName - User-provided wallet name
+   * @returns {string} - Validated wallet name
+   */
+  static validateWalletName(walletName) {
+    if (!walletName || typeof walletName !== 'string') {
+      throw new Error('Invalid wallet name: must be a non-empty string');
+    }
+
+    const sanitized = walletName.trim();
+
+    // Validate length
+    if (sanitized.length < 1 || sanitized.length > 64) {
+      throw new Error('Wallet name must be between 1 and 64 characters');
+    }
+
+    // Validate characters (alphanumeric, hyphens, underscores only)
+    if (!/^[a-zA-Z0-9_-]+$/.test(sanitized)) {
+      throw new Error('Wallet name can only contain letters, numbers, hyphens, and underscores');
+    }
+
+    // Prevent reserved names
+    const reserved = ['con', 'prn', 'aux', 'nul', 'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9', 'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9'];
+    if (reserved.includes(sanitized.toLowerCase())) {
+      throw new Error(`Wallet name "${sanitized}" is reserved and cannot be used`);
+    }
+
+    return sanitized;
+  }
+}
+
+/**
  *
  */
 class CryptoUtils {
@@ -255,8 +333,8 @@ class CryptoUtils {
       const totalBits = entropyBits + checksumBits;
 
       // Split into 12 groups of 11 bits each
-    const selectedWords = [];
-    for (let i = 0; i < 12; i++) {
+      const selectedWords = [];
+      for (let i = 0; i < 12; i++) {
         const bits11 = totalBits.substring(i * 11, (i + 1) * 11);
         const wordIndex = parseInt(bits11, 2);
 

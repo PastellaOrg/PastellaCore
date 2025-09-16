@@ -8,6 +8,7 @@ const fetch = require('node-fetch');
 const { Transaction, TransactionInput, TransactionOutput } = require('../models/Transaction.js');
 const Wallet = require('../models/Wallet.js');
 const { toAtomicUnits, fromAtomicUnits, formatAtomicUnits } = require('../utils/atomicUnits.js');
+const { SecurityUtils } = require('../utils/crypto.js');
 const logger = require('../utils/logger.js');
 
 /**
@@ -1493,7 +1494,10 @@ class NetworkWalletManager {
       };
 
       const encryptedData = wallet.encryptWalletData(walletData, password);
-      const filePath = path.join(process.cwd(), `${walletName}.wallet`);
+
+      // SECURITY: Validate wallet name and construct secure path
+      const validatedWalletName = SecurityUtils.validateWalletName(walletName);
+      const filePath = SecurityUtils.validateFilePath(`${validatedWalletName}.wallet`, process.cwd(), '.wallet');
 
       fs.writeFileSync(filePath, JSON.stringify(encryptedData, null, 2));
       console.log(`💾 Wallet saved to disk`);
@@ -1521,7 +1525,9 @@ class NetworkWalletManager {
    */
   loadWalletFromFile(walletName, password) {
     try {
-      const filePath = path.join(process.cwd(), `${walletName}.wallet`);
+      // SECURITY: Validate wallet name and construct secure path
+      const validatedWalletName = SecurityUtils.validateWalletName(walletName);
+      const filePath = SecurityUtils.validateFilePath(`${validatedWalletName}.wallet`, process.cwd(), '.wallet');
 
       if (!fs.existsSync(filePath)) {
         console.log(`❌ Wallet file not found: ${filePath}`);

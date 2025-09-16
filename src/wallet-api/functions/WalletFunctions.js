@@ -11,6 +11,7 @@ const axios = require('axios');
 
 const Wallet = require('../../models/Wallet');
 const { fromAtomicUnits, toAtomicUnits } = require('../../utils/atomicUnits');
+const { SecurityUtils } = require('../../utils/crypto');
 const logger = require('../../utils/logger');
 
 /**
@@ -1549,7 +1550,9 @@ class WalletFunctions {
       const wallet = this.wallets.get(walletName);
       if (!wallet) return;
 
-      const walletPath = path.join(this.walletsDir, `${walletName}.wallet`);
+      // SECURITY: Validate wallet name and construct secure path
+      const validatedWalletName = SecurityUtils.validateWalletName(walletName);
+      const walletPath = SecurityUtils.validateFilePath(`${validatedWalletName}.wallet`, this.walletsDir, '.wallet');
 
       // Read existing wallet file
       const walletData = JSON.parse(fs.readFileSync(walletPath, 'utf8'));
@@ -1578,7 +1581,9 @@ class WalletFunctions {
       const wallet = this.wallets.get(walletName);
       if (!wallet) return;
 
-      const walletPath = path.join(this.walletsDir, `${walletName}.wallet`);
+      // SECURITY: Validate wallet name and construct secure path
+      const validatedWalletName = SecurityUtils.validateWalletName(walletName);
+      const walletPath = SecurityUtils.validateFilePath(`${validatedWalletName}.wallet`, this.walletsDir, '.wallet');
 
       if (fs.existsSync(walletPath)) {
         const walletData = JSON.parse(fs.readFileSync(walletPath, 'utf8'));
