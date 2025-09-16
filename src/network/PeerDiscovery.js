@@ -79,12 +79,37 @@ class PeerDiscovery {
         const data = fs.readFileSync(this.peersFilePath, 'utf8');
         const peersData = JSON.parse(data);
 
-        // Convert array back to Map
+        // Convert array back to Map with address normalization
         peersData.forEach(peerInfo => {
-          this.knownPeers.set(peerInfo.address, peerInfo);
+          let normalizedAddress = peerInfo.address;
+          let normalizedPort = peerInfo.port;
+
+          // Normalize any WebSocket URLs that might be stored
+          try {
+            if (peerInfo.address.startsWith('ws://')) {
+              const url = new URL(peerInfo.address);
+              normalizedAddress = url.hostname;
+              normalizedPort = parseInt(url.port) || peerInfo.port || 23000;
+              logger.debug('PEER_DISCOVERY', `Normalized stored peer ${peerInfo.address} to ${normalizedAddress}:${normalizedPort}`);
+            }
+          } catch (error) {
+            logger.warn('PEER_DISCOVERY', `Failed to normalize stored peer address ${peerInfo.address}: ${error.message}`);
+          }
+
+          // Create normalized peer info
+          const normalizedPeerInfo = {
+            ...peerInfo,
+            address: normalizedAddress,
+            port: normalizedPort
+          };
+
+          this.knownPeers.set(normalizedAddress, normalizedPeerInfo);
         });
 
         logger.info('PEER_DISCOVERY', `Loaded ${this.knownPeers.size} peers from ${this.peersFilePath}`);
+
+        // Save the normalized data back to disk
+        this.savePeersToDisk();
       } else {
         // Initialize with seed nodes from config
         this.initializeFromSeedNodes();
@@ -101,10 +126,36 @@ class PeerDiscovery {
   initializeFromSeedNodes() {
     if (this.config?.network?.seedNodes) {
       this.config.network.seedNodes.forEach(seedNode => {
-        const peerInfo = this.createPeerInfo(seedNode);
-        peerInfo.discoveredBy = 'config';
-        peerInfo.isReliable = true; // Seed nodes are considered reliable
-        this.knownPeers.set(seedNode, peerInfo);
+        // Parse seed node to extract host and port
+        let address, port;
+
+        try {
+          // Handle different seed node formats
+          if (seedNode.startsWith('ws://')) {
+            // WebSocket URL format: ws://hostname:port
+            const url = new URL(seedNode);
+            address = url.hostname;
+            port = parseInt(url.port) || 23000;
+          } else if (seedNode.includes(':')) {
+            // Host:port format: hostname:port
+            const parts = seedNode.split(':');
+            address = parts[0];
+            port = parseInt(parts[1]) || 23000;
+          } else {
+            // Host only format: hostname
+            address = seedNode;
+            port = 23000;
+          }
+
+          const peerInfo = this.createPeerInfo(address, port);
+          peerInfo.discoveredBy = 'config';
+          peerInfo.isReliable = true; // Seed nodes are considered reliable
+          this.knownPeers.set(address, peerInfo);
+
+          logger.debug('PEER_DISCOVERY', `Added seed node: ${address}:${port} (from: ${seedNode})`);
+        } catch (error) {
+          logger.warn('PEER_DISCOVERY', `Failed to parse seed node ${seedNode}: ${error.message}`);
+        }
       });
 
       logger.info('PEER_DISCOVERY', `Initialized with ${this.knownPeers.size} seed nodes from config`);
@@ -153,23 +204,38 @@ class PeerDiscovery {
    * Add a new peer to the known peers list
    */
   addKnownPeer(address, port = 23000, discoveredBy = 'manual') {
-    if (this.bannedPeers.has(address)) {
-      logger.debug('PEER_DISCOVERY', `Not adding banned peer: ${address}`);
+    // Normalize the address to extract hostname from WebSocket URLs
+    let normalizedAddress = address;
+    let normalizedPort = port;
+
+    try {
+      if (address.startsWith('ws://')) {
+        const url = new URL(address);
+        normalizedAddress = url.hostname;
+        normalizedPort = parseInt(url.port) || port || 23000;
+        logger.debug('PEER_DISCOVERY', `Normalized WebSocket URL ${address} to ${normalizedAddress}:${normalizedPort}`);
+      }
+    } catch (error) {
+      logger.warn('PEER_DISCOVERY', `Failed to parse address ${address}: ${error.message}`);
+    }
+
+    if (this.bannedPeers.has(normalizedAddress)) {
+      logger.debug('PEER_DISCOVERY', `Not adding banned peer: ${normalizedAddress}`);
       return false;
     }
 
-    if (!this.knownPeers.has(address)) {
-      const peerInfo = this.createPeerInfo(address, port);
+    if (!this.knownPeers.has(normalizedAddress)) {
+      const peerInfo = this.createPeerInfo(normalizedAddress, normalizedPort);
       peerInfo.discoveredBy = discoveredBy;
-      this.knownPeers.set(address, peerInfo);
+      this.knownPeers.set(normalizedAddress, peerInfo);
 
-      logger.info('PEER_DISCOVERY', `Added new peer: ${address}:${port} (discovered by: ${discoveredBy})`);
+      logger.info('PEER_DISCOVERY', `Added new peer: ${normalizedAddress}:${normalizedPort} (discovered by: ${discoveredBy})`);
       this.savePeersToDisk();
       return true;
     }
 
     // Update existing peer's last seen time
-    const existingPeer = this.knownPeers.get(address);
+    const existingPeer = this.knownPeers.get(normalizedAddress);
     existingPeer.lastSeen = Date.now();
     this.savePeersToDisk();
     return true;

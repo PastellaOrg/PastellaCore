@@ -900,6 +900,12 @@ class MessageHandler {
       reason: 'handshake_accepted',
       networkId: message.data.networkId,
     });
+
+    // Update connection state to connected
+    if (this.p2pNetwork && this.p2pNetwork.connectionStates) {
+      this.p2pNetwork.connectionStates.set(peerAddress, 'connected');
+      logger.debug('MESSAGE_HANDLER', `Connection state updated to 'connected' for ${peerAddress}`);
+    }
   }
 
   /**

@@ -204,12 +204,11 @@ class P2PNetwork {
     const connectionCallback = async (address, port = 23000) => {
       try {
         const success = await this.connectToPeer(address, port);
+
         if (!success) {
-          throw new Error('Connection failed');
+          throw new Error('Connection failed - connectToPeer returned false');
         }
-        logger.debug('P2P_NETWORK', `Auto-reconnection successful to ${address}:${port}`);
       } catch (error) {
-        logger.debug('P2P_NETWORK', `Auto-reconnection failed to ${address}:${port}: ${error.message}`);
         this.peerDiscovery.markConnectionFailure(address, error);
       }
     };
