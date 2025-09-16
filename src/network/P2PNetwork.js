@@ -203,8 +203,7 @@ class P2PNetwork {
     // Connection callback for PeerDiscovery
     const connectionCallback = async (address, port = 23000) => {
       try {
-        const url = `ws://${address}:${port}`;
-        const success = await this.connectToPeer(url);
+        const success = await this.connectToPeer(address, port);
         if (!success) {
           throw new Error('Connection failed');
         }
