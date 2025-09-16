@@ -19,6 +19,7 @@ const NodeIdentity = require('./NodeIdentity');
 const PeerManager = require('./PeerManager');
 const PeerReputation = require('./PeerReputation');
 const SeedNodeManager = require('./SeedNodeManager');
+const PeerDiscovery = require('./PeerDiscovery');
 
 // Promisify DNS functions
 const dnsResolve4 = promisify(dns.resolve4);
@@ -73,8 +74,15 @@ class P2PNetwork {
       this.peerReputation = new PeerReputation(dataDir);
       logger.debug('P2P_NETWORK', `PeerReputation initialized: dataDir=${dataDir}`);
 
+      // Initialize enhanced peer discovery system
+      this.peerDiscovery = new PeerDiscovery(config, dataDir, config?.network?.maxPeers || 20);
+      logger.debug('P2P_NETWORK', `PeerDiscovery initialized: dataDir=${dataDir}, maxPeers=${config?.network?.maxPeers || 20}`);
+
       this.messageHandler = new MessageHandler(blockchain, this.peerReputation, config);
       logger.debug('P2P_NETWORK', `MessageHandler initialized with blockchain and peerReputation`);
+
+      // Connect MessageHandler and PeerDiscovery
+      this.messageHandler.setPeerDiscovery(this.peerDiscovery);
 
       // Set cross-reference for handshake handling
       this.messageHandler.setP2PNetworkReference(this);
@@ -125,6 +133,9 @@ class P2PNetwork {
 
     logger.debug('P2P_NETWORK', `Loading seed nodes from config...`);
     this.loadSeedNodes();
+
+    // Initialize automatic peer discovery and reconnection
+    this.initializeAutomatedSystems();
 
     logger.debug('P2P_NETWORK', `P2P Network constructor completed successfully`);
   }
@@ -181,6 +192,69 @@ class P2PNetwork {
   setupSeedNode(seedConfig) {
     this.seedNodeManager.setupSeedNode(seedConfig);
     this.peerManager.setMaxPeers(seedConfig.maxConnections || 50);
+  }
+
+  /**
+   * Initialize automated peer discovery and reconnection systems
+   */
+  initializeAutomatedSystems() {
+    logger.debug('P2P_NETWORK', 'Initializing automated peer discovery systems...');
+
+    // Connection callback for PeerDiscovery
+    const connectionCallback = async (address, port = 23000) => {
+      try {
+        const url = `ws://${address}:${port}`;
+        const success = await this.connectToPeer(url);
+        if (!success) {
+          throw new Error('Connection failed');
+        }
+        logger.debug('P2P_NETWORK', `Auto-reconnection successful to ${address}:${port}`);
+      } catch (error) {
+        logger.debug('P2P_NETWORK', `Auto-reconnection failed to ${address}:${port}: ${error.message}`);
+        this.peerDiscovery.markConnectionFailure(address, error);
+      }
+    };
+
+    // Peer sharing callback
+    const shareCallback = (ws, peers) => {
+      try {
+        const message = {
+          type: 'PEER_LIST_SHARE',
+          data: {
+            peers,
+            timestamp: Date.now()
+          }
+        };
+        ws.send(JSON.stringify(message));
+      } catch (error) {
+        logger.debug('P2P_NETWORK', `Failed to share peers: ${error.message}`);
+      }
+    };
+
+    // Health check callback
+    const healthCallback = (ws, address) => {
+      try {
+        if (ws.readyState === WebSocket.OPEN) {
+          // Send ping message
+          const pingMessage = {
+            type: 'PING',
+            timestamp: Date.now()
+          };
+          ws.send(JSON.stringify(pingMessage));
+        } else {
+          throw new Error('WebSocket not in OPEN state');
+        }
+      } catch (error) {
+        throw new Error(`Health check failed: ${error.message}`);
+      }
+    };
+
+    // Start automated systems
+    this.peerDiscovery.startReconnectionProcess(connectionCallback);
+    this.peerDiscovery.startPeerSharing(shareCallback);
+    this.peerDiscovery.startHealthMonitoring(healthCallback);
+
+    logger.info('P2P_NETWORK', 'Automated peer discovery and reconnection systems started');
   }
 
   /**
@@ -372,6 +446,9 @@ class P2PNetwork {
       return;
     }
 
+    // Register connection with PeerDiscovery
+    this.peerDiscovery.markPeerConnected(extractedAddress, ws);
+
     // CRITICAL: For outgoing connections, WE initiate the handshake
     logger.debug('P2P_NETWORK', `Outgoing connection established with ${extractedAddress}, initiating handshake`);
     this.initiateHandshake(ws, extractedAddress);
@@ -429,6 +506,9 @@ class P2PNetwork {
       return;
     }
 
+    // Register connection with PeerDiscovery
+    this.peerDiscovery.markPeerConnected(peerAddress, ws);
+
     // CRITICAL FIX: Don't initiate handshake from receiving node
     // The connecting node (initiator) will send the handshake
     // We just wait for it to arrive
@@ -463,6 +543,9 @@ class P2PNetwork {
       // Update reputation for disconnect
       this.peerReputation.updatePeerReputation(peerAddress, 'disconnect');
 
+      // Register disconnection with PeerDiscovery
+      this.peerDiscovery.markPeerDisconnected(peerAddress, 'normal');
+
       // Clean up connection state
       if (this.connectionStates) {
         this.connectionStates.delete(peerAddress);
@@ -491,6 +574,10 @@ class P2PNetwork {
     ws.on('error', error => {
       logger.error('P2P', `WebSocket error from ${peerAddress}: ${error.message}`);
       this.peerReputation.updatePeerReputation(peerAddress, 'bad_behavior', { reason: 'websocket_error' });
+
+      // Register error disconnection with PeerDiscovery
+      this.peerDiscovery.markPeerDisconnected(peerAddress, 'error');
+
       this.authenticatedPeers.delete(peerAddress);
       this.pendingChallenges.delete(peerAddress);
       this.initiatedAuthentication.delete(peerAddress);
@@ -914,6 +1001,62 @@ class P2PNetwork {
    */
   resetMessageValidationStats() {
     this.messageHandler.resetMessageValidationStats();
+  }
+
+  /**
+   * Get peer discovery statistics
+   */
+  getPeerDiscoveryStats() {
+    return this.peerDiscovery.getStats();
+  }
+
+  /**
+   * Add a known peer manually
+   */
+  addKnownPeer(address, port = 23000, discoveredBy = 'manual') {
+    return this.peerDiscovery.addKnownPeer(address, port, discoveredBy);
+  }
+
+  /**
+   * Ban a peer
+   */
+  banPeer(address, reason = 'unknown', duration = null) {
+    this.peerDiscovery.banPeer(address, reason, duration);
+  }
+
+  /**
+   * Shutdown P2P network and cleanup resources
+   */
+  shutdown() {
+    logger.info('P2P_NETWORK', 'Shutting down P2P network...');
+
+    try {
+      // Stop automated systems
+      if (this.peerDiscovery) {
+        this.peerDiscovery.shutdown();
+      }
+
+      // Stop periodic sync
+      this.stopPeriodicSync();
+
+      // Close all peer connections
+      this.peerManager.getAllPeers().forEach(ws => {
+        try {
+          ws.close();
+        } catch (error) {
+          // Ignore close errors
+        }
+      });
+
+      // Close WebSocket server
+      if (this.wss) {
+        this.wss.close();
+      }
+
+      logger.info('P2P_NETWORK', 'P2P network shutdown complete');
+    } catch (error) {
+      logger.error('P2P_NETWORK', `Error during shutdown: ${error.message}`);
+    }
   }
 }
 

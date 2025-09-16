@@ -344,6 +344,42 @@ class MessageValidator {
           networkId: 'string',
         },
       },
+
+      // Peer discovery and sharing messages
+      PEER_LIST_REQUEST: {
+        required: ['timestamp'],
+        optional: ['networkId'],
+        types: {
+          timestamp: 'number',
+          networkId: 'string',
+        },
+      },
+      PEER_LIST_SHARE: {
+        required: ['peers', 'timestamp'],
+        optional: ['networkId'],
+        types: {
+          peers: 'array',
+          timestamp: 'number',
+          networkId: 'string',
+        },
+      },
+
+      // Health check messages
+      PING: {
+        required: ['timestamp'],
+        optional: [],
+        types: {
+          timestamp: 'number',
+        },
+      },
+      PONG: {
+        required: ['timestamp'],
+        optional: [],
+        types: {
+          timestamp: 'number',
+        },
+      },
+
       MEMPOOL_SYNC_RESPONSE: {
         required: ['timestamp'],
         optional: ['status', 'message'],

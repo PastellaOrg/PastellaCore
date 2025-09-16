@@ -204,6 +204,12 @@ class APIServer {
     // Network diagnostics endpoint
     this.app.get('/api/network/diagnostics', this.getNetworkDiagnostics.bind(this));
 
+    // Enhanced peer discovery endpoints
+    this.app.get('/api/network/peer-discovery/stats', this.getPeerDiscoveryStats.bind(this));
+    this.app.post('/api/network/peer-discovery/add-peer', this.addKnownPeer.bind(this)); // Behind Key
+    this.app.post('/api/network/peer-discovery/ban-peer', this.banPeer.bind(this)); // Behind Key
+    this.app.get('/api/network/peer-discovery/known-peers', this.getKnownPeers.bind(this));
+
     // Partition handling endpoints
     this.app.get('/api/network/partition-stats', this.getPartitionStats.bind(this));
     this.app.post('/api/network/partition-reset', this.resetPartitionStats.bind(this)); // Behind Key
@@ -4235,6 +4241,148 @@ class APIServer {
       3: 'CLOSED'
     };
     return states[readyState] || 'UNKNOWN';
+  }
+
+  /**
+   * Get peer discovery statistics
+   */
+  getPeerDiscoveryStats(req, res) {
+    try {
+      const stats = this.p2pNetwork.getPeerDiscoveryStats();
+      res.json({
+        success: true,
+        stats
+      });
+    } catch (error) {
+      logger.error('API', `Error getting peer discovery stats: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Add a known peer manually
+   */
+  addKnownPeer(req, res) {
+    // API key protection
+    if (!this.verifyApiKey(req)) {
+      return res.status(401).json({ error: 'Unauthorized - Valid API key required' });
+    }
+
+    try {
+      const { address, port = 23000, discoveredBy = 'manual' } = req.body;
+
+      if (!address) {
+        return res.status(400).json({
+          error: 'Address is required'
+        });
+      }
+
+      // Basic address validation
+      if (typeof address !== 'string' || address.trim() === '') {
+        return res.status(400).json({
+          error: 'Invalid address format'
+        });
+      }
+
+      const success = this.p2pNetwork.addKnownPeer(address.trim(), port, discoveredBy);
+
+      res.json({
+        success,
+        message: success ? 'Peer added successfully' : 'Peer already exists or is banned',
+        peer: {
+          address: address.trim(),
+          port,
+          discoveredBy
+        }
+      });
+    } catch (error) {
+      logger.error('API', `Error adding known peer: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Ban a peer
+   */
+  banPeer(req, res) {
+    // API key protection
+    if (!this.verifyApiKey(req)) {
+      return res.status(401).json({ error: 'Unauthorized - Valid API key required' });
+    }
+
+    try {
+      const { address, reason = 'manual', duration = null } = req.body;
+
+      if (!address) {
+        return res.status(400).json({
+          error: 'Address is required'
+        });
+      }
+
+      this.p2pNetwork.banPeer(address, reason, duration);
+
+      res.json({
+        success: true,
+        message: 'Peer banned successfully',
+        bannedPeer: {
+          address,
+          reason,
+          duration: duration ? `${duration}ms` : 'permanent'
+        }
+      });
+    } catch (error) {
+      logger.error('API', `Error banning peer: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
+  }
+
+  /**
+   * Get list of known peers
+   */
+  getKnownPeers(req, res) {
+    try {
+      const stats = this.p2pNetwork.getPeerDiscoveryStats();
+
+      // Get additional peer information if available
+      const peerDetails = [];
+      if (this.p2pNetwork.peerDiscovery && this.p2pNetwork.peerDiscovery.knownPeers) {
+        this.p2pNetwork.peerDiscovery.knownPeers.forEach((peerInfo, address) => {
+          peerDetails.push({
+            address,
+            port: peerInfo.port,
+            lastSeen: peerInfo.lastSeen,
+            lastConnected: peerInfo.lastConnected,
+            connectionCount: peerInfo.connectionCount,
+            failureCount: peerInfo.failureCount,
+            reputation: peerInfo.reputation,
+            isReliable: peerInfo.isReliable,
+            discoveredBy: peerInfo.discoveredBy,
+            isActive: this.p2pNetwork.peerDiscovery.activePeers.has(address)
+          });
+        });
+      }
+
+      res.json({
+        success: true,
+        summary: stats,
+        peers: peerDetails.sort((a, b) => b.reputation - a.reputation)
+      });
+    } catch (error) {
+      logger.error('API', `Error getting known peers: ${error.message}`);
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
   }
 }
 

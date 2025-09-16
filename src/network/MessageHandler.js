@@ -94,6 +94,15 @@ class MessageHandler {
     this.messageHandlers.set('MEMPOOL_NOTFOUND', this.handleMempoolNotFound.bind(this));
     this.messageHandlers.set('MEMPOOL_REJECT', this.handleMempoolReject.bind(this));
 
+    // Peer discovery and sharing handlers
+    logger.debug('MESSAGE_HANDLER', `Setting up peer discovery handlers...`);
+    this.messageHandlers.set('PEER_LIST_REQUEST', this.handlePeerListRequest.bind(this));
+    this.messageHandlers.set('PEER_LIST_SHARE', this.handlePeerListShare.bind(this));
+
+    // Health check handlers
+    this.messageHandlers.set('PING', this.handlePing.bind(this));
+    this.messageHandlers.set('PONG', this.handlePong.bind(this));
+
     logger.debug('MESSAGE_HANDLER', `Core blockchain handlers configured: ${this.messageHandlers.size} handlers`);
 
     // Authentication message handlers
@@ -1129,6 +1138,133 @@ class MessageHandler {
     } catch (error) {
       logger.error('MESSAGE_HANDLER', `Failed to relay transaction: ${error.message}`);
     }
+  }
+
+  /**
+   * Handle peer list request - send our known peers to requesting node
+   * @param {WebSocket} ws
+   * @param {Object} message
+   * @param {string} peerAddress
+   */
+  handlePeerListRequest(ws, message, peerAddress) {
+    logger.debug('MESSAGE_HANDLER', `Peer list request from ${peerAddress}`);
+
+    try {
+      // Get peers to share from PeerDiscovery if available
+      let peersToShare = [];
+
+      if (this.peerDiscovery) {
+        peersToShare = this.peerDiscovery.getPeersToShare(10);
+      } else {
+        // Fallback: use currently connected peers
+        const connectedPeers = this.peerManager.getAllPeers();
+        peersToShare = connectedPeers.map(peer => {
+          const address = this.peerManager.getPeerAddress(peer);
+          return {
+            address: address,
+            port: 23000,
+            reputation: 500,
+            lastSeen: Date.now()
+          };
+        }).slice(0, 10);
+      }
+
+      // Send peer list
+      this.sendMessage(ws, {
+        type: 'PEER_LIST_SHARE',
+        data: {
+          peers: peersToShare,
+          timestamp: Date.now()
+        }
+      });
+
+      logger.debug('MESSAGE_HANDLER', `Sent ${peersToShare.length} peers to ${peerAddress}`);
+
+    } catch (error) {
+      logger.error('MESSAGE_HANDLER', `Failed to handle peer list request from ${peerAddress}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle received peer list from another node
+   * @param {WebSocket} ws
+   * @param {Object} message
+   * @param {string} peerAddress
+   */
+  handlePeerListShare(ws, message, peerAddress) {
+    logger.debug('MESSAGE_HANDLER', `Received peer list from ${peerAddress}`);
+
+    try {
+      const { peers } = message.data;
+
+      if (!Array.isArray(peers)) {
+        logger.warn('MESSAGE_HANDLER', `Invalid peer list format from ${peerAddress}`);
+        return;
+      }
+
+      // Process peer list with PeerDiscovery if available
+      if (this.peerDiscovery) {
+        this.peerDiscovery.processPeerShare(peers, peerAddress);
+      } else {
+        // Fallback: log the received peers
+        logger.info('MESSAGE_HANDLER', `Received ${peers.length} peers from ${peerAddress} (PeerDiscovery not available)`);
+      }
+
+    } catch (error) {
+      logger.error('MESSAGE_HANDLER', `Failed to process peer list from ${peerAddress}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle PING message - respond with PONG
+   * @param {WebSocket} ws
+   * @param {Object} message
+   * @param {string} peerAddress
+   */
+  handlePing(ws, message, peerAddress) {
+    try {
+      // Respond with PONG
+      this.sendMessage(ws, {
+        type: 'PONG',
+        timestamp: Date.now()
+      });
+
+      logger.debug('MESSAGE_HANDLER', `Responded to PING from ${peerAddress}`);
+    } catch (error) {
+      logger.error('MESSAGE_HANDLER', `Failed to handle PING from ${peerAddress}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle PONG message - used for connection health monitoring
+   * @param {WebSocket} ws
+   * @param {Object} message
+   * @param {string} peerAddress
+   */
+  handlePong(ws, message, peerAddress) {
+    try {
+      logger.debug('MESSAGE_HANDLER', `PONG received from ${peerAddress}`);
+
+      // Update last activity time if PeerDiscovery is available
+      if (this.peerDiscovery) {
+        // Mark peer as active (update last seen)
+        const peerInfo = this.peerDiscovery.knownPeers.get(peerAddress);
+        if (peerInfo) {
+          peerInfo.lastSeen = Date.now();
+        }
+      }
+    } catch (error) {
+      logger.error('MESSAGE_HANDLER', `Failed to handle PONG from ${peerAddress}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Set PeerDiscovery instance for enhanced peer management
+   * @param {PeerDiscovery} peerDiscovery
+   */
+  setPeerDiscovery(peerDiscovery) {
+    this.peerDiscovery = peerDiscovery;
+    logger.debug('MESSAGE_HANDLER', 'PeerDiscovery instance set for message handler');
   }
 }
 
