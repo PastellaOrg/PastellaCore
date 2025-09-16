@@ -323,14 +323,16 @@ class NetworkPartitionHandler {
     this.partitionState.transactionProcessingPaused = true;
 
     try {
+      const reason = 'Network partition or insufficient consensus detected';
+
       // Pause mempool operations
       if (this.p2pNetwork.blockchain.memoryPoolManager) {
-        this.p2pNetwork.blockchain.memoryPoolManager.pauseProcessing();
+        this.p2pNetwork.blockchain.memoryPoolManager.pauseProcessing(reason);
       }
 
       // Pause transaction manager operations
       if (this.p2pNetwork.blockchain.transactionManager) {
-        this.p2pNetwork.blockchain.transactionManager.pauseProcessing();
+        this.p2pNetwork.blockchain.transactionManager.pauseProcessing(reason);
       }
 
       logger.warn('P2P', 'CONSENSUS PROTECTION: Transaction processing paused');

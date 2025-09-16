@@ -240,6 +240,10 @@ class MemoryPoolManager {
     // CRITICAL: Initialize memory protection
     this.memoryProtection = new MemoryProtection(config);
 
+    // CRITICAL: Processing state for consensus protection
+    this.processingPaused = false;
+    this.pauseReason = null;
+
     // Start periodic cleanup
     setTimeout(() => {
       this.startPeriodicCleanup();
@@ -384,6 +388,12 @@ class MemoryPoolManager {
    */
   addTransaction(transaction) {
     try {
+      // CRITICAL: Check if processing is paused for consensus protection
+      if (this.processingPaused) {
+        logger.warn('MEMORY_POOL', `Transaction rejected - processing paused: ${this.pauseReason}`);
+        throw new Error(`Memory pool processing paused: ${this.pauseReason}`);
+      }
+
       // Check memory limits before adding
       if (!this.memoryProtection.canAddTransaction(transaction)) {
         throw new Error('Transaction would exceed memory limits');
@@ -484,6 +494,45 @@ class MemoryPoolManager {
       maxBatchSize: this.config?.batchProcessing?.maxBatchSize || 100,
       cleanupInterval: this.config?.batchProcessing?.cleanupInterval || 300000,
     };
+  }
+
+  /**
+   * CRITICAL: Pause memory pool processing for consensus protection
+   * @param {string} reason - Reason for pausing
+   */
+  pauseProcessing(reason = 'Consensus protection activated') {
+    this.processingPaused = true;
+    this.pauseReason = reason;
+    logger.warn('MEMORY_POOL', `Memory pool processing PAUSED: ${reason}`);
+  }
+
+  /**
+   * CRITICAL: Resume memory pool processing after consensus is restored
+   */
+  resumeProcessing() {
+    const wasPaused = this.processingPaused;
+    this.processingPaused = false;
+    this.pauseReason = null;
+
+    if (wasPaused) {
+      logger.info('MEMORY_POOL', 'Memory pool processing RESUMED - consensus restored');
+    }
+  }
+
+  /**
+   * Check if memory pool processing is currently paused
+   * @returns {boolean}
+   */
+  isProcessingPaused() {
+    return this.processingPaused;
+  }
+
+  /**
+   * Get the reason for processing being paused
+   * @returns {string|null}
+   */
+  getPauseReason() {
+    return this.pauseReason;
   }
 }
 

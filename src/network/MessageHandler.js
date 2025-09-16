@@ -720,7 +720,7 @@ class MessageHandler {
    * @param peerAddress
    */
   handleHandshake(ws, message, peerAddress) {
-    logger.info('MESSAGE_HANDLER', `🎯 HANDSHAKE RECEIVED from ${peerAddress} - Processing handshake request`);
+    logger.info('MESSAGE_HANDLER', `HANDSHAKE RECEIVED from ${peerAddress} - Processing handshake request`);
     logger.debug('MESSAGE_HANDLER', `Handshake message data: ${JSON.stringify(message.data)}`);
 
     try {
@@ -775,7 +775,7 @@ class MessageHandler {
       logger.info('MESSAGE_HANDLER', `Network ID match with ${peerAddress}: ${peerNetworkId}`);
 
       // Send successful handshake response
-      logger.info('MESSAGE_HANDLER', `✅ Sending HANDSHAKE_ACCEPTED to ${peerAddress}`);
+      logger.info('MESSAGE_HANDLER', `Sending HANDSHAKE_ACCEPTED to ${peerAddress}`);
       this.sendMessage(ws, {
         type: 'HANDSHAKE_ACCEPTED',
         data: {

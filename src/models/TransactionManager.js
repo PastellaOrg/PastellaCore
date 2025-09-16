@@ -61,6 +61,10 @@ class TransactionManager {
     // CRITICAL: Mutex to prevent double-spend race conditions
     this.transactionMutex = new SimpleMutex();
     this.reservedUTXOs = new Set(); // Track temporarily reserved UTXOs
+
+    // CRITICAL: Processing state for consensus protection
+    this.processingPaused = false;
+    this.pauseReason = null;
   }
 
   /**
@@ -69,6 +73,12 @@ class TransactionManager {
    * @returns {Promise<boolean>} - false if rejected, true if accepted
    */
   async addPendingTransaction(transaction) {
+    // CRITICAL: Check if processing is paused for consensus protection
+    if (this.processingPaused) {
+      logger.warn('TRANSACTION_MANAGER', `Transaction rejected - processing paused: ${this.pauseReason}`);
+      return false;
+    }
+
     // Convert JSON transaction to Transaction instance if needed
     let transactionInstance = transaction;
     if (typeof transaction === 'object' && !transaction.isValid) {
@@ -557,6 +567,45 @@ class TransactionManager {
       reservedUTXOs: Array.from(this.reservedUTXOs),
       pendingTransactions: this.memoryPool.getPendingTransactions().length
     };
+  }
+
+  /**
+   * CRITICAL: Pause transaction processing for consensus protection
+   * @param {string} reason - Reason for pausing
+   */
+  pauseProcessing(reason = 'Consensus protection activated') {
+    this.processingPaused = true;
+    this.pauseReason = reason;
+    logger.warn('TRANSACTION_MANAGER', `Transaction processing PAUSED: ${reason}`);
+  }
+
+  /**
+   * CRITICAL: Resume transaction processing after consensus is restored
+   */
+  resumeProcessing() {
+    const waspaused = this.processingPaused;
+    this.processingPaused = false;
+    this.pauseReason = null;
+
+    if (waspaused) {
+      logger.info('TRANSACTION_MANAGER', 'Transaction processing RESUMED - consensus restored');
+    }
+  }
+
+  /**
+   * Check if transaction processing is currently paused
+   * @returns {boolean}
+   */
+  isProcessingPaused() {
+    return this.processingPaused;
+  }
+
+  /**
+   * Get the reason for processing being paused
+   * @returns {string|null}
+   */
+  getPauseReason() {
+    return this.pauseReason;
   }
 }
 
