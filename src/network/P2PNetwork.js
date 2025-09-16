@@ -20,6 +20,7 @@ const PeerManager = require('./PeerManager');
 const PeerReputation = require('./PeerReputation');
 const SeedNodeManager = require('./SeedNodeManager');
 const PeerDiscovery = require('./PeerDiscovery');
+const UPnPManager = require('./UPnPManager');
 
 // Promisify DNS functions
 const dnsResolve4 = promisify(dns.resolve4);
@@ -89,6 +90,10 @@ class P2PNetwork {
 
       this.networkSync = new NetworkSync(blockchain, this.peerManager, this.seedNodeManager);
       logger.debug('P2P_NETWORK', `NetworkSync initialized with blockchain, peerManager, and seedNodeManager`);
+
+      // Initialize UPnP manager for automatic port mapping
+      this.upnpManager = new UPnPManager(port, port);
+      logger.debug('P2P_NETWORK', `UPnPManager initialized: internalPort=${port}, externalPort=${port}`);
 
       logger.debug('P2P_NETWORK', `All modular components initialized successfully`);
     } catch (error) {
@@ -321,6 +326,25 @@ class P2PNetwork {
       logger.debug('P2P_NETWORK', `Starting network partition handler...`);
       this.partitionHandler.start();
       logger.debug('P2P_NETWORK', `Network partition handler started successfully`);
+
+      // Initialize UPnP for automatic port mapping
+      logger.debug('P2P_NETWORK', `Initializing UPnP port mapping...`);
+      try {
+        const upnpSuccess = await this.upnpManager.initialize();
+        if (upnpSuccess) {
+          const externalAddress = this.upnpManager.getExternalAddress();
+          logger.info('P2P', `UPnP enabled - External address: ${externalAddress}`);
+
+          // Update peer discovery with external address
+          if (this.peerDiscovery && externalAddress) {
+            this.peerDiscovery.setExternalAddress(externalAddress);
+          }
+        } else {
+          logger.info('P2P', 'UPnP not available - running in NAT-only mode');
+        }
+      } catch (error) {
+        logger.warn('P2P', `UPnP initialization failed: ${error.message}`);
+      }
 
       // Connect to seed nodes if not running as seed node
       logger.debug(
@@ -789,6 +813,7 @@ class P2PNetwork {
       seedNodeInfo,
       networkSync: this.networkSync.getNetworkSyncStatus(),
       nodeIdentity: this.nodeIdentity.getIdentityInfo(),
+      upnp: this.upnpManager?.getStatus() || { enabled: false },
     };
   }
 
@@ -1056,6 +1081,11 @@ class P2PNetwork {
 
       // Stop periodic sync
       this.stopPeriodicSync();
+
+      // Shutdown UPnP manager and clean up port mappings
+      if (this.upnpManager) {
+        this.upnpManager.shutdown();
+      }
 
       // Close all peer connections
       this.peerManager.getAllPeers().forEach(ws => {

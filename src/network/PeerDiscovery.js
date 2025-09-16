@@ -29,6 +29,9 @@ class PeerDiscovery {
     this.activePeers = new Map(); // address -> WebSocket
     this.connectionAttempts = new Map(); // address -> AttemptInfo
 
+    // UPnP and external connectivity
+    this.externalAddress = null; // Set by UPnP manager when available
+
     // Connection settings
     this.baseRetryDelay = 5000; // 5 seconds
     this.maxRetryDelay = 300000; // 5 minutes
@@ -299,7 +302,7 @@ class PeerDiscovery {
     const existingPeer = this.knownPeers.get(normalizedAddress);
     existingPeer.lastSeen = Date.now();
     this.savePeersToDisk();
-    return true;
+    return false; // Return false since no new peer was added
   }
 
   /**
@@ -442,15 +445,45 @@ class PeerDiscovery {
   }
 
   /**
+   * Set external address from UPnP manager
+   */
+  setExternalAddress(externalAddress) {
+    this.externalAddress = externalAddress;
+    logger.info('PEER_DISCOVERY', `External address set: ${externalAddress}`);
+
+    // Add our own external address to known peers so it can be shared
+    if (externalAddress) {
+      const [host, port] = externalAddress.split(':');
+      this.addKnownPeer(host, parseInt(port) || 23000, 'upnp');
+    }
+  }
+
+  /**
+   * Get external address if available
+   */
+  getExternalAddress() {
+    return this.externalAddress;
+  }
+
+  /**
    * Get list of peers to share with other nodes
    */
   getPeersToShare(maxPeers = 10) {
-    const reliablePeers = Array.from(this.knownPeers.values())
+    let reliablePeers = Array.from(this.knownPeers.values())
       .filter(peer => peer.isReliable && !this.bannedPeers.has(peer.address))
-      .sort((a, b) => b.reputation - a.reputation)
-      .slice(0, maxPeers);
+      .sort((a, b) => b.reputation - a.reputation);
 
-    return reliablePeers.map(peer => ({
+    // Prioritize our external address if available (discovered by UPnP)
+    if (this.externalAddress) {
+      const [externalHost] = this.externalAddress.split(':');
+      const externalPeer = reliablePeers.find(peer => peer.address === externalHost);
+      if (externalPeer) {
+        // Move external peer to front of list
+        reliablePeers = [externalPeer, ...reliablePeers.filter(peer => peer.address !== externalHost)];
+      }
+    }
+
+    return reliablePeers.slice(0, maxPeers).map(peer => ({
       address: peer.address,
       port: peer.port,
       reputation: peer.reputation,
@@ -470,7 +503,12 @@ class PeerDiscovery {
       }
     });
 
-    logger.info('PEER_DISCOVERY', `Received ${peerList.length} peers from ${fromAddress}, added ${newPeersAdded} new peers`);
+    // Only log INFO when new peers are actually added
+    if (newPeersAdded > 0) {
+      logger.info('PEER_DISCOVERY', `Received ${peerList.length} peers from ${fromAddress}, added ${newPeersAdded} new peers`);
+    } else {
+      logger.debug('PEER_DISCOVERY', `Received ${peerList.length} peers from ${fromAddress}, no new peers added`);
+    }
   }
 
   /**
