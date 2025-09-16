@@ -347,36 +347,39 @@ class MessageValidator {
 
       // Peer discovery and sharing messages
       PEER_LIST_REQUEST: {
-        required: ['timestamp'],
-        optional: ['networkId'],
-        types: {
-          timestamp: 'number',
-          networkId: 'string',
+        required: ['type'],
+        properties: {
+          type: { type: 'string', enum: ['PEER_LIST_REQUEST'] },
         },
       },
       PEER_LIST_SHARE: {
-        required: ['peers', 'timestamp'],
-        optional: ['networkId'],
-        types: {
-          peers: 'array',
-          timestamp: 'number',
-          networkId: 'string',
+        required: ['type', 'data'],
+        properties: {
+          type: { type: 'string', enum: ['PEER_LIST_SHARE'] },
+          data: {
+            type: 'object',
+            required: ['peers', 'timestamp'],
+            properties: {
+              peers: { type: 'array', description: 'Array of peer information' },
+              timestamp: { type: 'number', minimum: 0, description: 'Share timestamp' },
+            },
+          },
         },
       },
 
       // Health check messages
       PING: {
-        required: ['timestamp'],
-        optional: [],
-        types: {
-          timestamp: 'number',
+        required: ['type', 'timestamp'],
+        properties: {
+          type: { type: 'string', enum: ['PING'] },
+          timestamp: { type: 'number', minimum: 0, description: 'Ping timestamp' },
         },
       },
       PONG: {
-        required: ['timestamp'],
-        optional: [],
-        types: {
-          timestamp: 'number',
+        required: ['type', 'timestamp'],
+        properties: {
+          type: { type: 'string', enum: ['PONG'] },
+          timestamp: { type: 'number', minimum: 0, description: 'Pong timestamp' },
         },
       },
 
@@ -390,45 +393,75 @@ class MessageValidator {
         },
       },
       MEMPOOL_INV: {
-        required: ['transactionHashes', 'count', 'timestamp'],
-        optional: [],
-        types: {
-          transactionHashes: 'array',
-          count: 'number',
-          timestamp: 'number',
+        required: ['type', 'data'],
+        properties: {
+          type: { type: 'string', enum: ['MEMPOOL_INV'] },
+          data: {
+            type: 'object',
+            required: ['transactionHashes', 'count', 'timestamp'],
+            properties: {
+              transactionHashes: { type: 'array', description: 'Array of transaction hashes' },
+              count: { type: 'number', minimum: 0, description: 'Number of transactions' },
+              timestamp: { type: 'number', minimum: 0, description: 'Timestamp' },
+            },
+          },
         },
       },
       MEMPOOL_GETDATA: {
-        required: ['transactionHashes', 'count'],
-        optional: [],
-        types: {
-          transactionHashes: 'array',
-          count: 'number',
+        required: ['type', 'data'],
+        properties: {
+          type: { type: 'string', enum: ['MEMPOOL_GETDATA'] },
+          data: {
+            type: 'object',
+            required: ['transactionHashes', 'count'],
+            properties: {
+              transactionHashes: { type: 'array', description: 'Array of transaction hashes to request' },
+              count: { type: 'number', minimum: 0, description: 'Number of requested transactions' },
+            },
+          },
         },
       },
       MEMPOOL_TX: {
-        required: ['transaction', 'hash'],
-        optional: [],
-        types: {
-          transaction: 'object',
-          hash: 'string',
+        required: ['type', 'data'],
+        properties: {
+          type: { type: 'string', enum: ['MEMPOOL_TX'] },
+          data: {
+            type: 'object',
+            required: ['transaction', 'hash'],
+            properties: {
+              transaction: { type: 'object', description: 'Transaction data' },
+              hash: { type: 'string', pattern: '^[a-fA-F0-9]{64}$', description: 'Transaction hash' },
+            },
+          },
         },
       },
       MEMPOOL_NOTFOUND: {
-        required: ['hash', 'reason'],
-        optional: [],
-        types: {
-          hash: 'string',
-          reason: 'string',
+        required: ['type', 'data'],
+        properties: {
+          type: { type: 'string', enum: ['MEMPOOL_NOTFOUND'] },
+          data: {
+            type: 'object',
+            required: ['hash', 'reason'],
+            properties: {
+              hash: { type: 'string', pattern: '^[a-fA-F0-9]{64}$', description: 'Transaction hash' },
+              reason: { type: 'string', description: 'Reason for not found' },
+            },
+          },
         },
       },
       MEMPOOL_REJECT: {
-        required: ['hash', 'reason', 'code'],
-        optional: [],
-        types: {
-          hash: 'string',
-          reason: 'string',
-          code: 'number',
+        required: ['type', 'data'],
+        properties: {
+          type: { type: 'string', enum: ['MEMPOOL_REJECT'] },
+          data: {
+            type: 'object',
+            required: ['hash', 'reason', 'code'],
+            properties: {
+              hash: { type: 'string', pattern: '^[a-fA-F0-9]{64}$', description: 'Transaction hash' },
+              reason: { type: 'string', description: 'Rejection reason' },
+              code: { type: 'number', minimum: 0, description: 'Error code' },
+            },
+          },
         },
       },
     };
