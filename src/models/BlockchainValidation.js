@@ -187,6 +187,9 @@ class BlockchainValidation {
     // Initialize CPU protection with config
     this.cpuProtection = new CPUProtection(config);
 
+    // CRITICAL: Consensus protection state
+    this.strictMode = false;
+
     logger.debug('BLOCKCHAIN_VALIDATION', `Initialized with config: ${config ? 'present' : 'null'}`);
     logger.debug(
       'BLOCKCHAIN_VALIDATION',
@@ -794,6 +797,27 @@ class BlockchainValidation {
       logger.error('BLOCKCHAIN_VALIDATION', `Medium validation error: ${error.message}`);
       return false;
     }
+  }
+
+  /**
+   * CRITICAL: Enable strict validation mode during consensus protection
+   * @param {boolean} enabled - Enable or disable strict mode
+   */
+  setStrictMode(enabled) {
+    this.strictMode = enabled;
+    if (enabled) {
+      logger.warn('BLOCKCHAIN_VALIDATION', 'Strict validation mode ACTIVATED - enhanced security measures');
+    } else {
+      logger.info('BLOCKCHAIN_VALIDATION', 'Strict validation mode DEACTIVATED');
+    }
+  }
+
+  /**
+   * Check if strict validation mode is enabled
+   * @returns {boolean}
+   */
+  isStrictMode() {
+    return this.strictMode;
   }
 }
 

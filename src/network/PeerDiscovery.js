@@ -49,6 +49,9 @@ class PeerDiscovery {
     this.loadPeersFromDisk();
     this.loadBannedPeers();
 
+    // Clean up any duplicate peer entries
+    this.cleanupDuplicatePeers();
+
     logger.info('PEER_DISCOVERY', `Initialized with ${this.knownPeers.size} known peers, max connections: ${maxPeers}`);
   }
 
@@ -164,6 +167,53 @@ class PeerDiscovery {
   }
 
   /**
+   * Clean up duplicate peer entries (e.g., "1.2.3.4" and "1.2.3.4:23000")
+   */
+  cleanupDuplicatePeers() {
+    const toRemove = [];
+    const seen = new Map(); // hostname -> {address, peerInfo}
+
+    for (const [address, peerInfo] of this.knownPeers) {
+      // Extract hostname from address
+      let hostname = address;
+      if (address.includes(':') && !address.includes('::')) {
+        hostname = address.split(':')[0];
+      }
+
+      const existing = seen.get(hostname);
+      if (existing) {
+        // We have a duplicate - keep the one with more connections or higher reputation
+        const existingInfo = existing.peerInfo;
+        const currentInfo = peerInfo;
+
+        if (currentInfo.connectionCount > existingInfo.connectionCount ||
+            (currentInfo.connectionCount === existingInfo.connectionCount && currentInfo.reputation > existingInfo.reputation)) {
+          // Current is better, remove the existing one
+          toRemove.push(existing.address);
+          seen.set(hostname, { address, peerInfo });
+        } else {
+          // Existing is better, remove current one
+          toRemove.push(address);
+        }
+
+        logger.debug('PEER_DISCOVERY', `Found duplicate peer: ${existing.address} vs ${address}, removing duplicate`);
+      } else {
+        seen.set(hostname, { address, peerInfo });
+      }
+    }
+
+    // Remove duplicates
+    toRemove.forEach(address => {
+      this.knownPeers.delete(address);
+    });
+
+    if (toRemove.length > 0) {
+      logger.info('PEER_DISCOVERY', `Cleaned up ${toRemove.length} duplicate peer entries`);
+      this.savePeersToDisk();
+    }
+  }
+
+  /**
    * Save peers to persistent storage
    */
   savePeersToDisk() {
@@ -204,7 +254,7 @@ class PeerDiscovery {
    * Add a new peer to the known peers list
    */
   addKnownPeer(address, port = 23000, discoveredBy = 'manual') {
-    // Normalize the address to extract hostname from WebSocket URLs
+    // Normalize the address to extract hostname from WebSocket URLs or host:port format
     let normalizedAddress = address;
     let normalizedPort = port;
 
@@ -214,6 +264,17 @@ class PeerDiscovery {
         normalizedAddress = url.hostname;
         normalizedPort = parseInt(url.port) || port || 23000;
         logger.debug('PEER_DISCOVERY', `Normalized WebSocket URL ${address} to ${normalizedAddress}:${normalizedPort}`);
+      } else if (address.includes(':') && !address.includes('::')) {
+        // Handle host:port format (but not IPv6)
+        const parts = address.split(':');
+        if (parts.length === 2) {
+          normalizedAddress = parts[0];
+          const parsedPort = parseInt(parts[1]);
+          if (!isNaN(parsedPort)) {
+            normalizedPort = parsedPort;
+            logger.debug('PEER_DISCOVERY', `Normalized host:port ${address} to ${normalizedAddress}:${normalizedPort}`);
+          }
+        }
       }
     } catch (error) {
       logger.warn('PEER_DISCOVERY', `Failed to parse address ${address}: ${error.message}`);
@@ -286,8 +347,19 @@ class PeerDiscovery {
     } else {
       // CRITICAL: Auto-add unknown peers when they connect
       logger.info('PEER_DISCOVERY', `Auto-adding unknown peer: ${address}`);
-      if (this.addKnownPeer(address, 23000, 'connection')) {
-        peerInfo = this.knownPeers.get(address);
+
+      // Extract hostname and port if address includes port
+      let hostname = address;
+      let port = 23000;
+
+      if (address.includes(':') && !address.startsWith('ws://')) {
+        const parts = address.split(':');
+        hostname = parts[0];
+        port = parseInt(parts[1]) || 23000;
+      }
+
+      if (this.addKnownPeer(hostname, port, 'connection')) {
+        peerInfo = this.knownPeers.get(hostname);
         if (peerInfo) {
           peerInfo.lastConnected = Date.now();
           peerInfo.connectionCount = 1;

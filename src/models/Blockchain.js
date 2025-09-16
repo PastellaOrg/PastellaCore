@@ -77,6 +77,10 @@ class Blockchain {
     this.historicalTransactionIds = new Set(); // Track all transaction IDs ever processed
 
     // CRITICAL: Nonce collision detection and tracking
+
+    // CRITICAL: Consensus protection state
+    this.blockAcceptancePaused = false;
+    this.conservativeMode = false;
     this.globalNonceUsage = new Map(); // nonce -> count of how many times used globally
     this.nonceCollisionThreshold = 100; // Maximum times a nonce can be used globally before considering it an attack
 
@@ -1747,6 +1751,51 @@ class Blockchain {
       'BLOCKCHAIN',
       `Setting blockchain properties: difficulty=${this.difficulty}, blockTime=${this.blockTime}, halvingBlocks=${this.config?.blockchain?.halvingBlocks || 1000}`
     );
+  }
+
+  /**
+   * CRITICAL: Pause block acceptance during network partitions
+   */
+  pauseBlockAcceptance() {
+    this.blockAcceptancePaused = true;
+    logger.warn('BLOCKCHAIN', 'Block acceptance PAUSED for consensus protection');
+  }
+
+  /**
+   * CRITICAL: Resume block acceptance after partition recovery
+   */
+  resumeBlockAcceptance() {
+    this.blockAcceptancePaused = false;
+    logger.info('BLOCKCHAIN', 'Block acceptance RESUMED - consensus restored');
+  }
+
+  /**
+   * CRITICAL: Enable conservative mode during potential attacks
+   * @param {boolean} enabled - Enable or disable conservative mode
+   */
+  setConservativeMode(enabled) {
+    this.conservativeMode = enabled;
+    if (enabled) {
+      logger.warn('BLOCKCHAIN', 'Conservative mode ACTIVATED - enhanced security measures');
+    } else {
+      logger.info('BLOCKCHAIN', 'Conservative mode DEACTIVATED');
+    }
+  }
+
+  /**
+   * Check if block acceptance is currently paused
+   * @returns {boolean}
+   */
+  isBlockAcceptancePaused() {
+    return this.blockAcceptancePaused;
+  }
+
+  /**
+   * Check if blockchain is in conservative mode
+   * @returns {boolean}
+   */
+  isConservativeMode() {
+    return this.conservativeMode;
   }
 }
 
