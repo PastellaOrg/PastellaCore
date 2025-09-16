@@ -5,6 +5,45 @@ const logger = require('../utils/logger');
 const { Transaction, TransactionInput, TransactionOutput } = require('./Transaction');
 
 /**
+ * Simple promise-based mutex for preventing race conditions
+ */
+class SimpleMutex {
+  constructor() {
+    this.locked = false;
+    this.queue = [];
+  }
+
+  async acquire() {
+    return new Promise((resolve) => {
+      if (!this.locked) {
+        this.locked = true;
+        resolve();
+      } else {
+        this.queue.push(resolve);
+      }
+    });
+  }
+
+  release() {
+    if (this.queue.length > 0) {
+      const next = this.queue.shift();
+      next();
+    } else {
+      this.locked = false;
+    }
+  }
+
+  async runExclusive(fn) {
+    await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      this.release();
+    }
+  }
+}
+
+/**
  * Transaction Manager - Handles transaction validation and management
  */
 class TransactionManager {
@@ -18,13 +57,18 @@ class TransactionManager {
     this.utxoManager = utxoManager;
     this.spamProtection = spamProtection;
     this.memoryPool = memoryPool;
+
+    // CRITICAL: Mutex to prevent double-spend race conditions
+    this.transactionMutex = new SimpleMutex();
+    this.reservedUTXOs = new Set(); // Track temporarily reserved UTXOs
   }
 
   /**
    * Add transaction to pending pool with MANDATORY replay attack protection and SPAM PROTECTION
    * @param transaction
+   * @returns {Promise<boolean>} - false if rejected, true if accepted
    */
-  addPendingTransaction(transaction) {
+  async addPendingTransaction(transaction) {
     // Convert JSON transaction to Transaction instance if needed
     let transactionInstance = transaction;
     if (typeof transaction === 'object' && !transaction.isValid) {
@@ -103,34 +147,53 @@ class TransactionManager {
       }
     }
 
-    // 2. UTXO VALIDATION (Prevent double-spending before expensive operations)
-    if (!this.validateTransactionInputs(transactionInstance)) {
-      logger.error(
-        'TRANSACTION_MANAGER',
-        `Transaction ${transactionInstance.id} REJECTED: UTXO validation failed - potential manipulation detected`
-      );
-      return false;
-    }
+    // 2. ATOMIC UTXO VALIDATION AND RESERVATION (Prevent double-spending with mutex protection)
+    return await this.transactionMutex.runExclusive(async () => {
+      // Check if transaction was already added while waiting for mutex
+      if (this.memoryPool.hasTransaction(transactionInstance.id)) {
+        logger.warn('TRANSACTION_MANAGER', `Transaction ${transactionInstance.id} already exists in pending pool`);
+        return false;
+      }
 
-    // 3. STRUCTURAL VALIDATION (Basic format and field validation)
-    const validationResult = this.validateTransaction(transactionInstance);
-    if (!validationResult.valid) {
-      logger.error('TRANSACTION_MANAGER', `Transaction ${transactionInstance.id} REJECTED: ${validationResult.reason}`);
-      return false;
-    }
+      // Atomically validate and reserve UTXOs
+      if (!this.atomicValidateAndReserveUTXOs(transactionInstance)) {
+        logger.error(
+          'TRANSACTION_MANAGER',
+          `Transaction ${transactionInstance.id} REJECTED: Atomic UTXO validation failed - double-spend prevented`
+        );
+        return false;
+      }
 
-    // 4. CRYPTOGRAPHIC VALIDATION (Expensive operations last)
-    if (transactionInstance.isValid()) {
-      this.memoryPool.addTransaction(transactionInstance);
-      logger.info(
-        'TRANSACTION_MANAGER',
-        `Transaction ${transactionInstance.id} added to pending pool with UTXO validation, replay protection and spam protection`
-      );
-      return true;
-    }
+      try {
+        // 3. STRUCTURAL VALIDATION (Basic format and field validation)
+        const validationResult = this.validateTransaction(transactionInstance);
+        if (!validationResult.valid) {
+          logger.error('TRANSACTION_MANAGER', `Transaction ${transactionInstance.id} REJECTED: ${validationResult.reason}`);
+          this.releaseReservedUTXOs(transactionInstance);
+          return false;
+        }
 
-    logger.warn('TRANSACTION_MANAGER', 'Invalid transaction, not added to pending pool');
-    return false;
+        // 4. CRYPTOGRAPHIC VALIDATION (Expensive operations last)
+        if (!transactionInstance.isValid()) {
+          logger.warn('TRANSACTION_MANAGER', `Transaction ${transactionInstance.id} REJECTED: Invalid cryptographic signature`);
+          this.releaseReservedUTXOs(transactionInstance);
+          return false;
+        }
+
+        // All validations passed - add to memory pool
+        this.memoryPool.addTransaction(transactionInstance);
+        logger.info(
+          'TRANSACTION_MANAGER',
+          `Transaction ${transactionInstance.id} added to pending pool with atomic UTXO validation, replay protection and spam protection`
+        );
+        return true;
+
+      } catch (error) {
+        logger.error('TRANSACTION_MANAGER', `Unexpected error validating transaction ${transactionInstance.id}: ${error.message}`);
+        this.releaseReservedUTXOs(transactionInstance);
+        return false;
+      }
+    });
   }
 
   /**
@@ -277,13 +340,13 @@ class TransactionManager {
    * Batch transaction addition
    * @param transactions
    */
-  addTransactionBatch(transactions) {
+  async addTransactionBatch(transactions) {
     const validationResults = this.memoryPool.validateTransactionBatch(transactions);
     let addedCount = 0;
 
-    // Add all valid transactions
+    // Add all valid transactions sequentially to maintain mutex protection
     for (const tx of validationResults.valid) {
-      if (this.addPendingTransaction(tx)) {
+      if (await this.addPendingTransaction(tx)) {
         addedCount++;
       }
     }
@@ -355,6 +418,145 @@ class TransactionManager {
       `✅ UTXO validation passed for transaction ${transaction.id}: all ${transaction.inputs.length} inputs are valid`
     );
     return true;
+  }
+
+  /**
+   * CRITICAL SECURITY: Atomically validate and reserve UTXOs to prevent double-spending
+   * @param {Transaction} transaction - Transaction to validate
+   * @returns {boolean} - True if all inputs are valid and reserved
+   */
+  atomicValidateAndReserveUTXOs(transaction) {
+    // Skip UTXO validation for coinbase transactions (they don't have inputs)
+    if (transaction.isCoinbase) {
+      logger.debug('TRANSACTION_MANAGER', `Skipping UTXO validation for coinbase transaction: ${transaction.id}`);
+      return true;
+    }
+
+    const utxosToReserve = [];
+
+    // First pass: validate all UTXOs exist and are not reserved
+    for (let i = 0; i < transaction.inputs.length; i++) {
+      const input = transaction.inputs[i];
+      const txHash = input.txHash || input.txId; // Handle both field names
+      const utxoKey = `${txHash}:${input.outputIndex}`;
+
+      // Check if UTXO is already reserved by another pending transaction
+      if (this.reservedUTXOs.has(utxoKey)) {
+        logger.error(
+          'TRANSACTION_MANAGER',
+          `DOUBLE-SPEND PREVENTED: UTXO ${utxoKey} is already reserved by another pending transaction`
+        );
+        return false;
+      }
+
+      // Check if the UTXO exists and is unspent
+      const utxo = this.utxoManager.findUTXO(txHash, input.outputIndex);
+
+      if (!utxo) {
+        logger.error(
+          'TRANSACTION_MANAGER',
+          `SECURITY VIOLATION: Input ${i} references non-existent or spent UTXO: ${utxoKey}`
+        );
+        logger.error('TRANSACTION_MANAGER', `This could be a blockchain manipulation attempt or double-spend attack`);
+        return false;
+      }
+
+      utxosToReserve.push(utxoKey);
+
+      // Verify the input amount matches what's expected (if available)
+      if (utxo.amount !== undefined) {
+        logger.debug(
+          'TRANSACTION_MANAGER',
+          `UTXO ${utxoKey} validated: amount=${utxo.amount}, address=${utxo.address}`
+        );
+      }
+    }
+
+    // Second pass: atomically reserve all UTXOs
+    for (const utxoKey of utxosToReserve) {
+      this.reservedUTXOs.add(utxoKey);
+    }
+
+    logger.info('TRANSACTION_MANAGER', `Reserved ${utxosToReserve.length} UTXOs for transaction ${transaction.id}`);
+    return true;
+  }
+
+  /**
+   * Release reserved UTXOs when transaction is processed or rejected
+   * @param {Transaction} transaction - Transaction whose UTXOs to release
+   */
+  releaseReservedUTXOs(transaction) {
+    if (transaction.isCoinbase) return;
+
+    let releasedCount = 0;
+    for (const input of transaction.inputs) {
+      const txHash = input.txHash || input.txId;
+      const utxoKey = `${txHash}:${input.outputIndex}`;
+
+      if (this.reservedUTXOs.has(utxoKey)) {
+        this.reservedUTXOs.delete(utxoKey);
+        releasedCount++;
+      }
+    }
+
+    if (releasedCount > 0) {
+      logger.debug('TRANSACTION_MANAGER', `Released ${releasedCount} reserved UTXOs for transaction ${transaction.id}`);
+    }
+  }
+
+  /**
+   * Clean up reserved UTXOs for transactions that are no longer in the memory pool
+   * This should be called periodically or when transactions are processed into blocks
+   */
+  cleanupReservedUTXOs() {
+    const pendingTransactions = this.memoryPool.getPendingTransactions();
+    const activeTxIds = new Set(pendingTransactions.map(tx => tx.id));
+
+    // Find reserved UTXOs that belong to transactions no longer in the pool
+    const utxosToRelease = [];
+    for (const utxoKey of this.reservedUTXOs) {
+      let shouldRelease = true;
+
+      // Check if this UTXO belongs to any active transaction
+      for (const tx of pendingTransactions) {
+        if (tx.isCoinbase) continue;
+
+        for (const input of tx.inputs) {
+          const txHash = input.txHash || input.txId;
+          const currentUtxoKey = `${txHash}:${input.outputIndex}`;
+          if (currentUtxoKey === utxoKey) {
+            shouldRelease = false;
+            break;
+          }
+        }
+
+        if (!shouldRelease) break;
+      }
+
+      if (shouldRelease) {
+        utxosToRelease.push(utxoKey);
+      }
+    }
+
+    // Release orphaned UTXOs
+    for (const utxoKey of utxosToRelease) {
+      this.reservedUTXOs.delete(utxoKey);
+    }
+
+    if (utxosToRelease.length > 0) {
+      logger.info('TRANSACTION_MANAGER', `Cleaned up ${utxosToRelease.length} orphaned reserved UTXOs`);
+    }
+  }
+
+  /**
+   * Get current status of reserved UTXOs (for debugging/monitoring)
+   */
+  getReservationStatus() {
+    return {
+      reservedCount: this.reservedUTXOs.size,
+      reservedUTXOs: Array.from(this.reservedUTXOs),
+      pendingTransactions: this.memoryPool.getPendingTransactions().length
+    };
   }
 }
 
