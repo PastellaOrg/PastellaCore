@@ -33,7 +33,7 @@ class PeerDiscovery {
     this.baseRetryDelay = 5000; // 5 seconds
     this.maxRetryDelay = 300000; // 5 minutes
     this.maxRetryAttempts = 10;
-    this.peerShareInterval = 60000; // 1 minute
+    this.peerShareInterval = 15000; // 15 seconds (faster for small networks)
     this.healthCheckInterval = 30000; // 30 seconds
 
     // File paths
@@ -277,12 +277,24 @@ class PeerDiscovery {
   markPeerConnected(address, ws) {
     this.activePeers.set(address, ws);
 
-    const peerInfo = this.knownPeers.get(address);
+    let peerInfo = this.knownPeers.get(address);
     if (peerInfo) {
       peerInfo.lastConnected = Date.now();
       peerInfo.connectionCount++;
-      peerInfo.isReliable = peerInfo.connectionCount >= 3;
+      peerInfo.isReliable = peerInfo.connectionCount >= 1; // Lowered for small networks
       peerInfo.reputation = Math.min(1000, peerInfo.reputation + 10);
+    } else {
+      // CRITICAL: Auto-add unknown peers when they connect
+      logger.info('PEER_DISCOVERY', `Auto-adding unknown peer: ${address}`);
+      if (this.addKnownPeer(address, 23000, 'connection')) {
+        peerInfo = this.knownPeers.get(address);
+        if (peerInfo) {
+          peerInfo.lastConnected = Date.now();
+          peerInfo.connectionCount = 1;
+          peerInfo.isReliable = true;
+          peerInfo.reputation = 1000;
+        }
+      }
     }
 
     // Reset connection attempts

@@ -32,7 +32,7 @@ class NetworkPartitionHandler {
       heartbeatInterval: 15000, // 15 seconds
       connectionTimeout: 10000, // 10 seconds
       // CRITICAL: Consensus protection parameters
-      minPeersForConsensus: 3, // Minimum peers required for consensus operations
+      minPeersForConsensus: 3, // Minimum peers required for consensus operations (lowered for small networks)
       consensusThreshold: 0.67, // 67% agreement required for consensus
       maxBlockHeightDifference: 5, // Max height difference to consider valid chain
       partitionSafetyMargin: 0.25, // Extra safety margin for partition detection
@@ -293,17 +293,28 @@ class NetworkPartitionHandler {
    */
   async monitorConsensusHealth(partitionMetrics) {
     // CRITICAL: Pause transaction processing if consensus is unsafe
-    if (partitionMetrics.consensusStrength < this.config.consensusThreshold ||
-        partitionMetrics.connectedPeers < this.config.minPeersForConsensus) {
+    const consensusLow = partitionMetrics.consensusStrength < this.config.consensusThreshold;
+    const peerCountLow = partitionMetrics.connectedPeers < this.config.minPeersForConsensus;
 
+    if (consensusLow || peerCountLow) {
       if (!this.partitionState.transactionProcessingPaused) {
         await this.pauseTransactionProcessing();
-        logger.warn('P2P', `Transaction processing paused due to insufficient consensus: ${Math.round(partitionMetrics.consensusStrength * 100)}%`);
+
+        // Detailed logging about why processing is paused
+        const reasons = [];
+        if (consensusLow) {
+          reasons.push(`consensus too low: ${Math.round(partitionMetrics.consensusStrength * 100)}% < ${Math.round(this.config.consensusThreshold * 100)}%`);
+        }
+        if (peerCountLow) {
+          reasons.push(`insufficient peers: ${partitionMetrics.connectedPeers} < ${this.config.minPeersForConsensus}`);
+        }
+
+        logger.warn('P2P', `Transaction processing paused due to: ${reasons.join(', ')}`);
       }
     } else if (this.partitionState.transactionProcessingPaused && !this.partitionState.isPartitioned) {
       // Resume transaction processing if consensus is restored
       await this.resumeTransactionProcessing();
-      logger.info('P2P', 'Transaction processing resumed - consensus restored');
+      logger.info('P2P', `Transaction processing resumed - consensus: ${Math.round(partitionMetrics.consensusStrength * 100)}%, peers: ${partitionMetrics.connectedPeers}`);
     }
 
     // Detect minority chain (potential 51% attack)

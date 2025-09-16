@@ -447,6 +447,11 @@ class P2PNetwork {
     // Register connection with PeerDiscovery
     this.peerDiscovery.markPeerConnected(extractedAddress, ws);
 
+    // CRITICAL: Immediately share peers with new connection
+    setTimeout(() => {
+      this.shareKnownPeersWithNewConnection(ws, extractedAddress);
+    }, 2000); // 2 second delay to ensure handshake is complete
+
     // CRITICAL: For outgoing connections, WE initiate the handshake
     logger.debug('P2P_NETWORK', `Outgoing connection established with ${extractedAddress}, initiating handshake`);
     this.initiateHandshake(ws, extractedAddress);
@@ -506,6 +511,11 @@ class P2PNetwork {
 
     // Register connection with PeerDiscovery
     this.peerDiscovery.markPeerConnected(peerAddress, ws);
+
+    // CRITICAL: Immediately share peers with new connection
+    setTimeout(() => {
+      this.shareKnownPeersWithNewConnection(ws, peerAddress);
+    }, 2000); // 2 second delay to ensure handshake is complete
 
     // CRITICAL FIX: Don't initiate handshake from receiving node
     // The connecting node (initiator) will send the handshake
@@ -1054,6 +1064,38 @@ class P2PNetwork {
       logger.info('P2P_NETWORK', 'P2P network shutdown complete');
     } catch (error) {
       logger.error('P2P_NETWORK', `Error during shutdown: ${error.message}`);
+    }
+  }
+
+  /**
+   * Share known peers with a newly connected peer
+   * @param {WebSocket} ws - The websocket connection
+   * @param {string} peerAddress - The peer address
+   */
+  shareKnownPeersWithNewConnection(ws, peerAddress) {
+    try {
+      if (ws.readyState !== 1) { // WebSocket.OPEN
+        logger.debug('P2P_NETWORK', `Cannot share peers with ${peerAddress} - connection not open`);
+        return;
+      }
+
+      const peersToShare = this.peerDiscovery.getPeersToShare();
+      if (peersToShare.length > 0) {
+        const message = {
+          type: 'PEER_LIST_SHARE',
+          data: {
+            peers: peersToShare,
+            timestamp: Date.now()
+          }
+        };
+
+        ws.send(JSON.stringify(message));
+        logger.info('P2P_NETWORK', `Immediately shared ${peersToShare.length} peers with new connection ${peerAddress}`);
+      } else {
+        logger.debug('P2P_NETWORK', `No peers to share with new connection ${peerAddress}`);
+      }
+    } catch (error) {
+      logger.debug('P2P_NETWORK', `Failed to share peers with ${peerAddress}: ${error.message}`);
     }
   }
 }
