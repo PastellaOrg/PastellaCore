@@ -429,20 +429,16 @@ class CryptoUtils {
    *
    */
   static generateKeyPair() {
-    // Generate a random private key
-    const privateKey = crypto.randomBytes(32);
-    const privateKeyHex = privateKey.toString('hex');
-
-    // Derive public key from private key
-    const publicKey = this.privateKeyToPublicKey(privateKeyHex);
-
-    // Generate seed phrase (simplified - in production use proper BIP39)
+    // Generate seed phrase first (BIP39 standard)
     const seed = this.generateSeed();
 
+    // Derive private key FROM the seed (deterministic)
+    const keyPair = this.importFromSeed(seed);
+
     return {
-      privateKey: privateKeyHex,
-      publicKey,
-      seed,
+      privateKey: keyPair.privateKey,
+      publicKey: keyPair.publicKey,
+      seed: seed,
     };
   }
 
@@ -506,6 +502,11 @@ class CryptoUtils {
       if (!wordlist.includes(word.toLowerCase())) {
         throw new Error(`Invalid word in seed phrase: "${word}"`);
       }
+    }
+
+    // Validate BIP39 checksum
+    if (!this.validateSeedEntropy(seed)) {
+      throw new Error('Seed phrase checksum validation failed. The phrase may be corrupted or invalid.');
     }
 
     // Derive private key from seed using deterministic hash

@@ -201,3 +201,5 @@ class WordList {
     ];
   }
 }
+
+module.exports = { WordList };

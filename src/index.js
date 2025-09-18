@@ -230,7 +230,7 @@ class PastellaDaemon {
 
     // Stop P2P network
     if (this.p2pNetwork) {
-      this.p2pNetwork.stop();
+      await this.p2pNetwork.shutdown();
       console.log(chalk.yellow('🌐 P2P Network: Stopped'));
     }
 
@@ -782,6 +782,7 @@ async function main() {
     console.log(chalk.cyan('  --p2p-port <port>    '), chalk.white('P2P network port (default: 3001)'));
     console.log(chalk.cyan('  --no-api             '), chalk.white('Disable REST API server'));
     console.log(chalk.cyan('  --no-p2p             '), chalk.white('Disable P2P network'));
+    console.log(chalk.cyan('  --disable-upnp       '), chalk.white('Disable UPnP automatic port mapping'));
     console.log(chalk.cyan('  --block-time <ms>    '), chalk.white('Set block time in milliseconds (default: 60000)'));
     console.log(chalk.cyan('  --min-seed-conn <n>  '), chalk.white('Minimum seed node connections (0-10, default: 2)'));
     console.log(chalk.cyan('  --api-key <key>      '), chalk.white('API key for authentication (default: none)'));
@@ -821,6 +822,10 @@ async function main() {
     console.log(
       chalk.cyan('  node src/index.js --generate-genesis                  '),
       chalk.white('Generate new genesis configuration')
+    );
+    console.log(
+      chalk.cyan('  node src/index.js --disable-upnp                      '),
+      chalk.white('Run without UPnP port mapping')
     );
     console.log('');
     console.log(chalk.yellow.bold('🔗 SERVICES:'));
@@ -1206,6 +1211,11 @@ async function main() {
   }
   if (args.includes('--no-p2p')) {
     config.network.enabled = false;
+  }
+  if (args.includes('--disable-upnp')) {
+    config.network = config.network || {};
+    config.network.upnpEnabled = false;
+    logger.info('SYSTEM', 'UPnP disabled via command line argument');
   }
   if (args.includes('--wallet')) {
     config.wallet = config.wallet || {};

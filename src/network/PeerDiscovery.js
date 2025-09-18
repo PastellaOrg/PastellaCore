@@ -326,9 +326,20 @@ class PeerDiscovery {
         return true;
       })
       .sort((a, b) => {
-        // Priority: reliable peers first, then by reputation, then by last successful connection
+        // Give newly discovered peers a chance by prioritizing never-connected peers
+        const aConnected = a.lastConnected !== null;
+        const bConnected = b.lastConnected !== null;
+
+        // Priority: never-connected peers first (to give new peers a chance)
+        if (aConnected !== bConnected) return aConnected - bConnected;
+
+        // Then reliable peers first
         if (a.isReliable !== b.isReliable) return b.isReliable - a.isReliable;
+
+        // Then by reputation
         if (a.reputation !== b.reputation) return b.reputation - a.reputation;
+
+        // Finally by last successful connection
         return (b.lastConnected || 0) - (a.lastConnected || 0);
       });
 
@@ -579,24 +590,36 @@ class PeerDiscovery {
 
     this.reconnectionTimer = setInterval(async () => {
       const currentConnections = this.activePeers.size;
-      const targetConnections = Math.min(this.maxPeers, this.knownPeers.size);
 
-      if (currentConnections < targetConnections) {
-        const peersToConnect = this.getPeersForConnection()
-          .filter(peer => this.canAttemptConnection(peer.address))
-          .slice(0, targetConnections - currentConnections);
+      // Get unique IP addresses we're currently connected to
+      const connectedIPs = new Set();
+      for (const address of this.activePeers.keys()) {
+        const ip = address.split(':')[0]; // Extract IP from address:port
+        connectedIPs.add(ip);
+      }
 
-        if (peersToConnect.length > 0) {
-          logger.debug('PEER_DISCOVERY', `Attempting to connect to ${peersToConnect.length} peers (current: ${currentConnections}/${targetConnections})`);
+      // Try to connect to peers from different IP addresses that we're not connected to
+      const peersToConnect = this.getPeersForConnection()
+        .filter(peer => {
+          const peerIP = peer.address.split(':')[0];
+          return !connectedIPs.has(peerIP) && this.canAttemptConnection(peer.address);
+        })
+        .slice(0, Math.max(1, this.maxPeers - currentConnections)); // Always try at least 1 new peer
 
-          for (const peer of peersToConnect) {
-            try {
-              await connectionCallback(peer.address, peer.port);
-            } catch (error) {
-              this.markConnectionFailure(peer.address, error);
-            }
+      if (peersToConnect.length > 0) {
+        logger.info('PEER_DISCOVERY', `Attempting to connect to ${peersToConnect.length} new peers from different IPs (current connections: ${currentConnections}, unique IPs: ${connectedIPs.size})`);
+
+        for (const peer of peersToConnect) {
+          try {
+            logger.debug('PEER_DISCOVERY', `Attempting connection to ${peer.address}:${peer.port}`);
+            await connectionCallback(peer.address, peer.port);
+          } catch (error) {
+            logger.warn('PEER_DISCOVERY', `Failed to connect to ${peer.address}:${peer.port}: ${error.message}`);
+            this.markConnectionFailure(peer.address, error);
           }
         }
+      } else {
+        logger.debug('PEER_DISCOVERY', `No new peers to connect (current: ${currentConnections}, unique IPs: ${connectedIPs.size})`);
       }
     }, 15000); // Check every 15 seconds
 

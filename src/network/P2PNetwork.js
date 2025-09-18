@@ -327,23 +327,28 @@ class P2PNetwork {
       this.partitionHandler.start();
       logger.debug('P2P_NETWORK', `Network partition handler started successfully`);
 
-      // Initialize UPnP for automatic port mapping
-      logger.debug('P2P_NETWORK', `Initializing UPnP port mapping...`);
-      try {
-        const upnpSuccess = await this.upnpManager.initialize();
-        if (upnpSuccess) {
-          const externalAddress = this.upnpManager.getExternalAddress();
-          logger.info('P2P', `UPnP enabled - External address: ${externalAddress}`);
+      // Initialize UPnP for automatic port mapping (if enabled)
+      const upnpEnabled = this.config?.network?.upnpEnabled !== false; // Default to true unless explicitly disabled
+      if (upnpEnabled) {
+        logger.debug('P2P_NETWORK', `Initializing UPnP port mapping...`);
+        try {
+          const upnpSuccess = await this.upnpManager.initialize();
+          if (upnpSuccess) {
+            const externalAddress = this.upnpManager.getExternalAddress();
+            logger.info('P2P', `UPnP enabled - External address: ${externalAddress}`);
 
-          // Update peer discovery with external address
-          if (this.peerDiscovery && externalAddress) {
-            this.peerDiscovery.setExternalAddress(externalAddress);
+            // Update peer discovery with external address
+            if (this.peerDiscovery && externalAddress) {
+              this.peerDiscovery.setExternalAddress(externalAddress);
+            }
+          } else {
+            logger.info('P2P', 'UPnP not available - running in NAT-only mode');
           }
-        } else {
-          logger.info('P2P', 'UPnP not available - running in NAT-only mode');
+        } catch (error) {
+          logger.warn('P2P', `UPnP initialization failed: ${error.message}`);
         }
-      } catch (error) {
-        logger.warn('P2P', `UPnP initialization failed: ${error.message}`);
+      } else {
+        logger.info('P2P', 'UPnP disabled via configuration - running in NAT-only mode');
       }
 
       // Connect to seed nodes if not running as seed node
@@ -719,6 +724,7 @@ class P2PNetwork {
 
       return new Promise(resolve => {
         const timeout = setTimeout(() => {
+          logger.warn('P2P', `Connection timeout to ${peerAddress} after 5 seconds`);
           ws.terminate();
           resolve(false);
         }, 5000);
@@ -733,8 +739,9 @@ class P2PNetwork {
           resolve(true);
         });
 
-        ws.on('error', () => {
+        ws.on('error', (error) => {
           clearTimeout(timeout);
+          logger.warn('P2P', `Connection failed to ${peerAddress}: ${error.message || error.code || 'Unknown error'}`);
           resolve(false);
         });
       });
@@ -813,7 +820,10 @@ class P2PNetwork {
       seedNodeInfo,
       networkSync: this.networkSync.getNetworkSyncStatus(),
       nodeIdentity: this.nodeIdentity.getIdentityInfo(),
-      upnp: this.upnpManager?.getStatus() || { enabled: false },
+      upnp: this.upnpManager?.getStatus() || {
+        enabled: false,
+        disabled: this.config?.network?.upnpEnabled === false ? 'via_config' : 'unavailable'
+      },
     };
   }
 
@@ -1070,7 +1080,7 @@ class P2PNetwork {
   /**
    * Shutdown P2P network and cleanup resources
    */
-  shutdown() {
+  async shutdown() {
     logger.info('P2P_NETWORK', 'Shutting down P2P network...');
 
     try {
@@ -1083,8 +1093,8 @@ class P2PNetwork {
       this.stopPeriodicSync();
 
       // Shutdown UPnP manager and clean up port mappings
-      if (this.upnpManager) {
-        this.upnpManager.shutdown();
+      if (this.upnpManager && this.upnpManager.isAvailable()) {
+        await this.upnpManager.shutdown();
       }
 
       // Close all peer connections
