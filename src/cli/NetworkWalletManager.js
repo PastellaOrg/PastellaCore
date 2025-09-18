@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { Worker } = require('worker_threads');
+const os = require('os');
 
 const chalk = require('chalk'); // Added for beautified output
 const fetch = require('node-fetch');
@@ -156,6 +158,9 @@ class NetworkWalletManager {
       case 'create':
         await this.createWallet();
         break;
+      case 'create-vanity':
+        await this.createVanityWallet();
+        break;
       case 'load':
         await this.loadWallet();
         break;
@@ -193,6 +198,9 @@ class NetworkWalletManager {
         break;
       case 'save':
         await this.saveWallet();
+        break;
+      case 'export':
+        await this.exportWallet();
         break;
       case 'seed-import':
         await this.importWalletFromSeed();
@@ -327,6 +335,253 @@ class NetworkWalletManager {
       console.log(chalk.green('  ✅ Ready for use'));
       console.log('');
       console.log(chalk.blue('────────────────────────────────────────────────────────────────────────────────'));
+    } catch (error) {
+      console.log(`❌ Error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create vanity wallet with custom address pattern
+   */
+  async createVanityWallet() {
+    try {
+      const answers = await this.cli.inquirer.prompt([
+        {
+          type: 'input',
+          name: 'walletName',
+          message: 'Enter wallet name:',
+          default: 'vanity',
+          validate: input => {
+            if (!input.trim()) {
+              return 'Wallet name cannot be empty';
+            }
+            // Check if wallet file already exists
+            const filePath = path.join(process.cwd(), `${input.trim()}.wallet`);
+            if (fs.existsSync(filePath)) {
+              return `Wallet '${input.trim()}' already exists. Please choose a different name.`;
+            }
+            return true;
+          },
+        },
+        {
+          type: 'input',
+          name: 'pattern',
+          message: 'Enter desired address pattern (after "1"):',
+          default: 'PAS',
+          validate: input => {
+            const result = this.validateVanityPattern(input);
+            if (result.valid) {
+              // Show feasibility analysis
+              console.log('');
+              console.log(chalk.cyan('📊 FEASIBILITY ANALYSIS:'));
+              console.log(chalk.white(`  Pattern: 1${input}`));
+              console.log(chalk.white(`  Expected attempts: ${result.expectedAttempts.toLocaleString()}`));
+              console.log(chalk.white(`  Difficulty: ${result.difficulty}`));
+              console.log(chalk.white(`  Practicality: ${result.practicality}`));
+              if (result.estimatedTime) {
+                console.log(chalk.white(`  Estimated time: ${result.estimatedTime}`));
+              }
+              console.log('');
+              return true;
+            }
+            return result.error;
+          },
+        },
+        {
+          type: 'password',
+          name: 'password',
+          message: 'Enter wallet password:',
+          validate: input => {
+            if (input.length < 6) {
+              return 'Password must be at least 6 characters long';
+            }
+            return true;
+          },
+        },
+        {
+          type: 'password',
+          name: 'confirmPassword',
+          message: 'Confirm wallet password:',
+          validate: (input, answers) => {
+            if (input !== answers.password) {
+              return 'Passwords do not match';
+            }
+            return true;
+          },
+        },
+      ]);
+
+      // Check if wallet already exists in memory
+      if (this.wallets.has(answers.walletName)) {
+        console.log(chalk.red(`❌ Error: Wallet '${answers.walletName}' already exists in memory.`));
+        return;
+      }
+
+      console.log('');
+      console.log(chalk.yellow.bold('🔍 GENERATING VANITY ADDRESS...'));
+      console.log(chalk.cyan(`Target pattern: 1${answers.pattern}...`));
+      console.log(chalk.white('This may take some time depending on the pattern complexity.'));
+      console.log(chalk.white('Press Ctrl+C to cancel.'));
+      console.log('');
+
+      const targetPattern = answers.pattern.toLowerCase();
+      const startTime = Date.now();
+
+      // Determine number of worker threads (use all CPU cores)
+      const numWorkers = os.cpus().length;
+
+      console.log(chalk.cyan(`🚀 Starting ${numWorkers} worker threads for maximum speed...`));
+      console.log('');
+
+      let totalAttempts = 0;
+      let wallet = null;
+      let found = false;
+      const workers = [];
+      const workerStats = new Map();
+
+      // Progress reporting
+      const progressInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const rate = Math.floor(totalAttempts / Math.max(elapsed, 1));
+        process.stdout.write(`\r${chalk.gray(`⏳ Wallets created: ${totalAttempts.toLocaleString()} | Rate: ${rate}/sec | Time: ${elapsed}s | Workers: ${numWorkers}`)}`);
+      }, 500);
+
+      try {
+        // Create and start worker threads
+        for (let i = 0; i < numWorkers; i++) {
+          const worker = new Worker(path.join(__dirname, '../workers/vanityWorker.js'), {
+            workerData: {
+              targetPattern,
+              workerId: i
+            }
+          });
+
+          workerStats.set(i, { attempts: 0 });
+
+          worker.on('message', (message) => {
+            if (message.type === 'progress') {
+              workerStats.get(message.workerId).attempts = message.attempts;
+              totalAttempts = Array.from(workerStats.values()).reduce((sum, stat) => sum + stat.attempts, 0);
+            } else if (message.type === 'success') {
+              if (!found) {
+                found = true;
+                clearInterval(progressInterval);
+
+                // Terminate all workers
+                workers.forEach(w => w.terminate());
+
+                // Create wallet object from worker result
+                const Wallet = require('../models/Wallet');
+                const { CryptoUtils } = require('../utils/crypto');
+                wallet = new Wallet();
+                wallet.privateKey = message.wallet.privateKey;
+                wallet.publicKey = message.wallet.publicKey;
+                wallet.seed = message.wallet.seed;
+
+                // Calculate address from public key (like the wallet normally does)
+                wallet.address = CryptoUtils.publicKeyToAddress(wallet.publicKey);
+
+                // Verify wallet data integrity
+                if (!wallet.privateKey || !wallet.publicKey || !wallet.seed || !wallet.address) {
+                  console.log(chalk.red('❌ Warning: Incomplete wallet data from worker'));
+                  console.log(`Private Key: ${wallet.privateKey ? 'OK' : 'MISSING'}`);
+                  console.log(`Public Key: ${wallet.publicKey ? 'OK' : 'MISSING'}`);
+                  console.log(`Seed: ${wallet.seed ? 'OK' : 'MISSING'}`);
+                  console.log(`Address: ${wallet.address ? 'OK' : 'MISSING'}`);
+                  console.log(`Expected address: ${message.wallet.address}`);
+                }
+
+                // Clear progress and show success
+                process.stdout.write('\r' + ' '.repeat(100) + '\r');
+                totalAttempts = Array.from(workerStats.values()).reduce((sum, stat) => sum + stat.attempts, 0);
+                const elapsed = (Date.now() - startTime) / 1000;
+
+                console.log('');
+                console.log(chalk.green.bold('🎯 VANITY ADDRESS FOUND!'));
+                console.log(chalk.white(`Wallets created: ${totalAttempts.toLocaleString()}`));
+                console.log(chalk.white(`Time: ${elapsed.toFixed(2)} seconds`));
+                console.log(chalk.white(`Rate: ${Math.floor(totalAttempts / elapsed)}/sec`));
+                console.log(chalk.white(`Found by worker: ${message.workerId}`));
+                console.log('');
+              }
+            } else if (message.type === 'error') {
+              console.log(chalk.red(`❌ Worker ${message.workerId} error: ${message.error}`));
+            }
+          });
+
+          worker.on('error', (error) => {
+            console.log(chalk.red(`❌ Worker error: ${error.message}`));
+          });
+
+          workers.push(worker);
+        }
+
+        // Wait for result
+        await new Promise((resolve) => {
+          const checkInterval = setInterval(() => {
+            if (found) {
+              clearInterval(checkInterval);
+              resolve();
+            }
+          }, 100);
+        });
+      } catch (error) {
+        clearInterval(progressInterval);
+        workers.forEach(w => w.terminate());
+        throw error;
+      }
+
+      // Save the wallet (encryption handled by saveWalletToFile)
+      this.saveWalletToFile(answers.walletName, wallet, answers.password);
+
+      // Store in memory for current session
+      this.wallets.set(answers.walletName, wallet);
+
+      // Load the wallet into the current session
+      this.currentWallet = wallet;
+      this.cli.walletLoaded = true;
+      this.cli.walletName = answers.walletName;
+      this.cli.walletPassword = answers.password;
+
+      // Display success message
+      console.log(chalk.blue('╔══════════════════════════════════════════════════════════════════════════════╗'));
+      console.log(chalk.blue('║                        🎯 VANITY WALLET CREATED! 🎯                          ║'));
+      console.log(chalk.blue('╚══════════════════════════════════════════════════════════════════════════════╝'));
+      console.log('');
+      console.log(chalk.cyan('📋 VANITY WALLET INFORMATION:'));
+      console.log(chalk.white('  ┌─────────────────────────────────────────────────────────────────────────┐'));
+      console.log(chalk.white(`  │ ${chalk.yellow('Name:')}    ${chalk.green((answers.walletName || 'N/A').padEnd(62))} │`));
+      console.log(chalk.white(`  │ ${chalk.yellow('Address:')} ${chalk.green((wallet.address || wallet.getAddress() || 'N/A').padEnd(62))} │`));
+      console.log(chalk.white(`  │ ${chalk.yellow('Pattern:')} ${chalk.green((`1${answers.pattern}...`).padEnd(62))} │`));
+      console.log(chalk.white('  └─────────────────────────────────────────────────────────────────────────┘'));
+      console.log('');
+      console.log(chalk.red('⚠️  SECURITY WARNING:'));
+      console.log(
+        chalk.white(
+          '  ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐'
+        )
+      );
+      console.log(chalk.white(`  │ ${chalk.yellow('Private Key:')} ${chalk.red((wallet.privateKey || 'N/A').padEnd(83))} │`));
+      console.log(chalk.white(`  │ ${chalk.yellow('Seed Phrase:')} ${chalk.red((wallet.seed || 'N/A').padEnd(83))} │`));
+      console.log(
+        chalk.white(
+          '  └──────────────────────────────────────────────────────────────────────────────────────────────────┘'
+        )
+      );
+      console.log('');
+      console.log(chalk.red('🔒 IMPORTANT:'));
+      console.log(chalk.white('  • Store your private key and seed phrase securely'));
+      console.log(chalk.white('  • Never share them with anyone'));
+      console.log(chalk.white('  • Keep them in a safe, offline location'));
+      console.log(chalk.white('  • If lost, you will lose access to your funds forever'));
+      console.log('');
+      console.log(chalk.cyan('🔐 STATUS:'));
+      console.log(chalk.green('  ✅ Vanity address generated successfully'));
+      console.log(chalk.green('  ✅ Private key encrypted and saved'));
+      console.log(chalk.green('  ✅ Ready for use'));
+      console.log('');
+      console.log(chalk.blue('────────────────────────────────────────────────────────────────────────────────'));
+
     } catch (error) {
       console.log(`❌ Error: ${error.message}`);
     }
@@ -601,6 +856,87 @@ class NetworkWalletManager {
     this.cli.currentNetworkWallet = null;
 
     console.log('✅ Wallet unloaded successfully!');
+  }
+
+  /**
+   * Export wallet private key and seed phrase (requires password verification)
+   */
+  async exportWallet() {
+    try {
+      if (!this.cli.walletLoaded) {
+        console.log('❌ No wallet loaded. Use "wallet load" first.');
+        return;
+      }
+
+      console.log(chalk.yellow.bold('🔐 WALLET EXPORT'));
+      console.log(chalk.red('⚠️  WARNING: This will display sensitive information!'));
+      console.log(chalk.red('⚠️  Make sure you are in a secure environment.'));
+      console.log('');
+
+      // Verify password before showing sensitive data
+      const answers = await this.cli.inquirer.prompt([
+        {
+          type: 'password',
+          name: 'password',
+          message: 'Enter wallet password to export:',
+          mask: '*',
+        },
+      ]);
+
+      // Verify the password by attempting to decrypt the wallet
+      try {
+        const wallet = this.loadWalletFromFile(this.cli.walletName, answers.password);
+
+        if (!wallet) {
+          console.log('❌ Invalid password! Export cancelled.');
+          return;
+        }
+
+        // Display wallet export information
+        console.log('');
+        console.log(chalk.green.bold('✅ Password verified! Wallet export:'));
+        console.log('');
+        console.log(chalk.yellow.bold('📋 WALLET INFORMATION:'));
+        console.log(chalk.cyan('  Wallet Name: '), chalk.white(this.cli.walletName));
+        console.log(chalk.cyan('  Address:     '), chalk.white(wallet.address));
+        console.log('');
+
+        console.log(chalk.red.bold('🔑 SENSITIVE DATA (Keep Private!):'));
+        console.log(chalk.cyan('  Private Key: '), chalk.white(wallet.privateKey));
+        console.log(chalk.cyan('  Seed Phrase: '), chalk.white(wallet.seed));
+        console.log('');
+
+        // Validate the seed phrase and warn if invalid
+        try {
+          const CryptoUtils = require('../utils/crypto').CryptoUtils;
+          if (!CryptoUtils.validateSeedEntropy(wallet.seed)) {
+            console.log(chalk.red.bold('⚠️  SEED PHRASE WARNING:'));
+            console.log(chalk.red('  • This seed phrase has an invalid checksum (created with older version)'));
+            console.log(chalk.red('  • You can still use the private key to access your funds'));
+            console.log(chalk.red('  • Consider creating a new wallet and transferring funds'));
+            console.log('');
+          }
+        } catch (error) {
+          console.log(chalk.yellow.bold('⚠️  SEED PHRASE NOTICE:'));
+          console.log(chalk.yellow('  • Could not validate seed phrase checksum'));
+          console.log(chalk.yellow('  • Use private key for reliable wallet recovery'));
+          console.log('');
+        }
+
+        console.log(chalk.red.bold('⚠️  SECURITY REMINDER:'));
+        console.log(chalk.red('  • Never share your private key or seed phrase'));
+        console.log(chalk.red('  • Store this information securely offline'));
+        console.log(chalk.red('  • Anyone with this information can access your funds'));
+        console.log(chalk.red('  • Clear your terminal history after use'));
+
+      } catch (decryptError) {
+        console.log('❌ Invalid password! Export cancelled.');
+        return;
+      }
+
+    } catch (error) {
+      console.log(`❌ Export failed: ${error.message}`);
+    }
   }
 
   /**
@@ -1813,6 +2149,7 @@ class NetworkWalletManager {
     console.log('');
     console.log('🔐 Wallet Management:');
     console.log('  wallet create                           - Create new wallet');
+    console.log('  wallet create-vanity                    - Create vanity wallet with custom pattern');
     console.log('  wallet seed-import                      - Import from seed phrase');
     console.log('  wallet key-import                       - Import from private key');
     console.log('  wallet load                             - Load existing wallet');
@@ -1830,6 +2167,7 @@ class NetworkWalletManager {
     console.log('  wallet transactions                     - Show transaction history');
     console.log('  wallet transaction-info <id>            - Show transaction details');
     console.log('  wallet save                             - Save wallet state');
+    console.log('  wallet export                           - Export private key and seed phrase');
     console.log('');
   }
 
@@ -1916,6 +2254,91 @@ class NetworkWalletManager {
     } catch (error) {
       console.log(chalk.red(`❌ Error: ${error.message}`));
     }
+  }
+
+  /**
+   * Validate vanity pattern and provide feasibility analysis
+   * @param {string} pattern - The pattern after "1"
+   * @returns {object} Validation result with feasibility analysis
+   */
+  validateVanityPattern(pattern) {
+    // Check if pattern is empty
+    if (!pattern.trim()) {
+      return { valid: false, error: 'Pattern cannot be empty' };
+    }
+
+    // Check for Base58 validity (Bitcoin addresses start with "1" and use Base58)
+    // Base58 excludes: 0, O, I, l (to avoid confusion)
+    const base58Chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    const validChars = /^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$/;
+
+    if (!validChars.test(pattern)) {
+      const invalidChars = pattern.split('').filter(char => !base58Chars.includes(char));
+      return {
+        valid: false,
+        error: `Invalid characters found: "${invalidChars.join('')}". Base58 excludes: 0, O, I, l`
+      };
+    }
+
+    // Calculate expected attempts (58^length for each character)
+    const patternLength = pattern.length;
+    const expectedAttempts = Math.pow(58, patternLength);
+
+    // Calculate difficulty description
+    let difficulty;
+    let practicality;
+    let estimatedTime = null;
+
+    // Assume ~28,000 attempts/sec based on your previous results
+    const attemptsPerSecond = 28000;
+    const estimatedSeconds = expectedAttempts / attemptsPerSecond;
+
+    if (patternLength <= 2) {
+      difficulty = `58^${patternLength} ≈ ${(expectedAttempts / 1000).toFixed(1)}K attempts`;
+      practicality = '🟢 Very Easy (seconds)';
+      estimatedTime = `~${Math.max(1, Math.round(estimatedSeconds))} seconds`;
+    } else if (patternLength <= 4) {
+      difficulty = `58^${patternLength} ≈ ${(expectedAttempts / 1000000).toFixed(1)}M attempts`;
+      practicality = '🟡 Easy (minutes)';
+      const minutes = Math.round(estimatedSeconds / 60);
+      estimatedTime = `~${minutes} minutes`;
+    } else if (patternLength <= 6) {
+      difficulty = `58^${patternLength} ≈ ${(expectedAttempts / 1000000000).toFixed(1)}B attempts`;
+      practicality = '🟠 Moderate (hours to days)';
+      const hours = Math.round(estimatedSeconds / 3600);
+      if (hours < 24) {
+        estimatedTime = `~${hours} hours`;
+      } else {
+        const days = Math.round(hours / 24);
+        estimatedTime = `~${days} days`;
+      }
+    } else if (patternLength <= 8) {
+      difficulty = `58^${patternLength} ≈ ${(expectedAttempts / 1000000000000).toFixed(1)}T attempts`;
+      practicality = '🔴 Very Hard (weeks to months)';
+      const days = Math.round(estimatedSeconds / 86400);
+      if (days < 30) {
+        estimatedTime = `~${days} days`;
+      } else {
+        const months = Math.round(days / 30);
+        estimatedTime = `~${months} months`;
+      }
+    } else {
+      difficulty = `58^${patternLength} ≈ ${expectedAttempts.toExponential(2)} attempts`;
+      practicality = '⛔ Practically Impossible (years+)';
+      return {
+        valid: false,
+        error: `Pattern too long (${patternLength} chars). Maximum practical length is 8 characters.`
+      };
+    }
+
+    return {
+      valid: true,
+      expectedAttempts,
+      difficulty,
+      practicality,
+      estimatedTime,
+      patternLength
+    };
   }
 }
 
