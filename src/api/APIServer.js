@@ -2953,8 +2953,8 @@ class APIServer {
               outputs: tx.outputs,
               tag: tx.tag,
               // Add helpful flags to identify address involvement
-              isSender: tx.inputs.some(input => input.address === address),
-              isReceiver: tx.outputs.some(output => output.address === address),
+              isSender: this.isAddressSender(tx, address),
+              isReceiver: this.isAddressReceiver(tx, address),
               // Calculate net amount for this address
               netAmount: this.calculateNetAmountForAddress(tx, address),
             });
@@ -2984,6 +2984,85 @@ class APIServer {
    * @param address
    * @returns {number}
    */
+  /**
+   * Check if an address is a sender in a transaction by checking input public keys
+   * @param {Object} transaction - The transaction to check
+   * @param {string} address - The address to check for
+   * @returns {boolean} True if address is a sender
+   */
+  isAddressSender(transaction, address) {
+    try {
+      const { CryptoUtils } = require('../utils/crypto');
+
+      // Check each input's public key to see if it corresponds to our address
+      for (const input of transaction.inputs) {
+        if (input.publicKey) {
+          // Derive address from the public key in the input
+          const inputAddress = CryptoUtils.publicKeyToAddress(input.publicKey);
+          // If derived address matches our target address, this address is the sender
+          if (inputAddress === address) {
+            return true;
+          }
+        }
+      }
+      return false;
+    } catch (error) {
+      logger.error('API', `Error checking if address ${address} is sender: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Check if an address is a receiver in a transaction (excluding change)
+   * @param {Object} transaction - The transaction to check
+   * @param {string} address - The address to check for
+   * @returns {boolean} True if address is a receiver (but not if it's only change)
+   */
+  isAddressReceiver(transaction, address) {
+    try {
+      const isSender = this.isAddressSender(transaction, address);
+      const hasOutputs = transaction.outputs.some(output => output.address === address);
+
+      // If address is sender and has outputs, it's likely change - not a receiver
+      if (isSender && hasOutputs) {
+        // Check if there are OTHER recipients besides this address
+        const otherRecipients = transaction.outputs.some(output => output.address !== address);
+
+        // If there are other recipients, this address is getting change (sender)
+        // If there are NO other recipients, this might be a self-transfer (receiver)
+        return !otherRecipients;
+      }
+
+      // If not a sender but has outputs, definitely a receiver
+      return hasOutputs;
+    } catch (error) {
+      logger.error('API', `Error checking if address ${address} is receiver: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Find a transaction by ID across all blocks
+   * @param {string} txId - Transaction ID to find
+   * @returns {Object|null} Transaction object or null if not found
+   */
+  findTransactionById(txId) {
+    try {
+      // Search through all blocks to find the transaction
+      for (const block of this.blockchain.chain) {
+        for (const tx of block.transactions) {
+          if (tx.id === txId) {
+            return tx;
+          }
+        }
+      }
+      return null;
+    } catch (error) {
+      logger.error('API', `Error finding transaction ${txId}: ${error.message}`);
+      return null;
+    }
+  }
+
   calculateNetAmountForAddress(transaction, address) {
     let netAmount = 0;
 
@@ -2994,12 +3073,26 @@ class APIServer {
       }
     });
 
-    // Subtract inputs FROM this address (sent)
+    // Subtract inputs FROM this address (sent) - using public key approach
     transaction.inputs.forEach(input => {
-      if (input.address === address) {
-        // Note: We don't know the exact input amount from UTXO, so this is approximate
-        // In a real implementation, you'd look up the UTXO amount
-        netAmount -= 0; // Placeholder for actual UTXO amount
+      try {
+        const { CryptoUtils } = require('../utils/crypto');
+
+        if (input.publicKey) {
+          // Derive address from the public key in the input
+          const inputAddress = CryptoUtils.publicKeyToAddress(input.publicKey);
+          // If this input is from our address, we need to look up the UTXO amount
+          if (inputAddress === address) {
+            // Look up the previous transaction to get the amount spent
+            const prevTransaction = this.findTransactionById(input.txId);
+            if (prevTransaction && prevTransaction.outputs[input.outputIndex]) {
+              const prevOutput = prevTransaction.outputs[input.outputIndex];
+              netAmount -= prevOutput.amount; // Subtract the actual UTXO amount
+            }
+          }
+        }
+      } catch (error) {
+        logger.error('API', `Error calculating input amount for ${address}: ${error.message}`);
       }
     });
 
