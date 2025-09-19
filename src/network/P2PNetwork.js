@@ -864,6 +864,12 @@ class P2PNetwork {
    * @param transaction
    */
   broadcastNewTransaction(transaction) {
+    // Mark transaction as seen before broadcasting to prevent relay loops
+    if (this.messageHandler && transaction.id) {
+      this.messageHandler.markTransactionAsSeen(transaction.id);
+      logger.debug('P2P_NETWORK', `Marked locally broadcast transaction ${transaction.id} as seen`);
+    }
+
     return this.networkSync.broadcastNewTransaction(transaction);
   }
 

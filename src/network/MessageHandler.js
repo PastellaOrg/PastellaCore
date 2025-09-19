@@ -45,6 +45,11 @@ class MessageHandler {
       validationErrors: new Map(), // Map<errorType, count>
     };
 
+    // Transaction relay loop prevention
+    this.seenTransactions = new Map(); // Map<transactionId, timestamp>
+    this.maxSeenTransactions = 10000; // Limit cache size
+    this.seenTransactionTTL = 300000; // 5 minutes TTL
+
     logger.debug('MESSAGE_HANDLER', `MessageHandler components initialized:`);
     logger.debug('MESSAGE_HANDLER', `  MessageHandlers Map: ${this.messageHandlers.size} handlers`);
     logger.debug('MESSAGE_HANDLER', `  MessageValidator: ${this.messageValidator ? 'present' : 'null'}`);
@@ -496,15 +501,26 @@ class MessageHandler {
     try {
       // Pass transaction data directly - addPendingTransaction handles conversion
       const transactionData = message.data;
-      logger.debug('MESSAGE_HANDLER', `Processing transaction: ${transactionData.id}`);
+      const transactionId = transactionData.id;
+
+      logger.debug('MESSAGE_HANDLER', `Processing transaction: ${transactionId}`);
+
+      // Check if we've already seen this transaction to prevent relay loops
+      if (this.hasSeenTransaction(transactionId)) {
+        logger.debug('MESSAGE_HANDLER', `🔄 Transaction ${transactionId} already seen, skipping relay to prevent loop`);
+        return;
+      }
+
+      // Mark transaction as seen first (before processing to prevent race conditions)
+      this.markTransactionAsSeen(transactionId);
 
       if (this.blockchain.addPendingTransaction(transactionData)) {
-        logger.info('MESSAGE_HANDLER', `✅ New transaction ${transactionData.id} added to mempool from peer ${peerAddress}`);
+        logger.info('MESSAGE_HANDLER', `✅ New transaction ${transactionId} added to mempool from peer ${peerAddress}`);
 
-        // CRITICAL: Broadcast to other peers (Bitcoin-style relay)
+        // Relay to other peers (Bitcoin-style relay) - now loop-safe
         this.broadcastTransactionToOtherPeers(transactionData, peerAddress);
       } else {
-        logger.warn('MESSAGE_HANDLER', `❌ Transaction ${transactionData.id} rejected by mempool (duplicate/invalid)`);
+        logger.warn('MESSAGE_HANDLER', `❌ Transaction ${transactionId} rejected by mempool (duplicate/invalid)`);
       }
     } catch (error) {
       logger.error('MESSAGE_HANDLER', `💥 Failed to process new transaction from ${peerAddress}: ${error.message}`);
@@ -652,11 +668,20 @@ class MessageHandler {
         return;
       }
 
+      // Check if we've already seen this transaction to prevent relay loops
+      if (this.hasSeenTransaction(transactionHash)) {
+        logger.debug('MESSAGE_HANDLER', `🔄 Mempool transaction ${transactionHash} already seen, skipping relay to prevent loop`);
+        return;
+      }
+
+      // Mark transaction as seen first (before processing to prevent race conditions)
+      this.markTransactionAsSeen(transactionHash);
+
       // Add transaction to mempool
       if (this.blockchain.addPendingTransaction(transactionData)) {
         logger.info('MESSAGE_HANDLER', `Transaction ${transactionHash} added to mempool from ${peerAddress}`);
 
-        // Relay to other peers (Bitcoin-style)
+        // Relay to other peers (Bitcoin-style) - now loop-safe
         this.broadcastTransactionToOtherPeers(transactionData, peerAddress);
       } else {
         logger.warn('MESSAGE_HANDLER', `Failed to add transaction ${transactionHash} to mempool`);
@@ -1143,6 +1168,56 @@ class MessageHandler {
       logger.debug('MESSAGE_HANDLER', `Transaction ${transaction.hash} relayed to ${broadcastCount} peers`);
     } catch (error) {
       logger.error('MESSAGE_HANDLER', `Failed to relay transaction: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if a transaction has already been seen/relayed
+   * @param {string} transactionId - The transaction ID to check
+   * @returns {boolean} True if transaction has been seen before
+   */
+  hasSeenTransaction(transactionId) {
+    this.cleanupSeenTransactions();
+    return this.seenTransactions.has(transactionId);
+  }
+
+  /**
+   * Mark a transaction as seen to prevent relay loops
+   * @param {string} transactionId - The transaction ID to mark as seen
+   */
+  markTransactionAsSeen(transactionId) {
+    this.seenTransactions.set(transactionId, Date.now());
+
+    // Limit cache size to prevent memory leaks
+    if (this.seenTransactions.size > this.maxSeenTransactions) {
+      const oldestEntries = Array.from(this.seenTransactions.entries())
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, this.seenTransactions.size - this.maxSeenTransactions + 1000);
+
+      for (const [txId] of oldestEntries) {
+        this.seenTransactions.delete(txId);
+      }
+
+      logger.debug('MESSAGE_HANDLER', `Cleaned up ${oldestEntries.length} old seen transactions`);
+    }
+  }
+
+  /**
+   * Clean up expired seen transactions based on TTL
+   */
+  cleanupSeenTransactions() {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const [txId, timestamp] of this.seenTransactions.entries()) {
+      if (now - timestamp > this.seenTransactionTTL) {
+        this.seenTransactions.delete(txId);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      logger.debug('MESSAGE_HANDLER', `Cleaned up ${cleanedCount} expired seen transactions`);
     }
   }
 
