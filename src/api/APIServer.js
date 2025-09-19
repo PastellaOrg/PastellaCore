@@ -1261,6 +1261,12 @@ class APIServer {
         });
       }
 
+      // DEBUG: Log the FULL RAW JSON transaction data
+      logger.debug('API', `=== FULL RAW TRANSACTION SUBMISSION DATA ===`);
+      logger.debug('API', `RAW REQUEST BODY: ${JSON.stringify(req.body)}`);
+      logger.debug('API', `FULL TRANSACTION JSON: ${JSON.stringify(transaction)}`);
+      logger.debug('API', `=== END RAW TRANSACTION DATA ===`);
+
       // Convert plain object to Transaction instance
       const newTransaction = Transaction.fromJSON(transaction);
 
