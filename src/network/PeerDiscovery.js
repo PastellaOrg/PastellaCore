@@ -346,7 +346,7 @@ class PeerDiscovery {
           normalizedAddress = parts[0];
           const parsedPort = parseInt(parts[1]);
           if (!isNaN(parsedPort)) {
-            normalizedPort = parsedPort;
+            normalizedPort = parseInt(parsedPort);
             logger.debug('PEER_DISCOVERY', `Normalized host:port ${address} to ${normalizedAddress}:${normalizedPort}`);
           }
         }
@@ -469,38 +469,46 @@ class PeerDiscovery {
   markPeerConnected(address, ws) {
     this.activePeers.set(address, ws);
 
-    let peerInfo = this.knownPeers.get(address);
+    // Extract hostname and port from address
+    let hostname = address;
+    let port = 23000;
+
+    if (address.includes(':') && !address.startsWith('ws://')) {
+      const parts = address.split(':');
+      hostname = parts[0];
+      port = parseInt(parts[1]) || 23000;
+    }
+
+    // Create a unique key for this specific hostname:port combination
+    const peerKey = `${hostname}:${port}`;
+    let peerInfo = this.knownPeers.get(peerKey);
+
     if (peerInfo) {
+      // Update existing peer
       peerInfo.lastConnected = Date.now();
       peerInfo.connectionCount++;
-      peerInfo.isReliable = peerInfo.connectionCount >= 1; // Lowered for small networks
+      peerInfo.isReliable = peerInfo.connectionCount >= 1;
       peerInfo.reputation = Math.min(1000, peerInfo.reputation + 10);
+      logger.debug('PEER_DISCOVERY', `Updated existing peer: ${address}`);
     } else {
       // CRITICAL: Auto-add unknown peers when they connect
       logger.info('PEER_DISCOVERY', `Auto-adding unknown peer: ${address}`);
 
-      // Extract hostname and port if address includes port
-      let hostname = address;
-      let port = 23000;
-
-      if (address.includes(':') && !address.startsWith('ws://')) {
-        const parts = address.split(':');
-        hostname = parts[0];
-        port = parseInt(parts[1]) || 23000;
-      }
-
       // Check if this is a seed node (either by hostname or IP)
       const discoveryType = this.isSeedNodeAddress(address) ? 'config' : 'connection';
 
-      if (this.addKnownPeer(hostname, port, discoveryType)) {
-        peerInfo = this.knownPeers.get(hostname);
-        if (peerInfo) {
-          peerInfo.lastConnected = Date.now();
-          peerInfo.connectionCount = 1;
-          peerInfo.isReliable = true;
-          peerInfo.reputation = 1000;
-        }
-      }
+      // Create peer info directly to ensure it gets stored
+      const newPeerInfo = this.createPeerInfo(hostname, port);
+      newPeerInfo.discoveredBy = discoveryType;
+      newPeerInfo.lastConnected = Date.now();
+      newPeerInfo.connectionCount = 1;
+      newPeerInfo.isReliable = true;
+      newPeerInfo.reputation = 1000;
+
+      // Store using hostname:port as key to ensure unique entries per port
+      this.knownPeers.set(peerKey, newPeerInfo);
+      logger.info('PEER_DISCOVERY', `Added new peer: ${hostname}:${port} (discovered by: ${discoveryType})`);
+      this.savePeersToDisk();
     }
 
     // Reset connection attempts
