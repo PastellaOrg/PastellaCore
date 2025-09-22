@@ -52,8 +52,9 @@ class PeerDiscovery {
     this.loadPeersFromDisk();
     this.loadBannedPeers();
 
-    // Clean up any duplicate peer entries
+    // Clean up any duplicate peer entries and DNS names
     this.cleanupDuplicatePeers();
+    this.cleanupDNSEntries();
 
     logger.info('PEER_DISCOVERY', `Initialized with ${this.knownPeers.size} known peers, max connections: ${maxPeers}`);
   }
@@ -254,6 +255,77 @@ class PeerDiscovery {
   }
 
   /**
+   * Check if a peer is a duplicate (DNS name vs resolved IP)
+   * @param address - Address to check
+   * @param port - Port to check
+   * @returns {boolean} - True if this peer already exists in a different form
+   */
+  isDuplicatePeer(address, port) {
+    const addressWithPort = `${address}:${port}`;
+
+    // Check if any existing peer matches this one via seed node configuration
+    if (this.config?.network?.seedNodes) {
+      for (const seedNode of this.config.network.seedNodes) {
+        try {
+          const url = new URL(seedNode);
+          const seedAddress = `${url.hostname}:${url.port}`;
+
+          // If this address matches a seed node's DNS name, check if we have its IP
+          if (addressWithPort === seedAddress) {
+            // Look for existing IP version of this seed node
+            for (const [existingAddress, peerInfo] of this.knownPeers) {
+              if (peerInfo.port === port && /^\d+\.\d+\.\d+\.\d+$/.test(existingAddress)) {
+                // This might be the IP version of the DNS name
+                return true;
+              }
+            }
+          }
+
+          // If this is an IP address, check if we have the DNS version
+          if (/^\d+\.\d+\.\d+\.\d+$/.test(address) && seedAddress.includes(':' + port)) {
+            const seedHost = url.hostname;
+            if (this.knownPeers.has(seedHost)) {
+              return true;
+            }
+          }
+        } catch (error) {
+          // Invalid seed node URL, skip
+          continue;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Clean up DNS entries from peer storage - only keep IP addresses
+   */
+  cleanupDNSEntries() {
+    let removedCount = 0;
+    const toRemove = [];
+
+    for (const [address, peerInfo] of this.knownPeers) {
+      // If this is not an IP address (DNS name), mark for removal
+      if (!/^\d+\.\d+\.\d+\.\d+$/.test(address)) {
+        toRemove.push(address);
+        removedCount++;
+      }
+    }
+
+    // Remove DNS entries
+    toRemove.forEach(address => {
+      this.knownPeers.delete(address);
+      logger.debug('PEER_DISCOVERY', `Removed DNS entry: ${address}`);
+    });
+
+    if (removedCount > 0) {
+      logger.info('PEER_DISCOVERY', `Cleaned up ${removedCount} DNS entries from peer storage`);
+      this.savePeersToDisk();
+    }
+  }
+
+  /**
    * Add a new peer to the known peers list
    */
   addKnownPeer(address, port = 23000, discoveredBy = 'manual') {
@@ -289,6 +361,12 @@ class PeerDiscovery {
     }
 
     if (!this.knownPeers.has(normalizedAddress)) {
+      // Check for DNS/IP duplicates before adding
+      if (this.isDuplicatePeer(normalizedAddress, normalizedPort)) {
+        logger.debug('PEER_DISCOVERY', `Not adding ${normalizedAddress}:${normalizedPort} - equivalent peer already exists`);
+        return false;
+      }
+
       const peerInfo = this.createPeerInfo(normalizedAddress, normalizedPort);
       peerInfo.discoveredBy = discoveredBy;
       this.knownPeers.set(normalizedAddress, peerInfo);
@@ -523,7 +601,11 @@ class PeerDiscovery {
    */
   getPeersToShare(maxPeers = 10) {
     let reliablePeers = Array.from(this.knownPeers.values())
-      .filter(peer => peer.isReliable && !this.bannedPeers.has(peer.address))
+      .filter(peer => {
+        // Only share IP addresses, not DNS names
+        const isIPAddress = /^\d+\.\d+\.\d+\.\d+$/.test(peer.address);
+        return peer.isReliable && !this.bannedPeers.has(peer.address) && isIPAddress;
+      })
       .sort((a, b) => b.reputation - a.reputation);
 
     // Prioritize our external address if available (discovered by UPnP)

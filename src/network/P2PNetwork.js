@@ -771,17 +771,20 @@ class P2PNetwork {
       return null; // Already connected
     }
 
-    // For DNS names, also check if we're already connected to the resolved IP
+    // For DNS names, resolve to IP and use that for connection tracking
+    let actualHost = host;
     if (!/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
       try {
         const dns = require('dns').promises;
         const addresses = await dns.resolve4(host);
         if (addresses.length > 0) {
-          const resolvedAddress = `${addresses[0]}:${port}`;
+          actualHost = addresses[0]; // Use resolved IP for tracking
+          const resolvedAddress = `${actualHost}:${port}`;
           if (existingAddresses.includes(resolvedAddress)) {
             logger.debug('P2P_NETWORK', `Already connected to ${host} via resolved IP ${resolvedAddress}`);
             return null; // Already connected to resolved IP
           }
+          logger.debug('P2P_NETWORK', `Resolved ${host} to ${actualHost} for connection`);
         }
       } catch (dnsError) {
         // DNS resolution failed, continue with original hostname
@@ -804,7 +807,17 @@ class P2PNetwork {
 
           // CRITICAL FIX: For outgoing connections, we need to handle them differently
           // than incoming connections. Outgoing connections should send handshakes.
-          this.handleOutgoingConnection(ws, peerAddress);
+          // Use resolved IP for consistent peer tracking
+          const trackingAddress = `${actualHost}:${port}`;
+
+          // Ensure resolved seed node IPs are added to peer discovery as "config" discovered
+          if (actualHost !== host && this.peerDiscovery) {
+            // This was a DNS resolution, add the resolved IP as a config peer
+            this.peerDiscovery.addKnownPeer(actualHost, port, 'config');
+            logger.debug('P2P_NETWORK', `Added resolved IP ${actualHost}:${port} as config peer for ${host}:${port}`);
+          }
+
+          this.handleOutgoingConnection(ws, trackingAddress);
 
           resolve(true);
         });
