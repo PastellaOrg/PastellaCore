@@ -1157,15 +1157,12 @@ class P2PNetwork {
   isKnownSeedNodeIP(ip) {
     if (!this.config?.network?.seedNodes) return false;
 
-    // Check resolved seed node IPs
-    for (const seedNodeIP of this.resolvedSeedNodes.values()) {
-      if (seedNodeIP === ip) {
-        return true;
-      }
-    }
+    // Get seed node addresses from PeerManager
+    const seedNodeAddresses = this.peerManager.getSeedNodeAddresses();
+    if (!seedNodeAddresses || seedNodeAddresses.length === 0) return false;
 
-    // Fallback: check if IP matches any in seedNodeAddresses
-    return this.seedNodeAddresses.some(address => {
+    // Check if IP matches any known seed node address
+    return seedNodeAddresses.some(address => {
       try {
         const [seedIP] = address.split(':');
         return seedIP === ip;

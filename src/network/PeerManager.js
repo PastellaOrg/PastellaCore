@@ -171,6 +171,14 @@ class PeerManager {
   }
 
   /**
+   * Get seed node addresses
+   * @returns {Array} Array of seed node addresses
+   */
+  getSeedNodeAddresses() {
+    return this.seedNodeAddresses ? Array.from(this.seedNodeAddresses) : [];
+  }
+
+  /**
    * Check if we can accept more peers
    */
   canAcceptPeers() {
