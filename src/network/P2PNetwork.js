@@ -577,29 +577,8 @@ class P2PNetwork {
       return;
     }
 
-    // Check for bidirectional connections (prevent incoming connections from IPs we're already connected to)
-    if (peerAddress) {
-      const [incomingIP] = peerAddress.split(':');
-      logger.debug('P2P_NETWORK', `Checking bidirectional connection for incoming IP: ${incomingIP}`);
-
-      // Check if we already have an outgoing connection to this IP
-      const hasOutgoingConnectionToSameIP = existingAddresses.some(address => {
-        const [existingIP] = address.split(':');
-        return existingIP === incomingIP;
-      });
-      logger.debug('P2P_NETWORK', `Has outgoing connection to same IP (${incomingIP}): ${hasOutgoingConnectionToSameIP}`);
-      logger.debug('P2P_NETWORK', `Existing addresses: ${existingAddresses.join(', ')}`);
-
-      // Check if this IP is a known seed node IP (regardless of port)
-      const isFromSeedNodeIP = this.isKnownSeedNodeIP(incomingIP);
-      logger.debug('P2P_NETWORK', `Is from seed node IP (${incomingIP}): ${isFromSeedNodeIP}`);
-
-      if (hasOutgoingConnectionToSameIP && isFromSeedNodeIP) {
-        logger.info('P2P_NETWORK', `🚫 Rejecting bidirectional seed node connection from ${addressForTracking} (already connected to same IP)`);
-        ws.close();
-        return;
-      }
-    }
+    // Note: Bidirectional connection check moved to after handshake completion
+    // to properly identify the listening port of the incoming connection
     logger.debug('P2P_NETWORK', `Peer ${addressForTracking} is not banned, proceeding with connection`);
 
     // Check if we can accept more peers
@@ -1159,35 +1138,21 @@ class P2PNetwork {
    * @returns {boolean} - True if this IP is a known seed node
    */
   isKnownSeedNodeIP(ip) {
-    if (!this.config?.network?.seedNodes) {
-      logger.debug('P2P_NETWORK', `No seed nodes configured, IP ${ip} is not a seed node`);
-      return false;
-    }
+    if (!this.config?.network?.seedNodes) return false;
 
     // Get seed node addresses from PeerManager
     const seedNodeAddresses = this.peerManager.getSeedNodeAddresses();
-    logger.debug('P2P_NETWORK', `Known seed node addresses: ${seedNodeAddresses.join(', ')}`);
-
-    if (!seedNodeAddresses || seedNodeAddresses.length === 0) {
-      logger.debug('P2P_NETWORK', `No seed node addresses loaded yet, IP ${ip} cannot be verified`);
-      return false;
-    }
+    if (!seedNodeAddresses || seedNodeAddresses.length === 0) return false;
 
     // Check if IP matches any known seed node address
-    const isMatch = seedNodeAddresses.some(address => {
+    return seedNodeAddresses.some(address => {
       try {
         const [seedIP] = address.split(':');
-        const matches = seedIP === ip;
-        logger.debug('P2P_NETWORK', `Comparing ${ip} with seed IP ${seedIP}: ${matches}`);
-        return matches;
+        return seedIP === ip;
       } catch (error) {
-        logger.debug('P2P_NETWORK', `Error parsing seed address ${address}: ${error.message}`);
         return false;
       }
     });
-
-    logger.debug('P2P_NETWORK', `IP ${ip} is seed node: ${isMatch}`);
-    return isMatch;
   }
 
   /**

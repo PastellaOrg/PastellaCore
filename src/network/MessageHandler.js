@@ -950,6 +950,21 @@ class MessageHandler {
 
       logger.info('MESSAGE_HANDLER', `Handshake completed successfully with ${peerAddress}`);
 
+      // Check for bidirectional connections after handshake completion
+      if (isSeedNode && peerListeningPort) {
+        const [peerIP] = peerAddress.split(':');
+        const targetAddress = `${peerIP}:${peerListeningPort}`;
+        const existingAddresses = this.p2pNetwork.peerManager.getPeerAddresses();
+
+        const hasOutgoingToSameSeedNode = existingAddresses.includes(targetAddress);
+
+        if (hasOutgoingToSameSeedNode) {
+          logger.info('MESSAGE_HANDLER', `🚫 Closing bidirectional connection from seed node ${peerAddress} (already connected to ${targetAddress})`);
+          ws.close();
+          return;
+        }
+      }
+
       // MEMPOOL SYNC: Request current mempool from newly connected peer
       try {
         const mempoolSyncMessage = {
