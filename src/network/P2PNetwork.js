@@ -580,12 +580,17 @@ class P2PNetwork {
     // Check for bidirectional connections (prevent incoming connections from IPs we're already connected to)
     if (peerAddress) {
       const [incomingIP] = peerAddress.split(':');
+
+      // Check if we already have an outgoing connection to this IP
       const hasOutgoingConnectionToSameIP = existingAddresses.some(address => {
         const [existingIP] = address.split(':');
         return existingIP === incomingIP;
       });
 
-      if (hasOutgoingConnectionToSameIP && isSeedNode) {
+      // Check if this IP is a known seed node IP (regardless of port)
+      const isFromSeedNodeIP = this.isKnownSeedNodeIP(incomingIP);
+
+      if (hasOutgoingConnectionToSameIP && isFromSeedNodeIP) {
         logger.debug('P2P_NETWORK', `Rejecting bidirectional seed node connection from ${addressForTracking} (already connected to same IP)`);
         ws.close();
         return;
@@ -1142,6 +1147,32 @@ class P2PNetwork {
    */
   resetSyncStatus() {
     this.networkSync.resetSyncStatus();
+  }
+
+  /**
+   * Check if an IP address corresponds to a known seed node
+   * @param ip - The IP address to check
+   * @returns {boolean} - True if this IP is a known seed node
+   */
+  isKnownSeedNodeIP(ip) {
+    if (!this.config?.network?.seedNodes) return false;
+
+    // Check resolved seed node IPs
+    for (const seedNodeIP of this.resolvedSeedNodes.values()) {
+      if (seedNodeIP === ip) {
+        return true;
+      }
+    }
+
+    // Fallback: check if IP matches any in seedNodeAddresses
+    return this.seedNodeAddresses.some(address => {
+      try {
+        const [seedIP] = address.split(':');
+        return seedIP === ip;
+      } catch (error) {
+        return false;
+      }
+    });
   }
 
   /**
