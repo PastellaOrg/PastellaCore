@@ -256,6 +256,17 @@ class Blockchain {
   }
 
   /**
+   * Get the last N blocks from the chain
+   * @param {number} n - Number of blocks to retrieve
+   * @returns {Array} Array of the last N blocks
+   */
+  getLastNBlocks(n) {
+    if (n <= 0) return [];
+    if (n >= this.chain.length) return [...this.chain];
+    return this.chain.slice(-n);
+  }
+
+  /**
    * Get blockchain height
    */
   getHeight() {
