@@ -48,6 +48,17 @@ class MessageHandler {
     // Transaction relay loop prevention
     this.seenTransactions = new Map(); // Map<transactionId, timestamp>
     this.maxSeenTransactions = 10000; // Limit cache size
+
+    // Message deduplication to prevent flooding attacks
+    this.seenMessages = new Map(); // Map<messageHash, {timestamp, count, peerAddress}>
+    this.maxSeenMessages = 5000; // Limit cache size
+    this.messageTTL = 60000; // 1 minute TTL for seen messages
+    this.maxDuplicatesPerPeer = 3; // Max allowed duplicates per peer
+
+    // Per-peer rate limiting
+    this.peerMessageRates = new Map(); // Map<peerAddress, {count, windowStart}>
+    this.rateWindow = 10000; // 10 second rate window
+    this.maxMessagesPerWindow = 100; // Max messages per peer per window
     this.seenTransactionTTL = 300000; // 5 minutes TTL
 
     logger.debug('MESSAGE_HANDLER', `MessageHandler components initialized:`);
@@ -136,6 +147,43 @@ class MessageHandler {
       'MESSAGE_HANDLER',
       `All message handlers configured successfully: ${this.messageHandlers.size} total handlers`
     );
+
+    // Start periodic cleanup to prevent memory leaks
+    this.startPeriodicCleanup();
+  }
+
+  /**
+   * Start periodic cleanup of expired data to prevent memory leaks
+   */
+  startPeriodicCleanup() {
+    // Clean up every 30 seconds
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupSeenTransactions();
+      this.cleanupSeenMessages();
+
+      // Clean up old rate limiting data
+      const now = Date.now();
+      for (const [peerAddress, rateInfo] of this.peerMessageRates.entries()) {
+        if (now - rateInfo.windowStart > this.rateWindow * 2) {
+          this.peerMessageRates.delete(peerAddress);
+        }
+      }
+
+      logger.debug('MESSAGE_HANDLER', `Periodic cleanup completed: ${this.seenMessages.size} seen messages, ${this.seenTransactions.size} seen transactions, ${this.peerMessageRates.size} peer rates`);
+    }, 30000); // 30 seconds
+
+    logger.debug('MESSAGE_HANDLER', `Periodic cleanup started (30s interval)`);
+  }
+
+  /**
+   * Stop periodic cleanup (for shutdown)
+   */
+  stopPeriodicCleanup() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+      logger.debug('MESSAGE_HANDLER', `Periodic cleanup stopped`);
+    }
   }
 
   /**
@@ -199,6 +247,31 @@ class MessageHandler {
       'MESSAGE_HANDLER',
       `Message validation passed, updating statistics: validMessages=${this.messageValidationStats.validMessages}`
     );
+
+    // Check for rate limiting (prevent spam attacks)
+    if (this.isRateLimited(peerAddress)) {
+      logger.warn('MESSAGE_HANDLER', `🚨 RATE LIMITED: Blocking message from ${peerAddress} (type: ${message.type})`);
+      this.peerReputation.updatePeerReputation(peerAddress, 'bad_behavior', {
+        reason: 'rate_limit_exceeded',
+        messageType: message.type
+      });
+      return false;
+    }
+
+    // Check for duplicate messages (prevent flooding attacks)
+    if (this.isDuplicateMessage(message, peerAddress)) {
+      logger.debug('MESSAGE_HANDLER', `🔄 DUPLICATE: Blocking duplicate message from ${peerAddress} (type: ${message.type})`);
+      // Don't penalize reputation for first few duplicates, but log for monitoring
+      const seenInfo = this.seenMessages.get(this.generateMessageHash(message, peerAddress));
+      if (seenInfo && seenInfo.count > this.maxDuplicatesPerPeer) {
+        this.peerReputation.updatePeerReputation(peerAddress, 'bad_behavior', {
+          reason: 'message_flooding',
+          messageType: message.type,
+          duplicateCount: seenInfo.count
+        });
+      }
+      return false;
+    }
 
     // Check authentication for sensitive operations
     const sensitiveOperations = ['NEW_BLOCK', 'NEW_TRANSACTION', 'RESPONSE_BLOCKCHAIN', 'RESPONSE_TRANSACTION_POOL'];
@@ -1218,6 +1291,123 @@ class MessageHandler {
 
     if (cleanedCount > 0) {
       logger.debug('MESSAGE_HANDLER', `Cleaned up ${cleanedCount} expired seen transactions`);
+    }
+  }
+
+  /**
+   * Generate a hash for message deduplication
+   * @param {Object} message - The message to hash
+   * @param {string} peerAddress - The peer address
+   * @returns {string} Message hash
+   */
+  generateMessageHash(message, peerAddress) {
+    const crypto = require('crypto');
+    const messageString = JSON.stringify({ type: message.type, data: message.data, peer: peerAddress });
+    return crypto.createHash('sha256').update(messageString).digest('hex');
+  }
+
+  /**
+   * Check if we've seen this message recently (prevent flooding)
+   * @param {Object} message - The message to check
+   * @param {string} peerAddress - The peer address
+   * @returns {boolean} True if message should be blocked
+   */
+  isDuplicateMessage(message, peerAddress) {
+    const messageHash = this.generateMessageHash(message, peerAddress);
+    const now = Date.now();
+
+    // Clean up expired messages first
+    this.cleanupSeenMessages();
+
+    const seenInfo = this.seenMessages.get(messageHash);
+    if (seenInfo) {
+      // Update duplicate count
+      seenInfo.count++;
+      seenInfo.timestamp = now;
+
+      if (seenInfo.count > this.maxDuplicatesPerPeer) {
+        logger.warn('MESSAGE_HANDLER', `🚨 FLOODING DETECTED: Peer ${peerAddress} sent duplicate message ${seenInfo.count} times`);
+        logger.warn('MESSAGE_HANDLER', `Message type: ${message.type}`);
+        return true; // Block this message
+      }
+
+      logger.debug('MESSAGE_HANDLER', `⚠️ Duplicate message from ${peerAddress} (count: ${seenInfo.count})`);
+      return true; // Block duplicate
+    }
+
+    // Mark message as seen
+    this.seenMessages.set(messageHash, {
+      timestamp: now,
+      count: 1,
+      peerAddress,
+      messageType: message.type
+    });
+
+    return false; // Allow message
+  }
+
+  /**
+   * Check rate limiting for peer
+   * @param {string} peerAddress - The peer address
+   * @returns {boolean} True if rate limit exceeded
+   */
+  isRateLimited(peerAddress) {
+    const now = Date.now();
+    const peerRate = this.peerMessageRates.get(peerAddress);
+
+    if (!peerRate) {
+      // First message from this peer
+      this.peerMessageRates.set(peerAddress, { count: 1, windowStart: now });
+      return false;
+    }
+
+    // Check if window expired
+    if (now - peerRate.windowStart > this.rateWindow) {
+      // Reset window
+      peerRate.count = 1;
+      peerRate.windowStart = now;
+      return false;
+    }
+
+    // Increment count
+    peerRate.count++;
+
+    if (peerRate.count > this.maxMessagesPerWindow) {
+      logger.warn('MESSAGE_HANDLER', `🚨 RATE LIMIT EXCEEDED: Peer ${peerAddress} sent ${peerRate.count} messages in ${this.rateWindow}ms`);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Clean up expired seen messages based on TTL
+   */
+  cleanupSeenMessages() {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const [messageHash, info] of this.seenMessages.entries()) {
+      if (now - info.timestamp > this.messageTTL) {
+        this.seenMessages.delete(messageHash);
+        cleanedCount++;
+      }
+    }
+
+    // Limit cache size to prevent memory leaks
+    if (this.seenMessages.size > this.maxSeenMessages) {
+      const oldestEntries = Array.from(this.seenMessages.entries())
+        .sort((a, b) => a[1].timestamp - b[1].timestamp)
+        .slice(0, this.seenMessages.size - this.maxSeenMessages + 1000);
+
+      for (const [messageHash] of oldestEntries) {
+        this.seenMessages.delete(messageHash);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      logger.debug('MESSAGE_HANDLER', `Cleaned up ${cleanedCount} expired/old seen messages`);
     }
   }
 
