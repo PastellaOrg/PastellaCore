@@ -489,8 +489,8 @@ class NetworkPartitionHandler {
             this.p2pNetwork.blockchain.utxoManager
           );
 
-          if (!validationResult.isValid) {
-            logger.error('P2P', `Latest block transaction validation failed: ${validationResult.errors?.join(', ')}`);
+          if (!validationResult.valid) {
+            logger.error('P2P', `Latest block transaction validation failed: ${validationResult.reason}`);
             return false;
           }
         } catch (validationError) {
