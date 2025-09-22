@@ -32,7 +32,7 @@ class NetworkPartitionHandler {
       heartbeatInterval: 15000, // 15 seconds
       connectionTimeout: 10000, // 10 seconds
       // CRITICAL: Consensus protection parameters
-      minPeersForConsensus: 3, // Minimum peers required for consensus operations (lowered for small networks)
+      minPeersForConsensus: 2, // Minimum peers required for consensus operations (lowered for small networks)
       consensusThreshold: 0.67, // 67% agreement required for consensus
       maxBlockHeightDifference: 5, // Max height difference to consider valid chain
       partitionSafetyMargin: 0.25, // Extra safety margin for partition detection
