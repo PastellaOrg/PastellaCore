@@ -445,58 +445,67 @@ class P2PNetwork {
     const extractedAddress = this.extractPeerAddress(ws);
     logger.debug('P2P_NETWORK', `Peer address extracted: ${extractedAddress}`);
 
+    // If we can't extract a real address, use the provided peerAddress for tracking
+    // but don't save it to persistent storage
+    const addressForTracking = extractedAddress || peerAddress;
+    const canSaveToPeers = extractedAddress !== null; // Only save real addresses
+
     // Track connection state
     this.connectionStates = this.connectionStates || new Map();
-    this.connectionStates.set(extractedAddress, 'connecting');
-    logger.debug('P2P_NETWORK', `Connection state set to 'connecting' for ${extractedAddress}`);
+    this.connectionStates.set(addressForTracking, 'connecting');
+    logger.debug('P2P_NETWORK', `Connection state set to 'connecting' for ${addressForTracking}`);
 
     // Check if this is a seed node connection
-    const isSeedNode = this.peerManager.isSeedNodeAddress(extractedAddress);
+    const isSeedNode = this.peerManager.isSeedNodeAddress(addressForTracking);
     if (isSeedNode) {
-      logger.debug('P2P_NETWORK', `Outgoing connection to seed node: ${extractedAddress}`);
+      logger.debug('P2P_NETWORK', `Outgoing connection to seed node: ${addressForTracking}`);
     }
 
     // Check if peer is banned
-    logger.debug('P2P_NETWORK', `Checking if peer ${extractedAddress} is banned...`);
-    if (this.peerReputation.isPeerBanned(extractedAddress)) {
-      logger.warn('P2P', `[REPUTATION] Rejecting banned peer: ${extractedAddress}`);
-      logger.debug('P2P_NETWORK', `Closing connection to banned peer ${extractedAddress}`);
+    logger.debug('P2P_NETWORK', `Checking if peer ${addressForTracking} is banned...`);
+    if (this.peerReputation.isPeerBanned(addressForTracking)) {
+      logger.warn('P2P', `[REPUTATION] Rejecting banned peer: ${addressForTracking}`);
+      logger.debug('P2P_NETWORK', `Closing connection to banned peer ${addressForTracking}`);
       ws.close();
       return;
     }
-    logger.debug('P2P_NETWORK', `Peer ${extractedAddress} is not banned, proceeding with connection`);
+    logger.debug('P2P_NETWORK', `Peer ${addressForTracking} is not banned, proceeding with connection`);
 
     // Check if we can accept more peers
     if (!this.peerManager.canAcceptPeers()) {
       logger.warn('P2P', `Max peers reached (${this.peerManager.maxPeers}), rejecting connection`);
-      this.peerReputation.updatePeerReputation(extractedAddress, 'bad_behavior', { reason: 'max_peers_reached' });
+      this.peerReputation.updatePeerReputation(addressForTracking, 'bad_behavior', { reason: 'max_peers_reached' });
       ws.close();
       return;
     }
 
     // Update reputation for successful connection
-    this.peerReputation.updatePeerReputation(extractedAddress, 'connect');
+    this.peerReputation.updatePeerReputation(addressForTracking, 'connect');
 
     // Add peer to manager
-    if (!this.peerManager.addPeer(ws, extractedAddress)) {
+    if (!this.peerManager.addPeer(ws, addressForTracking)) {
       ws.close();
       return;
     }
 
-    // Register connection with PeerDiscovery
-    this.peerDiscovery.markPeerConnected(extractedAddress, ws);
+    // Register connection with PeerDiscovery (only if we have a real address)
+    if (canSaveToPeers) {
+      this.peerDiscovery.markPeerConnected(addressForTracking, ws);
+    } else {
+      logger.debug('P2P_NETWORK', `Not saving peer ${addressForTracking} to persistent storage (no real address extracted)`);
+    }
 
     // CRITICAL: Immediately share peers with new connection
     setTimeout(() => {
-      this.shareKnownPeersWithNewConnection(ws, extractedAddress);
+      this.shareKnownPeersWithNewConnection(ws, addressForTracking);
     }, 2000); // 2 second delay to ensure handshake is complete
 
     // CRITICAL: For outgoing connections, WE initiate the handshake
-    logger.debug('P2P_NETWORK', `Outgoing connection established with ${extractedAddress}, initiating handshake`);
-    this.initiateHandshake(ws, extractedAddress);
+    logger.debug('P2P_NETWORK', `Outgoing connection established with ${addressForTracking}, initiating handshake`);
+    this.initiateHandshake(ws, addressForTracking);
 
     // Set up message handlers
-    this.setupMessageHandlers(ws, extractedAddress);
+    this.setupMessageHandlers(ws, addressForTracking);
   }
 
   /**
@@ -510,59 +519,68 @@ class P2PNetwork {
     const peerAddress = this.extractPeerAddress(ws);
     logger.debug('P2P_NETWORK', `Peer address extracted: ${peerAddress}`);
 
+    // If we can't extract a real address, generate a temporary ID for tracking
+    // but don't save it to persistent storage
+    const addressForTracking = peerAddress || `temp-incoming-${Date.now()}`;
+    const canSaveToPeers = peerAddress !== null; // Only save real addresses
+
     // Track connection state
     this.connectionStates = this.connectionStates || new Map();
-    this.connectionStates.set(peerAddress, 'connecting');
-    logger.debug('P2P_NETWORK', `Connection state set to 'connecting' for ${peerAddress}`);
+    this.connectionStates.set(addressForTracking, 'connecting');
+    logger.debug('P2P_NETWORK', `Connection state set to 'connecting' for ${addressForTracking}`);
 
     // Check if this is a seed node connection
-    const isSeedNode = this.peerManager.isSeedNodeAddress(peerAddress);
+    const isSeedNode = this.peerManager.isSeedNodeAddress(addressForTracking);
     if (isSeedNode) {
-      logger.debug('P2P_NETWORK', `Connection from seed node: ${peerAddress}`);
+      logger.debug('P2P_NETWORK', `Connection from seed node: ${addressForTracking}`);
     }
 
     // Check if peer is banned
-    logger.debug('P2P_NETWORK', `Checking if peer ${peerAddress} is banned...`);
-    if (this.peerReputation.isPeerBanned(peerAddress)) {
-      logger.warn('P2P', `[REPUTATION] Rejecting banned peer: ${peerAddress}`);
-      logger.debug('P2P_NETWORK', `Closing connection to banned peer ${peerAddress}`);
+    logger.debug('P2P_NETWORK', `Checking if peer ${addressForTracking} is banned...`);
+    if (this.peerReputation.isPeerBanned(addressForTracking)) {
+      logger.warn('P2P', `[REPUTATION] Rejecting banned peer: ${addressForTracking}`);
+      logger.debug('P2P_NETWORK', `Closing connection to banned peer ${addressForTracking}`);
       ws.close();
       return;
     }
-    logger.debug('P2P_NETWORK', `Peer ${peerAddress} is not banned, proceeding with connection`);
+    logger.debug('P2P_NETWORK', `Peer ${addressForTracking} is not banned, proceeding with connection`);
 
     // Check if we can accept more peers
     if (!this.peerManager.canAcceptPeers()) {
       logger.warn('P2P', `Max peers reached (${this.peerManager.maxPeers}), rejecting connection`);
-      this.peerReputation.updatePeerReputation(peerAddress, 'bad_behavior', { reason: 'max_peers_reached' });
+      this.peerReputation.updatePeerReputation(addressForTracking, 'bad_behavior', { reason: 'max_peers_reached' });
       ws.close();
       return;
     }
 
     // Update reputation for successful connection
-    this.peerReputation.updatePeerReputation(peerAddress, 'connect');
+    this.peerReputation.updatePeerReputation(addressForTracking, 'connect');
 
     // Add peer to manager
-    if (!this.peerManager.addPeer(ws, peerAddress)) {
+    if (!this.peerManager.addPeer(ws, addressForTracking)) {
       ws.close();
       return;
     }
 
-    // Register connection with PeerDiscovery
-    this.peerDiscovery.markPeerConnected(peerAddress, ws);
+    // Register connection with PeerDiscovery (only if we have a real address)
+    if (canSaveToPeers) {
+      this.peerDiscovery.markPeerConnected(addressForTracking, ws);
+    } else {
+      logger.debug('P2P_NETWORK', `Not saving peer ${addressForTracking} to persistent storage (no real address extracted)`);
+    }
 
     // CRITICAL: Immediately share peers with new connection
     setTimeout(() => {
-      this.shareKnownPeersWithNewConnection(ws, peerAddress);
+      this.shareKnownPeersWithNewConnection(ws, addressForTracking);
     }, 2000); // 2 second delay to ensure handshake is complete
 
     // CRITICAL FIX: Don't initiate handshake from receiving node
     // The connecting node (initiator) will send the handshake
     // We just wait for it to arrive
-    logger.debug('P2P_NETWORK', `Connection established with ${peerAddress}, waiting for handshake from peer`);
+    logger.debug('P2P_NETWORK', `Connection established with ${addressForTracking}, waiting for handshake from peer`);
 
     // Set up message handlers
-    this.setupMessageHandlers(ws, peerAddress);
+    this.setupMessageHandlers(ws, addressForTracking);
   }
 
   /**
@@ -688,13 +706,13 @@ class P2PNetwork {
         return `${url.hostname}:${url.port}`;
       }
 
-      // If we can't determine the address, generate a unique identifier with crypto-secure randomness
-      const crypto = require('crypto');
-      const randomBytes = crypto.randomBytes(6).toString('hex');
-      return `peer-${Date.now()}-${randomBytes}`;
+      // If we can't determine the address, return null instead of generating fake IDs
+      // These generated IDs should not be saved to peers.json as they're not routable
+      logger.warn('P2P_NETWORK', 'Could not extract real peer address from WebSocket connection');
+      return null;
     } catch (error) {
       logger.warn('P2P_NETWORK', `Could not extract peer address: ${error.message}`);
-      return `unknown-${Date.now()}`;
+      return null;
     }
   }
 
