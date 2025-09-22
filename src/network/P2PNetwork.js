@@ -810,11 +810,9 @@ class P2PNetwork {
           // Use resolved IP for consistent peer tracking
           const trackingAddress = `${actualHost}:${port}`;
 
-          // Ensure resolved seed node IPs are added to peer discovery as "config" discovered
-          if (actualHost !== host && this.peerDiscovery) {
-            // This was a DNS resolution, add the resolved IP as a config peer
-            this.peerDiscovery.addKnownPeer(actualHost, port, 'config');
-            logger.debug('P2P_NETWORK', `Added resolved IP ${actualHost}:${port} as config peer for ${host}:${port}`);
+          // DNS resolution completed - peer will be added when connection is established
+          if (actualHost !== host) {
+            logger.debug('P2P_NETWORK', `DNS resolved ${host} to ${actualHost} for connection - peer will be tracked on successful connection`);
           }
 
           this.handleOutgoingConnection(ws, trackingAddress);

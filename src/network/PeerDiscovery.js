@@ -55,6 +55,7 @@ class PeerDiscovery {
     // Clean up any duplicate peer entries and DNS names
     this.cleanupDuplicatePeers();
     this.cleanupDNSEntries();
+    this.consolidateDuplicateIPPorts();
 
     logger.info('PEER_DISCOVERY', `Initialized with ${this.knownPeers.size} known peers, max connections: ${maxPeers}`);
   }
@@ -65,7 +66,7 @@ class PeerDiscovery {
   createPeerInfo(address, port = 23000) {
     return {
       address,
-      port,
+      port: parseInt(port) || 23000,
       lastSeen: Date.now(),
       lastConnected: null,
       connectionCount: 0,
@@ -114,6 +115,9 @@ class PeerDiscovery {
         });
 
         logger.info('PEER_DISCOVERY', `Loaded ${this.knownPeers.size} peers from ${this.peersFilePath}`);
+
+        // Clean up any duplicate IP:port entries
+        this.consolidateDuplicateIPPorts();
 
         // Save the normalized data back to disk
         this.savePeersToDisk();
@@ -326,18 +330,73 @@ class PeerDiscovery {
   }
 
   /**
+   * Consolidate duplicate IP:port entries (e.g., different keys but same IP and port)
+   */
+  consolidateDuplicateIPPorts() {
+    const ipPortMap = new Map(); // Map of "ip:port" -> best peer info
+    const toRemove = [];
+
+    // Group peers by IP:port combination
+    for (const [key, peerInfo] of this.knownPeers) {
+      const ipPort = `${peerInfo.address}:${peerInfo.port}`;
+
+      if (ipPortMap.has(ipPort)) {
+        const existing = ipPortMap.get(ipPort);
+        const existingPeer = existing.peerInfo;
+
+        // Keep the peer with the most recent lastConnected time, or best connection data
+        let keepCurrent = false;
+
+        if (peerInfo.lastConnected && !existingPeer.lastConnected) {
+          keepCurrent = true;
+        } else if (!peerInfo.lastConnected && existingPeer.lastConnected) {
+          keepCurrent = false;
+        } else if (peerInfo.lastConnected && existingPeer.lastConnected) {
+          // Both have lastConnected, keep the more recent one
+          keepCurrent = peerInfo.lastConnected > existingPeer.lastConnected;
+        } else {
+          // Neither has lastConnected, prefer the one with higher connection count
+          keepCurrent = (peerInfo.connectionCount || 0) > (existingPeer.connectionCount || 0);
+        }
+
+        if (keepCurrent) {
+          // Remove the old entry, keep this one
+          toRemove.push(existing.key);
+          ipPortMap.set(ipPort, { key, peerInfo });
+        } else {
+          // Remove this duplicate entry
+          toRemove.push(key);
+        }
+      } else {
+        ipPortMap.set(ipPort, { key, peerInfo });
+      }
+    }
+
+    // Remove duplicates
+    toRemove.forEach(key => {
+      this.knownPeers.delete(key);
+      logger.debug('PEER_DISCOVERY', `Removed duplicate IP:port entry: ${key}`);
+    });
+
+    if (toRemove.length > 0) {
+      logger.info('PEER_DISCOVERY', `Consolidated ${toRemove.length} duplicate IP:port entries`);
+      this.savePeersToDisk();
+    }
+  }
+
+  /**
    * Add a new peer to the known peers list
    */
   addKnownPeer(address, port = 23000, discoveredBy = 'manual') {
     // Normalize the address to extract hostname from WebSocket URLs or host:port format
     let normalizedAddress = address;
-    let normalizedPort = port;
+    let normalizedPort = parseInt(port) || 23000;
 
     try {
       if (address.startsWith('ws://')) {
         const url = new URL(address);
         normalizedAddress = url.hostname;
-        normalizedPort = parseInt(url.port) || port || 23000;
+        normalizedPort = parseInt(url.port) || parseInt(port) || 23000;
         logger.debug('PEER_DISCOVERY', `Normalized WebSocket URL ${address} to ${normalizedAddress}:${normalizedPort}`);
       } else if (address.includes(':') && !address.includes('::')) {
         // Handle host:port format (but not IPv6)
@@ -515,6 +574,9 @@ class PeerDiscovery {
     this.connectionAttempts.delete(address);
 
     logger.info('PEER_DISCOVERY', `Peer connected: ${address} (total: ${this.activePeers.size}/${this.maxPeers})`);
+
+    // Run cleanup to prevent duplicates after each connection
+    this.consolidateDuplicateIPPorts();
     this.savePeersToDisk();
   }
 
