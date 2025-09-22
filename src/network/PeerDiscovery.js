@@ -347,6 +347,45 @@ class PeerDiscovery {
   }
 
   /**
+   * Check if an address corresponds to a seed node (either hostname or resolved IP)
+   * @param address - The address to check (e.g., "188.91.102.21:23000" or "node.pastella.org:23000")
+   */
+  isSeedNodeAddress(address) {
+    if (!this.config?.network?.seedNodes) return false;
+
+    for (const seedNode of this.config.network.seedNodes) {
+      try {
+        const url = new URL(seedNode);
+        const seedAddress = `${url.hostname}:${url.port}`;
+
+        // Direct match (DNS name)
+        if (address === seedAddress) {
+          return true;
+        }
+
+        // Check if this address matches any resolved IPs for this seed node
+        // This relies on the DNS resolution done in P2PNetwork
+        // We'll check if the IP part matches any known seed node IPs
+        if (address.includes(':')) {
+          const [ip, port] = address.split(':');
+          const seedPort = url.port;
+
+          // If this is an IP address and the port matches a seed node port,
+          // we consider it a potential seed node match
+          if (/^\d+\.\d+\.\d+\.\d+$/.test(ip) && port === seedPort) {
+            return true;
+          }
+        }
+      } catch (error) {
+        // Invalid seed node URL, skip
+        continue;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Mark peer as connected
    */
   markPeerConnected(address, ws) {
@@ -372,7 +411,10 @@ class PeerDiscovery {
         port = parseInt(parts[1]) || 23000;
       }
 
-      if (this.addKnownPeer(hostname, port, 'connection')) {
+      // Check if this is a seed node (either by hostname or IP)
+      const discoveryType = this.isSeedNodeAddress(address) ? 'config' : 'connection';
+
+      if (this.addKnownPeer(hostname, port, discoveryType)) {
         peerInfo = this.knownPeers.get(hostname);
         if (peerInfo) {
           peerInfo.lastConnected = Date.now();

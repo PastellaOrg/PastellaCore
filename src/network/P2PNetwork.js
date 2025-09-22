@@ -568,6 +568,14 @@ class P2PNetwork {
       ws.close();
       return;
     }
+
+    // Check for duplicate connections
+    const existingAddresses = this.peerManager.getPeerAddresses();
+    if (existingAddresses.includes(addressForTracking)) {
+      logger.debug('P2P_NETWORK', `Rejecting duplicate incoming connection from ${addressForTracking}`);
+      ws.close();
+      return;
+    }
     logger.debug('P2P_NETWORK', `Peer ${addressForTracking} is not banned, proceeding with connection`);
 
     // Check if we can accept more peers
@@ -758,8 +766,27 @@ class P2PNetwork {
     const peerAddress = `${host}:${port}`;
 
     // Check if already connected
-    if (this.peerManager.getPeerAddresses().includes(peerAddress)) {
+    const existingAddresses = this.peerManager.getPeerAddresses();
+    if (existingAddresses.includes(peerAddress)) {
       return null; // Already connected
+    }
+
+    // For DNS names, also check if we're already connected to the resolved IP
+    if (!/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+      try {
+        const dns = require('dns').promises;
+        const addresses = await dns.resolve4(host);
+        if (addresses.length > 0) {
+          const resolvedAddress = `${addresses[0]}:${port}`;
+          if (existingAddresses.includes(resolvedAddress)) {
+            logger.debug('P2P_NETWORK', `Already connected to ${host} via resolved IP ${resolvedAddress}`);
+            return null; // Already connected to resolved IP
+          }
+        }
+      } catch (dnsError) {
+        // DNS resolution failed, continue with original hostname
+        logger.debug('P2P_NETWORK', `DNS resolution failed for ${host}: ${dnsError.message}`);
+      }
     }
 
     try {
@@ -1189,7 +1216,7 @@ class P2PNetwork {
         };
 
         ws.send(JSON.stringify(message));
-        logger.info('P2P_NETWORK', `Immediately shared ${peersToShare.length} peers with new connection ${peerAddress}`);
+        logger.debug('P2P_NETWORK', `Immediately shared ${peersToShare.length} peers with new connection ${peerAddress}`);
       } else {
         logger.debug('P2P_NETWORK', `No peers to share with new connection ${peerAddress}`);
       }
