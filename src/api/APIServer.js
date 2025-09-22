@@ -1270,6 +1270,30 @@ class APIServer {
       // Convert plain object to Transaction instance
       const newTransaction = Transaction.fromJSON(transaction);
 
+      // SECURITY: Verify transaction ID integrity (prevent ID manipulation attacks)
+      const submittedId = newTransaction.id;
+      const calculatedId = newTransaction.calculateId();
+
+      logger.debug('API', `Transaction ID integrity check:`);
+      logger.debug('API', `  Submitted ID: ${submittedId}`);
+      logger.debug('API', `  Calculated ID: ${calculatedId}`);
+      logger.debug('API', `  ID Match: ${submittedId === calculatedId ? '✅ VALID' : '❌ TAMPERED'}`);
+
+      if (submittedId !== calculatedId) {
+        logger.error('API', `🚨 TRANSACTION ID TAMPERING DETECTED!`);
+        logger.error('API', `  Submitted ID: ${submittedId}`);
+        logger.error('API', `  Calculated ID: ${calculatedId}`);
+        logger.error('API', `  Transaction data may have been modified`);
+
+        return res.status(400).json({
+          error: 'Transaction ID tampering detected',
+          details: 'The submitted transaction ID does not match the calculated ID',
+          submittedId,
+          calculatedId,
+          securityViolation: 'TRANSACTION_ID_MANIPULATION_ATTEMPT'
+        });
+      }
+
       // Validate transaction
       if (!newTransaction.isValid()) {
         return res.status(400).json({

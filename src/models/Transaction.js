@@ -385,6 +385,9 @@ class Transaction {
     // CRITICAL: Validate atomic sequence before ID calculation
     this.validateAtomicSequence(isHistoricalValidation);
 
+    // Set debug flag for canonicalJSONStringify
+    this._isHistoricalValidation = isHistoricalValidation;
+
     // CRITICAL: Use immutable data structure to prevent malleability
     const mappedOutputs = this.outputs.map(output => ({
       address: output.address,
@@ -402,11 +405,18 @@ class Transaction {
     }
     
     const immutableData = {
-      inputs: this.inputs.map(input => ({
-        txId: input.txId,
-        outputIndex: input.outputIndex,
-        publicKey: input.publicKey,
-      })),
+      inputs: this.inputs.map((input, index) => {
+        const inputData = {
+          txId: input.txId,
+          outputIndex: input.outputIndex,
+          publicKey: input.publicKey,
+        };
+        if (isHistoricalValidation && index === 0) {
+          logger.debug('TRANSACTION', `calculateId DEBUG - input[${index}]: txId=${input.txId}, outputIndex=${input.outputIndex}, publicKey=${input.publicKey?.substring(0, 20)}...`);
+          logger.debug('TRANSACTION', `calculateId DEBUG - inputData: ${JSON.stringify(inputData)}`);
+        }
+        return inputData;
+      }),
       outputs: mappedOutputs,
       fee: this.fee,
       paymentId: this.paymentId, // Include payment ID in hash calculation
@@ -419,6 +429,15 @@ class Transaction {
       atomicSequence: this._atomicSequence, // CRITICAL: Include atomic sequence for race protection
     };
 
+    // DEBUG: Log key fields for historical validation
+    if (isHistoricalValidation) {
+      logger.debug('TRANSACTION', `calculateId DEBUG - timestamp: ${this.timestamp}`);
+      logger.debug('TRANSACTION', `calculateId DEBUG - atomicSequence: ${this._atomicSequence}`);
+      logger.debug('TRANSACTION', `calculateId DEBUG - expiresAt: ${this.expiresAt}`);
+      logger.debug('TRANSACTION', `calculateId DEBUG - nonce: ${this.nonce}`);
+      logger.debug('TRANSACTION', `calculateId DEBUG - fee: ${this.fee}`);
+    }
+
     // CRITICAL: Freeze the data to prevent modification
     Object.freeze(immutableData);
 
@@ -428,7 +447,72 @@ class Transaction {
     // DEBUG: Log the data being hashed for integrity validation
     if (isHistoricalValidation) {
       logger.debug('TRANSACTION', `calculateId DEBUG - outputs: ${JSON.stringify(immutableData.outputs)}`);
-      logger.debug('TRANSACTION', `calculateId DEBUG - dataString: ${dataString.substring(0, 200)}...`);
+      logger.debug('TRANSACTION', `calculateId DEBUG - inputs in dataString: ${JSON.stringify(immutableData.inputs)}`);
+      logger.debug('TRANSACTION', `calculateId DEBUG - dataString: ${dataString.substring(0, 500)}...`);
+
+      // Check if txId appears anywhere in the full dataString
+      if (dataString.includes('aad2b632847934b936327917cbff11688d23e9d9f4915c7405cc9d19a923d81f')) {
+        logger.debug('TRANSACTION', `calculateId DEBUG - ✅ txId FOUND in full dataString`);
+
+        // For the specific failing transaction, test multiple legacy combinations
+        if (dataString.includes('1758272901891-b2d61fbaeeef2764f751f9d2-30395-1705701523')) {
+          logger.debug('TRANSACTION', `calculateId DEBUG - Testing multiple legacy combinations for failing transaction`);
+
+          // Test 1: Simple structure (what was used before all the new fields)
+          const legacyData1 = {
+            timestamp: this.timestamp,
+            inputs: this.inputs.map(input => ({
+              txId: input.txId,
+              outputIndex: input.outputIndex,
+              publicKey: input.publicKey,
+              signature: input.signature
+            })),
+            outputs: mappedOutputs,
+            fee: this.fee,
+            nonce: this.nonce
+          };
+          const legacyId1 = CryptoUtils.doubleHash(this.canonicalJSONStringify(legacyData1));
+          logger.debug('TRANSACTION', `calculateId DEBUG - Legacy test 1 (simple): ${legacyId1}`);
+
+          // Test 2: Simple with single hash instead of double hash
+          const legacyId2 = CryptoUtils.hash(this.canonicalJSONStringify(legacyData1));
+          logger.debug('TRANSACTION', `calculateId DEBUG - Legacy test 2 (simple+hash): ${legacyId2}`);
+
+          // Test 3: Include all fields but use single hash
+          const legacyData3 = {
+            inputs: this.inputs.map(input => ({
+              txId: input.txId,
+              outputIndex: input.outputIndex,
+              signature: input.signature,
+              publicKey: input.publicKey,
+            })),
+            outputs: mappedOutputs,
+            fee: this.fee,
+            timestamp: this.timestamp,
+            isCoinbase: this.isCoinbase,
+            tag: this.tag,
+            nonce: this.nonce,
+            expiresAt: this.expiresAt,
+            sequence: this.sequence,
+            atomicSequence: this._atomicSequence,
+            paymentId: this.paymentId,
+          };
+          const legacyId3 = CryptoUtils.hash(this.canonicalJSONStringify(legacyData3));
+          logger.debug('TRANSACTION', `calculateId DEBUG - Legacy test 3 (full+hash): ${legacyId3}`);
+
+          logger.debug('TRANSACTION', `calculateId DEBUG - Target stored ID: bcb703324fa33eaf560f12b1d9e2661b5d500fe1236620acf5a736928ff21e95`);
+          const target = 'bcb703324fa33eaf560f12b1d9e2661b5d500fe1236620acf5a736928ff21e95';
+          const matches = [
+            legacyId1 === target ? 'Test 1 (simple+double)' : null,
+            legacyId2 === target ? 'Test 2 (simple+hash)' : null,
+            legacyId3 === target ? 'Test 3 (full+hash)' : null
+          ].filter(Boolean);
+          logger.debug('TRANSACTION', `calculateId DEBUG - Match found: ${matches.length > 0 ? matches.join(', ') : 'None'}`);
+        }
+      } else {
+        logger.debug('TRANSACTION', `calculateId DEBUG - ❌ txId NOT FOUND in full dataString`);
+        logger.debug('TRANSACTION', `calculateId DEBUG - Full dataString: ${dataString}`);
+      }
     }
 
     // CRITICAL: Double hash for additional security
@@ -436,6 +520,9 @@ class Transaction {
 
     // CRITICAL: Mark transaction as immutable after ID calculation
     this._isImmutable = true;
+
+    // Reset debug flag
+    this._isHistoricalValidation = false;
 
     return this.id;
   }
@@ -463,6 +550,14 @@ class Transaction {
     if (typeof obj === 'object') {
       // Get all enumerable property names and sort them
       const sortedKeys = Object.keys(obj).sort();
+
+      // DEBUG: Log object keys for input objects during historical validation
+      if (this._isHistoricalValidation && obj.hasOwnProperty && (obj.hasOwnProperty('txId') || obj.hasOwnProperty('outputIndex'))) {
+        logger.debug('TRANSACTION', `canonicalJSONStringify DEBUG - object keys: ${sortedKeys.join(', ')}`);
+        logger.debug('TRANSACTION', `canonicalJSONStringify DEBUG - txId value: ${obj.txId} (type: ${typeof obj.txId})`);
+        logger.debug('TRANSACTION', `canonicalJSONStringify DEBUG - outputIndex value: ${obj.outputIndex}`);
+        logger.debug('TRANSACTION', `canonicalJSONStringify DEBUG - publicKey value: ${obj.publicKey?.substring(0, 20)}...`);
+      }
 
       // Build canonical key-value pairs
       const serializedPairs = sortedKeys.map(key => {
@@ -853,6 +948,51 @@ class Transaction {
     );
     transaction.isCoinbase = true;
     transaction.calculateId();
+    return transaction;
+  }
+
+  /**
+   * Create Transaction instance from JSON data
+   * @param {Object} data - JSON transaction data
+   * @returns {Transaction} Transaction instance
+   */
+  static fromJSON(data) {
+    logger.debug('TRANSACTION', `Creating Transaction from JSON: id=${data.id}, inputs=${data.inputs?.length || 0}, outputs=${data.outputs?.length || 0}`);
+
+    // DEBUG: Log raw input data
+    if (data.inputs && data.inputs.length > 0) {
+      logger.debug('TRANSACTION', `Raw input data: ${JSON.stringify(data.inputs[0])}`);
+    }
+
+    // Create Transaction instance
+    const transaction = new Transaction();
+
+    // Set all fields from JSON data
+    transaction.id = data.id;
+    transaction.inputs = data.inputs?.map((input, index) => {
+      logger.debug('TRANSACTION', `Converting input ${index}: txId=${input.txId}, outputIndex=${input.outputIndex}`);
+      return new TransactionInput(input.txId, input.outputIndex, input.signature, input.publicKey);
+    }) || [];
+    transaction.outputs = data.outputs?.map(output => new TransactionOutput(output.address, output.amount)) || [];
+    transaction.fee = data.fee || 0;
+    transaction.paymentId = data.paymentId;
+    transaction.timestamp = data.timestamp;
+    transaction.isCoinbase = data.isCoinbase || false;
+    transaction.tag = data.tag || 'TRANSACTION';
+    transaction.nonce = data.nonce;
+    transaction.expiresAt = data.expiresAt;
+    transaction.sequence = data.sequence || 0;
+    transaction._atomicSequence = data.atomicSequence; // Use exact field name from JSON
+
+    // Mark as immutable since it's from stored data
+    transaction._isImmutable = true;
+
+    // DEBUG: Verify reconstructed input data
+    if (transaction.inputs && transaction.inputs.length > 0) {
+      logger.debug('TRANSACTION', `Reconstructed input: txId=${transaction.inputs[0].txId}, outputIndex=${transaction.inputs[0].outputIndex}`);
+    }
+
+    logger.debug('TRANSACTION', `Successfully created Transaction instance: id=${transaction.id}, timestamp=${transaction.timestamp}, atomicSequence=${transaction._atomicSequence}`);
     return transaction;
   }
 
