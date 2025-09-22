@@ -576,6 +576,21 @@ class P2PNetwork {
       ws.close();
       return;
     }
+
+    // Check for bidirectional connections (prevent incoming connections from IPs we're already connected to)
+    if (peerAddress) {
+      const [incomingIP] = peerAddress.split(':');
+      const hasOutgoingConnectionToSameIP = existingAddresses.some(address => {
+        const [existingIP] = address.split(':');
+        return existingIP === incomingIP;
+      });
+
+      if (hasOutgoingConnectionToSameIP && isSeedNode) {
+        logger.debug('P2P_NETWORK', `Rejecting bidirectional seed node connection from ${addressForTracking} (already connected to same IP)`);
+        ws.close();
+        return;
+      }
+    }
     logger.debug('P2P_NETWORK', `Peer ${addressForTracking} is not banned, proceeding with connection`);
 
     // Check if we can accept more peers
