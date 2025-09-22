@@ -695,15 +695,19 @@ class Block {
             'BLOCK',
             `Converting transaction ${index}: id=${tx.id}, isCoinbase=${tx.isCoinbase}, hasIsValid=${typeof tx.isValid === 'function'}`
           );
-          if (typeof tx === 'object' && !tx.isValid) {
+          // Always convert plain objects to Transaction instances to ensure all methods are available
+          if (typeof tx === 'object' && typeof tx.isValid !== 'function') {
             const convertedTx = Transaction.fromJSON(tx);
             logger.debug(
               'BLOCK',
-              `Successfully converted transaction ${index} to Transaction instance: id=${convertedTx.id}`
+              `Successfully converted transaction ${index} to Transaction instance: id=${convertedTx.id}, hasCalculateId=${typeof convertedTx.calculateId === 'function'}`
             );
             return convertedTx;
           }
-          logger.debug('BLOCK', `Transaction ${index} already a Transaction instance or invalid: id=${tx.id}`);
+          logger.debug(
+            'BLOCK',
+            `Transaction ${index} already a Transaction instance: id=${tx.id}, hasCalculateId=${typeof tx.calculateId === 'function'}`
+          );
           return tx;
         });
         logger.debug('BLOCK', `Successfully converted ${transactions.length} transactions`);

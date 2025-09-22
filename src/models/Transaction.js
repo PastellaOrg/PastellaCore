@@ -445,7 +445,7 @@ class Transaction {
     const dataString = this.canonicalJSONStringify(immutableData);
     
     // DEBUG: Log the data being hashed for integrity validation
-    if (isHistoricalValidation) {
+    if (isHistoricalValidation && !this.isCoinbase) {
       logger.debug('TRANSACTION', `calculateId DEBUG - outputs: ${JSON.stringify(immutableData.outputs)}`);
       logger.debug('TRANSACTION', `calculateId DEBUG - inputs in dataString: ${JSON.stringify(immutableData.inputs)}`);
       logger.debug('TRANSACTION', `calculateId DEBUG - dataString: ${dataString.substring(0, 500)}...`);

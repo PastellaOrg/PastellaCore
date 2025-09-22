@@ -741,7 +741,7 @@ class P2PNetwork {
 
         ws.on('error', (error) => {
           clearTimeout(timeout);
-          logger.warn('P2P', `Connection failed to ${peerAddress}: ${error.message || error.code || 'Unknown error'}`);
+          logger.debug('P2P', `Connection failed to ${peerAddress}: ${error.message || error.code || 'Unknown error'}`);
           resolve(false);
         });
       });
