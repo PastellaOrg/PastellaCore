@@ -261,14 +261,25 @@ class MessageHandler {
     // Check for duplicate messages (prevent flooding attacks)
     if (this.isDuplicateMessage(message, peerAddress)) {
       logger.debug('MESSAGE_HANDLER', `🔄 DUPLICATE: Blocking duplicate message from ${peerAddress} (type: ${message.type})`);
-      // Don't penalize reputation for first few duplicates, but log for monitoring
+
+      // Apply reputation penalties based on message type
+      const maintenanceMessages = ['QUERY_LATEST', 'PING', 'PONG', 'QUERY_TRANSACTION', 'MEMPOOL_SYNC_REQUEST', 'HEARTBEAT', 'RESPONSE_BLOCKCHAIN'];
+      const isMaintenanceMessage = maintenanceMessages.includes(message.type);
       const seenInfo = this.seenMessages.get(this.generateMessageHash(message, peerAddress));
+
       if (seenInfo && seenInfo.count > this.maxDuplicatesPerPeer) {
-        this.peerReputation.updatePeerReputation(peerAddress, 'bad_behavior', {
-          reason: 'message_flooding',
-          messageType: message.type,
-          duplicateCount: seenInfo.count
-        });
+        if (!isMaintenanceMessage) {
+          // Only penalize reputation for non-maintenance messages (actual flooding)
+          this.peerReputation.updatePeerReputation(peerAddress, 'bad_behavior', {
+            reason: 'message_flooding',
+            messageType: message.type,
+            duplicateCount: seenInfo.count
+          });
+          logger.debug('MESSAGE_HANDLER', `Applied reputation penalty for flooding: ${message.type} from ${peerAddress}`);
+        } else {
+          // For maintenance messages, just log without reputation penalty
+          logger.debug('MESSAGE_HANDLER', `High duplicate count for maintenance message ${message.type} from ${peerAddress} (${seenInfo.count} times) - no reputation penalty`);
+        }
       }
       return false;
     }
@@ -1308,6 +1319,7 @@ class MessageHandler {
 
   /**
    * Check if we've seen this message recently (prevent flooding)
+   * Smart duplicate detection that treats different message types appropriately
    * @param {Object} message - The message to check
    * @param {string} peerAddress - The peer address
    * @returns {boolean} True if message should be blocked
@@ -1319,19 +1331,57 @@ class MessageHandler {
     // Clean up expired messages first
     this.cleanupSeenMessages();
 
+    // Define message categories with different rules
+    const maintenanceMessages = ['QUERY_LATEST', 'PING', 'PONG', 'QUERY_TRANSACTION', 'MEMPOOL_SYNC_REQUEST', 'HEARTBEAT', 'RESPONSE_BLOCKCHAIN'];
+    const isMaintenanceMessage = maintenanceMessages.includes(message.type);
+
+    // Different rules for different message types
+    const rules = isMaintenanceMessage ? {
+      maxDuplicates: 10,           // Allow more duplicates for maintenance messages
+      timeWindow: 60000,           // 60 seconds window for maintenance messages
+      noReputationPenalty: true,   // Don't penalize reputation for sync messages
+      logLevel: 'debug'            // Less noisy logging for normal sync behavior
+    } : {
+      maxDuplicates: this.maxDuplicatesPerPeer, // Strict limit for content messages
+      timeWindow: this.messageTTL, // Standard TTL
+      noReputationPenalty: false,  // Apply reputation penalties
+      logLevel: 'warn'             // Alert for actual flooding
+    };
+
     const seenInfo = this.seenMessages.get(messageHash);
     if (seenInfo) {
+      // Check if enough time has passed for maintenance messages
+      if (isMaintenanceMessage && (now - seenInfo.timestamp) > rules.timeWindow) {
+        // Reset the seen message for maintenance messages after time window
+        this.seenMessages.set(messageHash, {
+          timestamp: now,
+          count: 1,
+          peerAddress,
+          messageType: message.type
+        });
+        logger.debug('MESSAGE_HANDLER', `Allowing ${message.type} after time window from ${peerAddress}`);
+        return false; // Allow message after time window
+      }
+
       // Update duplicate count
       seenInfo.count++;
       seenInfo.timestamp = now;
 
-      if (seenInfo.count > this.maxDuplicatesPerPeer) {
-        logger.warn('MESSAGE_HANDLER', `🚨 FLOODING DETECTED: Peer ${peerAddress} sent duplicate message ${seenInfo.count} times`);
-        logger.warn('MESSAGE_HANDLER', `Message type: ${message.type}`);
+      if (seenInfo.count > rules.maxDuplicates) {
+        if (rules.logLevel === 'warn') {
+          logger.warn('MESSAGE_HANDLER', `🚨 FLOODING DETECTED: Peer ${peerAddress} sent duplicate message ${seenInfo.count} times`);
+          logger.warn('MESSAGE_HANDLER', `Message type: ${message.type}`);
+        } else {
+          logger.debug('MESSAGE_HANDLER', `High duplicate count for ${message.type} from ${peerAddress}: ${seenInfo.count} times (normal for sync)`);
+        }
         return true; // Block this message
       }
 
-      logger.debug('MESSAGE_HANDLER', `⚠️ Duplicate message from ${peerAddress} (count: ${seenInfo.count})`);
+      const logMessage = isMaintenanceMessage ?
+        `Duplicate ${message.type} from ${peerAddress} (count: ${seenInfo.count}, normal sync behavior)` :
+        `Duplicate message from ${peerAddress} (count: ${seenInfo.count})`;
+
+      logger.debug('MESSAGE_HANDLER', logMessage);
       return true; // Block duplicate
     }
 

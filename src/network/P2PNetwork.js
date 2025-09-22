@@ -136,8 +136,7 @@ class P2PNetwork {
     logger.debug('P2P_NETWORK', `Setting up IPv4-only DNS resolution...`);
     this.setupIPv4OnlyDNS();
 
-    logger.debug('P2P_NETWORK', `Loading seed nodes from config...`);
-    this.loadSeedNodes();
+    logger.debug('P2P_NETWORK', `Seed node loading will be done during server start...`);
 
     // Initialize automatic peer discovery and reconnection
     this.initializeAutomatedSystems();
@@ -157,35 +156,57 @@ class P2PNetwork {
   /**
    * Load seed nodes from config
    */
-  loadSeedNodes() {
+  async loadSeedNodes() {
     if (this.config && this.config.network && this.config.network.seedNodes) {
       this.seedNodeManager.loadSeedNodes(this.config);
       // Update PeerManager with seed node addresses for detection
-      this.updatePeerManagerSeedNodes();
+      await this.updatePeerManagerSeedNodes();
     }
   }
 
   /**
    * Update PeerManager with seed node addresses for detection
    */
-  updatePeerManagerSeedNodes() {
+  async updatePeerManagerSeedNodes() {
     if (this.config?.network?.seedNodes) {
-      const seedNodeAddresses = this.config.network.seedNodes
-        .map(seedNode => {
-          try {
-            const url = new URL(seedNode);
-            return `${url.hostname}:${url.port}`;
-          } catch (error) {
-            logger.warn('P2P_NETWORK', `Invalid seed node URL: ${seedNode}`);
-            return null;
-          }
-        })
-        .filter(Boolean);
+      const dns = require('dns').promises;
+      const seedNodeAddresses = [];
 
-      this.peerManager.setSeedNodeAddresses(seedNodeAddresses);
+      for (const seedNode of this.config.network.seedNodes) {
+        try {
+          const url = new URL(seedNode);
+          const hostname = url.hostname;
+          const port = url.port;
+          const addressWithPort = `${hostname}:${port}`;
+
+          // Always add the original hostname:port
+          seedNodeAddresses.push(addressWithPort);
+
+          // If hostname is not an IP address, resolve it to IP and add both
+          if (!/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+            try {
+              const addresses = await dns.resolve4(hostname);
+              for (const ip of addresses) {
+                const resolvedAddress = `${ip}:${port}`;
+                seedNodeAddresses.push(resolvedAddress);
+                logger.debug('P2P_NETWORK', `Resolved seed node ${addressWithPort} to ${resolvedAddress}`);
+              }
+            } catch (dnsError) {
+              logger.warn('P2P_NETWORK', `Failed to resolve DNS for seed node ${addressWithPort}: ${dnsError.message}`);
+            }
+          }
+        } catch (error) {
+          logger.warn('P2P_NETWORK', `Invalid seed node URL: ${seedNode}`);
+        }
+      }
+
+      // Remove duplicates
+      const uniqueAddresses = [...new Set(seedNodeAddresses)];
+
+      this.peerManager.setSeedNodeAddresses(uniqueAddresses);
       logger.info(
         'P2P_NETWORK',
-        `Seed node detection enabled for ${seedNodeAddresses.length} addresses: ${seedNodeAddresses.join(', ')}`
+        `Seed node detection enabled for ${uniqueAddresses.length} addresses: ${uniqueAddresses.join(', ')}`
       );
     }
   }
@@ -284,6 +305,10 @@ class P2PNetwork {
       logger.debug('P2P_NETWORK', `Network already running, skipping start operation`);
       return false;
     }
+
+    // Load seed nodes with DNS resolution during startup
+    logger.debug('P2P_NETWORK', `Loading seed nodes from config...`);
+    await this.loadSeedNodes();
 
     try {
       logger.info('P2P', `Starting P2P network on port ${this.port}`);
