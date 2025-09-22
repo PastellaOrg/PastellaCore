@@ -2981,6 +2981,7 @@ class APIServer {
               // Show ALL inputs and outputs for complete context
               inputs: tx.inputs,
               outputs: tx.outputs,
+              fee: tx.fee || 0,
               tag: tx.tag,
               // Add helpful flags to identify address involvement
               isSender: this.isAddressSender(tx, address),
