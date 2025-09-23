@@ -970,27 +970,24 @@ class WalletFunctions {
 
       this.markUTXOsAsPending(usedUTXOs, transaction.id);
 
-      // Submit complete transaction to daemon API
-      let submitResponse;
-      let result;
+      // Submit transaction to daemon with error handling and auto-restructuring
+      const submissionResult = await this.submitTransactionToDaemon(
+        transaction,
+        walletName,
+        fromAddress,
+        toAddress,
+        atomicAmount,
+        atomicFee,
+        paymentId,
+        usedUTXOs
+      );
 
-      try {
-        submitResponse = await this.daemonAPI.post('/api/transactions/submit', {
-          transaction
-        });
-        result = submitResponse.data;
-
-        // If transaction was accepted, confirm it in our tracking
-        if (result.success !== false) {
-          // Transaction was accepted - UTXOs remain marked as pending until confirmation
-          logger.info('WALLET_API', `Transaction ${transaction.id} submitted successfully`);
-        }
-      } catch (submitError) {
-        // Transaction submission failed - reject the transaction to free up UTXOs
-        this.rejectTransaction(transaction.id);
-        logger.error('WALLET_API', `Transaction submission failed: ${submitError.message}`);
-        throw submitError;
+      if (!submissionResult.success) {
+        // If submission failed, the method already handled cleanup
+        throw new Error(submissionResult.error);
       }
+
+      const result = submissionResult.data;
 
       logger.info(
         'WALLET_API',
@@ -1103,27 +1100,23 @@ class WalletFunctions {
 
       this.markUTXOsAsPending(usedUTXOs, transaction.id);
 
-      // Submit complete transaction to daemon API
-      let submitResponse;
-      let result;
+      // Submit transaction to daemon with error handling and auto-restructuring
+      const submissionResult = await this.submitMultiTransactionToDaemon(
+        transaction,
+        walletName,
+        fromAddress,
+        atomicOutputs,
+        atomicFee,
+        paymentId,
+        usedUTXOs
+      );
 
-      try {
-        submitResponse = await this.daemonAPI.post('/api/transactions/submit', {
-          transaction
-        });
-        result = submitResponse.data;
-
-        // If transaction was accepted, confirm it in our tracking
-        if (result.success !== false) {
-          // Transaction was accepted - UTXOs remain marked as pending until confirmation
-          logger.info('WALLET_API', `Multi-output transaction ${transaction.id} submitted successfully`);
-        }
-      } catch (submitError) {
-        // Transaction submission failed - reject the transaction to free up UTXOs
-        this.rejectTransaction(transaction.id);
-        logger.error('WALLET_API', `Multi-output transaction submission failed: ${submitError.message}`);
-        throw submitError;
+      if (!submissionResult.success) {
+        // If submission failed, the method already handled cleanup
+        throw new Error(submissionResult.error);
       }
+
+      const result = submissionResult.data;
 
       logger.info(
         'WALLET_API',
@@ -2028,6 +2021,341 @@ class WalletFunctions {
     } catch (error) {
       logger.error('WALLET_API', `Error cleaning up old transactions: ${error.message}`);
     }
+  }
+
+  /**
+   * Submit transaction to daemon with error handling and auto-restructuring
+   * @param {Object} transaction - The transaction object
+   * @param {string} walletName - Name of the wallet
+   * @param {string} fromAddress - Sender address
+   * @param {string} toAddress - Recipient address
+   * @param {number} atomicAmount - Amount in atomic units
+   * @param {number} atomicFee - Fee in atomic units
+   * @param {string} paymentId - Optional payment ID
+   * @param {Array} usedUTXOs - UTXOs used in the transaction
+   * @param {number} retryCount - Current retry attempt (default: 0)
+   * @returns {Object} Submission result
+   */
+  async submitTransactionToDaemon(transaction, walletName, fromAddress, toAddress, atomicAmount, atomicFee, paymentId, usedUTXOs, retryCount = 0) {
+    const maxRetries = 2;
+
+    try {
+      console.log(`🚀 WALLET_API: Submitting transaction ${transaction.id} to daemon (attempt ${retryCount + 1}/${maxRetries + 1})`);
+
+      const submitResponse = await this.daemonAPI.post('/api/transactions/submit', {
+        transaction
+      });
+
+      const result = submitResponse.data;
+
+      // Transaction was accepted
+      console.log(`✅ WALLET_API: Transaction ${transaction.id} submitted successfully to daemon`);
+      logger.info('WALLET_API', `Transaction ${transaction.id} submitted successfully to daemon`);
+
+      return {
+        success: true,
+        data: result
+      };
+
+    } catch (submitError) {
+      // Log the complete error details to console
+      console.error(`❌ WALLET_API: Transaction ${transaction.id} submission failed:`);
+      console.error(`   Error Message: ${submitError.message}`);
+      console.error(`   Error Details: ${JSON.stringify(submitError.response?.data || 'No additional details', null, 2)}`);
+
+      logger.error('WALLET_API', `Transaction ${transaction.id} submission failed: ${submitError.message}`);
+
+      // Check if this is a UTXO-related error that we can retry
+      const isUTXOError = this.isUTXORelatedError(submitError);
+
+      if (isUTXOError && retryCount < maxRetries) {
+        console.log(`🔄 WALLET_API: UTXO error detected, attempting to restructure transaction (retry ${retryCount + 1}/${maxRetries})`);
+        logger.info('WALLET_API', `UTXO error detected for transaction ${transaction.id}, attempting restructure (retry ${retryCount + 1}/${maxRetries})`);
+
+        try {
+          // Reject current transaction to free up UTXOs
+          this.rejectTransaction(transaction.id);
+
+          // Get fresh UTXO state from daemon
+          console.log(`🔍 WALLET_API: Fetching fresh UTXO state from daemon for address ${fromAddress}`);
+          const freshUTXOs = await this.getAvailableUTXOs(fromAddress, true); // Force sync
+
+          if (freshUTXOs.length === 0) {
+            console.error(`❌ WALLET_API: No UTXOs available after refresh for address ${fromAddress}`);
+            return {
+              success: false,
+              error: 'No UTXOs available after refresh - wallet may be empty or all UTXOs are spent'
+            };
+          }
+
+          // Validate fresh UTXOs with daemon
+          const validUTXOs = await this.validateUTXOsBeforeSpending(freshUTXOs);
+
+          if (validUTXOs.length === 0) {
+            console.error(`❌ WALLET_API: No valid UTXOs available after validation for address ${fromAddress}`);
+            return {
+              success: false,
+              error: 'No valid UTXOs available after validation - all UTXOs may have been spent'
+            };
+          }
+
+          console.log(`✅ WALLET_API: Found ${validUTXOs.length} valid UTXOs for restructuring transaction`);
+
+          // Update wallet's internal state with fresh UTXOs
+          const wallet = this.wallets.get(walletName);
+          const totalBalance = validUTXOs.reduce((sum, utxo) => sum + utxo.amount, 0);
+          wallet.balance = totalBalance;
+          wallet.utxos = validUTXOs;
+
+          // Check if we still have sufficient balance
+          if (totalBalance < atomicAmount + atomicFee) {
+            console.error(`❌ WALLET_API: Insufficient balance after refresh: ${totalBalance} < ${atomicAmount + atomicFee}`);
+            return {
+              success: false,
+              error: `Insufficient balance after UTXO refresh: need ${atomicAmount + atomicFee}, have ${totalBalance}`
+            };
+          }
+
+          // Create new transaction with fresh UTXOs
+          console.log(`🔨 WALLET_API: Creating new transaction with fresh UTXOs`);
+          const newTransaction = wallet.createTransaction(toAddress, atomicAmount, atomicFee, null, undefined, paymentId);
+
+          // Mark new UTXOs as pending
+          const newUsedUTXOs = newTransaction.inputs.map(input => {
+            const utxo = validUTXOs.find(u => u.transactionId === input.txId && u.outputIndex === input.outputIndex);
+            return { ...utxo, address: fromAddress };
+          }).filter(Boolean);
+
+          this.markUTXOsAsPending(newUsedUTXOs, newTransaction.id);
+
+          // Recursive call with new transaction
+          return await this.submitTransactionToDaemon(
+            newTransaction,
+            walletName,
+            fromAddress,
+            toAddress,
+            atomicAmount,
+            atomicFee,
+            paymentId,
+            newUsedUTXOs,
+            retryCount + 1
+          );
+
+        } catch (restructureError) {
+          console.error(`❌ WALLET_API: Transaction restructuring failed: ${restructureError.message}`);
+          logger.error('WALLET_API', `Transaction restructuring failed: ${restructureError.message}`);
+
+          // Clean up the failed transaction
+          this.rejectTransaction(transaction.id);
+
+          return {
+            success: false,
+            error: `Transaction restructuring failed: ${restructureError.message}`
+          };
+        }
+
+      } else {
+        // Non-UTXO error or max retries reached
+        console.error(`❌ WALLET_API: Transaction ${transaction.id} permanently failed`);
+        if (retryCount >= maxRetries) {
+          console.error(`   Reason: Maximum retries (${maxRetries}) exceeded`);
+        } else {
+          console.error(`   Reason: Non-UTXO error or unrecoverable error`);
+        }
+
+        // Clean up the failed transaction
+        this.rejectTransaction(transaction.id);
+
+        return {
+          success: false,
+          error: `Transaction submission failed: ${submitError.message}${retryCount >= maxRetries ? ' (max retries exceeded)' : ''}`
+        };
+      }
+    }
+  }
+
+  /**
+   * Submit multi-output transaction to daemon with error handling and auto-restructuring
+   * @param {Object} transaction - The transaction object
+   * @param {string} walletName - Name of the wallet
+   * @param {string} fromAddress - Sender address
+   * @param {Array} atomicOutputs - Array of output objects with address and amount
+   * @param {number} atomicFee - Fee in atomic units
+   * @param {string} paymentId - Optional payment ID
+   * @param {Array} usedUTXOs - UTXOs used in the transaction
+   * @param {number} retryCount - Current retry attempt (default: 0)
+   * @returns {Object} Submission result
+   */
+  async submitMultiTransactionToDaemon(transaction, walletName, fromAddress, atomicOutputs, atomicFee, paymentId, usedUTXOs, retryCount = 0) {
+    const maxRetries = 2;
+
+    try {
+      console.log(`🚀 WALLET_API: Submitting multi-output transaction ${transaction.id} to daemon (attempt ${retryCount + 1}/${maxRetries + 1})`);
+
+      const submitResponse = await this.daemonAPI.post('/api/transactions/submit', {
+        transaction
+      });
+
+      const result = submitResponse.data;
+
+      // Transaction was accepted
+      console.log(`✅ WALLET_API: Multi-output transaction ${transaction.id} submitted successfully to daemon`);
+      logger.info('WALLET_API', `Multi-output transaction ${transaction.id} submitted successfully to daemon`);
+
+      return {
+        success: true,
+        data: result
+      };
+
+    } catch (submitError) {
+      // Log the complete error details to console
+      console.error(`❌ WALLET_API: Multi-output transaction ${transaction.id} submission failed:`);
+      console.error(`   Error Message: ${submitError.message}`);
+      console.error(`   Error Details: ${JSON.stringify(submitError.response?.data || 'No additional details', null, 2)}`);
+
+      logger.error('WALLET_API', `Multi-output transaction ${transaction.id} submission failed: ${submitError.message}`);
+
+      // Check if this is a UTXO-related error that we can retry
+      const isUTXOError = this.isUTXORelatedError(submitError);
+
+      if (isUTXOError && retryCount < maxRetries) {
+        console.log(`🔄 WALLET_API: UTXO error detected, attempting to restructure multi-output transaction (retry ${retryCount + 1}/${maxRetries})`);
+        logger.info('WALLET_API', `UTXO error detected for multi-output transaction ${transaction.id}, attempting restructure (retry ${retryCount + 1}/${maxRetries})`);
+
+        try {
+          // Reject current transaction to free up UTXOs
+          this.rejectTransaction(transaction.id);
+
+          // Get fresh UTXO state from daemon
+          console.log(`🔍 WALLET_API: Fetching fresh UTXO state from daemon for address ${fromAddress}`);
+          const freshUTXOs = await this.getAvailableUTXOs(fromAddress, true); // Force sync
+
+          if (freshUTXOs.length === 0) {
+            console.error(`❌ WALLET_API: No UTXOs available after refresh for address ${fromAddress}`);
+            return {
+              success: false,
+              error: 'No UTXOs available after refresh - wallet may be empty or all UTXOs are spent'
+            };
+          }
+
+          // Validate fresh UTXOs with daemon
+          const validUTXOs = await this.validateUTXOsBeforeSpending(freshUTXOs);
+
+          if (validUTXOs.length === 0) {
+            console.error(`❌ WALLET_API: No valid UTXOs available after validation for address ${fromAddress}`);
+            return {
+              success: false,
+              error: 'No valid UTXOs available after validation - all UTXOs may have been spent'
+            };
+          }
+
+          console.log(`✅ WALLET_API: Found ${validUTXOs.length} valid UTXOs for restructuring multi-output transaction`);
+
+          // Update wallet's internal state with fresh UTXOs
+          const wallet = this.wallets.get(walletName);
+          const totalBalance = validUTXOs.reduce((sum, utxo) => sum + utxo.amount, 0);
+          wallet.balance = totalBalance;
+          wallet.utxos = validUTXOs;
+
+          // Calculate total amount needed
+          const totalAtomicAmount = atomicOutputs.reduce((sum, output) => sum + output.amount, 0);
+
+          // Check if we still have sufficient balance
+          if (totalBalance < totalAtomicAmount + atomicFee) {
+            console.error(`❌ WALLET_API: Insufficient balance after refresh: ${totalBalance} < ${totalAtomicAmount + atomicFee}`);
+            return {
+              success: false,
+              error: `Insufficient balance after UTXO refresh: need ${totalAtomicAmount + atomicFee}, have ${totalBalance}`
+            };
+          }
+
+          // Create new multi-output transaction with fresh UTXOs
+          console.log(`🔨 WALLET_API: Creating new multi-output transaction with fresh UTXOs`);
+          const newTransaction = wallet.createMultiTransaction(atomicOutputs, atomicFee, null, undefined, paymentId);
+
+          // Mark new UTXOs as pending
+          const newUsedUTXOs = newTransaction.inputs.map(input => {
+            const utxo = validUTXOs.find(u => u.transactionId === input.txId && u.outputIndex === input.outputIndex);
+            return { ...utxo, address: fromAddress };
+          }).filter(Boolean);
+
+          this.markUTXOsAsPending(newUsedUTXOs, newTransaction.id);
+
+          // Recursive call with new transaction
+          return await this.submitMultiTransactionToDaemon(
+            newTransaction,
+            walletName,
+            fromAddress,
+            atomicOutputs,
+            atomicFee,
+            paymentId,
+            newUsedUTXOs,
+            retryCount + 1
+          );
+
+        } catch (restructureError) {
+          console.error(`❌ WALLET_API: Multi-output transaction restructuring failed: ${restructureError.message}`);
+          logger.error('WALLET_API', `Multi-output transaction restructuring failed: ${restructureError.message}`);
+
+          // Clean up the failed transaction
+          this.rejectTransaction(transaction.id);
+
+          return {
+            success: false,
+            error: `Multi-output transaction restructuring failed: ${restructureError.message}`
+          };
+        }
+
+      } else {
+        // Non-UTXO error or max retries reached
+        console.error(`❌ WALLET_API: Multi-output transaction ${transaction.id} permanently failed`);
+        if (retryCount >= maxRetries) {
+          console.error(`   Reason: Maximum retries (${maxRetries}) exceeded`);
+        } else {
+          console.error(`   Reason: Non-UTXO error or unrecoverable error`);
+        }
+
+        // Clean up the failed transaction
+        this.rejectTransaction(transaction.id);
+
+        return {
+          success: false,
+          error: `Multi-output transaction submission failed: ${submitError.message}${retryCount >= maxRetries ? ' (max retries exceeded)' : ''}`
+        };
+      }
+    }
+  }
+
+  /**
+   * Check if an error is UTXO-related and can be retried
+   * @param {Error} error - The error from daemon submission
+   * @returns {boolean} True if this is a UTXO-related error
+   */
+  isUTXORelatedError(error) {
+    if (!error.response?.data) {
+      return false;
+    }
+
+    const errorData = error.response.data;
+    const errorMessage = (errorData.error || errorData.details || error.message || '').toLowerCase();
+
+    // Check for known UTXO-related error patterns
+    const utxoErrorPatterns = [
+      'double-spend',
+      'double spend',
+      'utxo',
+      'already spent',
+      'not found',
+      'invalid input',
+      'insufficient balance',
+      'transaction rejected',
+      'atomic utxo validation failed',
+      'utxo is already reserved',
+      'references non-existent',
+      'input references'
+    ];
+
+    return utxoErrorPatterns.some(pattern => errorMessage.includes(pattern));
   }
 
   /**
