@@ -452,12 +452,14 @@ SERVER OPTIONS:
   --port <number>         Server port (default: 3001)
   --host <string>         Server host (default: 127.0.0.1)
   --cors                  Enable CORS
+  --resync                Force resync all wallets from block 0
   --help                  Show this help message
 
 EXAMPLES:
   node wallet-api.js --create-wallet "exchange-hot" --password "secure123" --port 3001 --api-key mykey
   node wallet-api.js --load-wallet "exchange-hot" --password "secure123" --host 0.0.0.0 --cors
   node wallet-api.js --load-wallet "my-wallet" --password "pass123" --api-key mykey
+  node wallet-api.js --load-wallet "exchange-hot" --password "secure123" --api-key mykey --resync
 
 IMPORTANT - ATOMIC UNITS:
   - All transaction amounts and fees must be provided in ATOMIC UNITS
@@ -532,6 +534,9 @@ function parseArgs() {
         break;
       case '--cors':
         config.cors = true;
+        break;
+      case '--resync':
+        config.resync = true;
         break;
       default:
         console.error(`Unknown option: ${args[i]}`);
@@ -617,6 +622,13 @@ if (require.main === module) {
           logger.info('WALLET_API', `Loading wallet: ${config.loadWallet}`);
           await server.walletFunctions.loadWallet(config.loadWallet, config.password);
           logger.info('WALLET_API', `Wallet '${config.loadWallet}' loaded successfully`);
+        }
+
+        // Handle resync if requested
+        if (config.resync) {
+          logger.info('WALLET_API', '🔄 Resync flag detected - forcing wallet resync from block 0');
+          await server.walletFunctions.forceResyncFromBlockZero();
+          logger.info('WALLET_API', '✅ Wallet resync completed');
         }
 
         logger.info('WALLET_API', '🚀 Wallet API ready for requests');

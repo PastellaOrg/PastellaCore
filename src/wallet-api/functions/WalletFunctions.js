@@ -1348,6 +1348,9 @@ class WalletFunctions {
 
     this.syncState.isSynced = true;
     logger.info('WALLET_API', '✅ Blockchain sync complete - 100% synced!');
+
+    // Display total balances for all wallets when sync is complete
+    await this.displayFinalBalances();
   }
 
   /**
@@ -1777,9 +1780,14 @@ class WalletFunctions {
       // Create UTXO map for fast lookup: "txId:index" -> utxoData
       const utxoMap = new Map();
       for (const utxo of freshUTXOs) {
-        const key = `${utxo.transactionId}:${utxo.outputIndex}`;
+        // Handle both property names for compatibility
+        const txId = utxo.transactionId || utxo.txHash;
+        const key = `${txId}:${utxo.outputIndex}`;
+
         utxoMap.set(key, {
           ...utxo,
+          transactionId: txId,  // Normalize property name
+          txHash: txId,         // Keep compatibility
           address,
           isPending: false,
           lastChecked: Date.now(),
@@ -1886,26 +1894,27 @@ class WalletFunctions {
           const response = await this.daemonAPI.get(`/api/wallet/utxos/${utxo.address}`);
           const currentUTXOs = response.data.utxos || [];
 
-          // Find if this UTXO is still available
+          // Find if this UTXO is still available - check both property names
+          const utxoTxId = utxo.transactionId || utxo.txHash;
           const isStillAvailable = currentUTXOs.some(
-            u => u.transactionId === utxo.transactionId && u.outputIndex === utxo.outputIndex
+            u => (u.transactionId === utxoTxId || u.txHash === utxoTxId) && u.outputIndex === utxo.outputIndex
           );
 
           if (isStillAvailable) {
             validUTXOs.push(utxo);
           } else {
-            logger.warn('WALLET_API', `UTXO ${utxo.transactionId}:${utxo.outputIndex} is no longer available`);
+            logger.warn('WALLET_API', `UTXO ${utxoTxId}:${utxo.outputIndex} is no longer available`);
 
             // Remove from local cache if it exists
             const address = utxo.address;
-            const key = `${utxo.transactionId}:${utxo.outputIndex}`;
+            const key = `${utxoTxId}:${utxo.outputIndex}`;
             const addressCache = this.utxoCache.get(address);
             if (addressCache && addressCache.utxos.has(key)) {
               addressCache.utxos.delete(key);
             }
           }
         } catch (error) {
-          logger.warn('WALLET_API', `Error validating UTXO ${utxo.transactionId}:${utxo.outputIndex}: ${error.message}`);
+          logger.warn('WALLET_API', `Error validating UTXO ${utxo.transactionId || utxo.txHash}:${utxo.outputIndex}: ${error.message}`);
         }
       }
 
@@ -2378,6 +2387,122 @@ class WalletFunctions {
     ];
 
     return utxoErrorPatterns.some(pattern => errorMessage.includes(pattern));
+  }
+
+  /**
+   * Display final balances for all loaded wallets after sync completion
+   */
+  async displayFinalBalances() {
+    try {
+      if (this.wallets.size === 0) {
+        logger.info('WALLET_API', '💰 Sync complete - no wallets loaded');
+        return;
+      }
+
+      let totalBalanceAcrossWallets = 0;
+      let walletCount = 0;
+      const walletSummaries = [];
+
+      for (const [walletName, wallet] of this.wallets) {
+        try {
+          const address = wallet.getAddress();
+
+          // Get the latest balance from daemon to ensure accuracy
+          const balanceResponse = await this.daemonAPI.get(`/api/wallet/balance/${address}`);
+          const balanceAtomic = balanceResponse.data.balance || 0;
+          const balancePAS = fromAtomicUnits(balanceAtomic);
+
+          // Add to totals
+          totalBalanceAcrossWallets += balanceAtomic;
+          walletCount++;
+
+          // Create wallet summary
+          walletSummaries.push(`${walletName}: ${balancePAS.toLocaleString()} PAS`);
+
+          // Update internal wallet balance for consistency
+          wallet.balance = balanceAtomic;
+
+        } catch (error) {
+          walletSummaries.push(`${walletName}: ERROR`);
+          logger.error('WALLET_API', `Error getting final balance for wallet ${walletName}: ${error.message}`);
+        }
+      }
+
+      // Display single summary line
+      const totalPAS = fromAtomicUnits(totalBalanceAcrossWallets);
+      const walletsInfo = walletSummaries.join(', ');
+
+      logger.info('WALLET_API', `💰 Sync complete! ${walletCount} wallet(s) - Total: ${totalPAS.toLocaleString()} PAS [${walletsInfo}]`);
+
+    } catch (error) {
+      logger.error('WALLET_API', `💰 Sync complete - Error getting balances: ${error.message}`);
+    }
+  }
+
+  /**
+   * Force resync all loaded wallets from block 0
+   */
+  async forceResyncFromBlockZero() {
+    try {
+      logger.info('WALLET_API', '🔄 Starting forced resync from block 0...');
+
+      // Stop current blockchain sync
+      this.stopBlockchainSync();
+
+      // Clear global sync state
+      this.syncState.lastSyncedBlock = 0;
+      this.syncState.currentBlock = 0;
+      this.syncState.isSynced = false;
+
+      // Clear UTXO cache
+      this.utxoCache.clear();
+      this.pendingTransactions.clear();
+
+      logger.info('WALLET_API', '🗑️ Cleared sync state and UTXO cache');
+
+      // Reset each loaded wallet's state
+      for (const [walletName, wallet] of this.wallets) {
+        try {
+          logger.info('WALLET_API', `🔄 Resetting wallet: ${walletName}`);
+
+          // Clear wallet transaction history and sync data
+          wallet.transactionHistory = [];
+          wallet.balance = 0;
+          wallet.utxos = [];
+
+          // Save the reset wallet state
+          await this.saveWalletState(walletName);
+
+          logger.info('WALLET_API', `✅ Reset wallet: ${walletName}`);
+        } catch (error) {
+          logger.error('WALLET_API', `Error resetting wallet ${walletName}: ${error.message}`);
+        }
+      }
+
+      // Delete global sync state file to force restart from block 0
+      const syncStatePath = path.join(this.walletsDir, '.sync-state.json');
+      if (fs.existsSync(syncStatePath)) {
+        fs.unlinkSync(syncStatePath);
+        logger.info('WALLET_API', '🗑️ Deleted global sync state file');
+      }
+
+      // Save the reset global state
+      this.saveGlobalSyncState();
+
+      logger.info('WALLET_API', '🔄 Starting fresh blockchain sync from block 0...');
+
+      // Restart blockchain sync from block 0
+      await this.startBlockchainSync();
+
+      logger.info('WALLET_API', '✅ Forced resync from block 0 completed successfully');
+
+      // Display final balances after resync
+      await this.displayFinalBalances();
+
+    } catch (error) {
+      logger.error('WALLET_API', `Error during forced resync: ${error.message}`);
+      throw error;
+    }
   }
 
   /**

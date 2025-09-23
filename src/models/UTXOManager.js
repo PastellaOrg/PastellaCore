@@ -121,8 +121,10 @@ class UTXOManager {
         const [txHash, outputIndex] = key.split(':');
         utxos.push({
           txHash,
+          transactionId: txHash,  // Add both for compatibility
           outputIndex: parseInt(outputIndex),
           amount: utxo.amount,
+          address: utxo.address,
         });
       }
     });
