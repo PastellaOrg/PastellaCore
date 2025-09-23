@@ -940,16 +940,24 @@ class WalletFunctions {
       // Use default fee if not provided (100000 atomic units = 0.001 PAS)
       const atomicFee = fee ? parseInt(fee) : 100000;
 
+      console.log(`🚀 WALLET_API: Starting transaction from ${walletName} (${fromAddress})`);
+      console.log(`   Amount: ${atomicAmount} atomic units (${fromAtomicUnits(atomicAmount)} PAS)`);
+      console.log(`   Fee: ${atomicFee} atomic units (${fromAtomicUnits(atomicFee)} PAS)`);
+
       // Get available UTXOs using UTXO management system
+      console.log(`🔍 WALLET_API: Getting available UTXOs for address ${fromAddress}`);
       const availableUTXOs = await this.getAvailableUTXOs(fromAddress);
 
+      console.log(`📊 WALLET_API: Found ${availableUTXOs.length} available UTXOs`);
       if (availableUTXOs.length === 0) {
         throw new Error('No unspent outputs available for this address');
       }
 
       // Validate UTXOs with daemon before spending (real-time check)
+      console.log(`✅ WALLET_API: Validating ${availableUTXOs.length} UTXOs with daemon`);
       const validUTXOs = await this.validateUTXOsBeforeSpending(availableUTXOs);
 
+      console.log(`🎯 WALLET_API: Validation result: ${validUTXOs.length}/${availableUTXOs.length} UTXOs are valid`);
       if (validUTXOs.length === 0) {
         throw new Error('No valid UTXOs available - all UTXOs may have been spent');
       }
@@ -958,6 +966,20 @@ class WalletFunctions {
       const totalBalance = validUTXOs.reduce((sum, utxo) => sum + utxo.amount, 0);
       wallet.balance = totalBalance;
       wallet.utxos = validUTXOs;
+
+      // Debug balance calculation
+      console.log(`💰 WALLET_API: Balance calculation for ${walletName}:`);
+      console.log(`   Total valid UTXOs: ${validUTXOs.length}`);
+      console.log(`   Total balance: ${totalBalance} atomic units (${fromAtomicUnits(totalBalance)} PAS)`);
+      console.log(`   Amount needed: ${atomicAmount} atomic units (${fromAtomicUnits(atomicAmount)} PAS)`);
+      console.log(`   Fee needed: ${atomicFee} atomic units (${fromAtomicUnits(atomicFee)} PAS)`);
+      console.log(`   Total needed: ${atomicAmount + atomicFee} atomic units (${fromAtomicUnits(atomicAmount + atomicFee)} PAS)`);
+      console.log(`   Sufficient? ${totalBalance >= (atomicAmount + atomicFee) ? '✅ YES' : '❌ NO'}`);
+
+      // Validate balance before creating transaction
+      if (totalBalance < atomicAmount + atomicFee) {
+        throw new Error(`Insufficient balance: have ${fromAtomicUnits(totalBalance)} PAS, need ${fromAtomicUnits(atomicAmount + atomicFee)} PAS`);
+      }
 
       // Create transaction using wallet method
       const transaction = wallet.createTransaction(toAddress, atomicAmount, atomicFee, null, undefined, paymentId);
