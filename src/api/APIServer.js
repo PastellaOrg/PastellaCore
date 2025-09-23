@@ -1302,11 +1302,15 @@ class APIServer {
         });
       }
 
-      // Add to memory pool
-      if (this.blockchain.addPendingTransaction(newTransaction)) {
+      // Add to memory pool (this includes double-spend validation)
+      logger.debug('API', `Attempting to add transaction ${newTransaction.id} to memory pool...`);
+      const addedToPool = this.blockchain.addPendingTransaction(newTransaction);
+      logger.debug('API', `Transaction ${newTransaction.id} memory pool result: ${addedToPool ? 'ACCEPTED' : 'REJECTED'}`);
+
+      if (addedToPool) {
         logger.info('API', `New transaction submitted: ${newTransaction.id}`);
 
-        // Broadcast to network
+        // Only broadcast if successfully added to memory pool
         try {
           if (this.p2pNetwork) {
             this.p2pNetwork.broadcastNewTransaction(newTransaction);
@@ -1323,9 +1327,12 @@ class APIServer {
           timestamp: new Date().toISOString(),
         });
       } else {
+        // Transaction was rejected (double-spend, invalid, etc.)
+        logger.warn('API', `Transaction ${newTransaction.id} rejected by memory pool`);
         res.status(400).json({
-          error: 'Failed to add transaction to memory pool',
-          details: 'Transaction may already exist or be invalid',
+          error: 'Transaction rejected',
+          details: 'Transaction validation failed - may be double-spend, replay attack, or invalid',
+          transactionId: newTransaction.id,
         });
       }
     } catch (error) {
