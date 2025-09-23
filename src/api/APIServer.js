@@ -1302,6 +1302,24 @@ class APIServer {
         });
       }
 
+      // CRITICAL: Check for double-spend BEFORE adding to memory pool
+      if (!newTransaction.isCoinbase) {
+        logger.debug('API', `Pre-validating UTXOs for transaction ${newTransaction.id}...`);
+        const utxoValidation = this.blockchain.transactionManager.atomicValidateAndReserveUTXOs(newTransaction);
+
+        if (!utxoValidation) {
+          logger.warn('API', `Transaction ${newTransaction.id} REJECTED: Double-spend detected - UTXO already in use`);
+          return res.status(400).json({
+            error: 'Double-spend detected',
+            details: 'One or more UTXOs are already being used by another transaction',
+            transactionId: newTransaction.id,
+          });
+        }
+
+        // Release the reserved UTXOs since we'll reserve them again in addPendingTransaction
+        this.blockchain.transactionManager.releaseReservedUTXOs(newTransaction);
+      }
+
       // Add to memory pool (this includes double-spend validation)
       logger.debug('API', `Attempting to add transaction ${newTransaction.id} to memory pool...`);
       const addedToPool = this.blockchain.addPendingTransaction(newTransaction);
