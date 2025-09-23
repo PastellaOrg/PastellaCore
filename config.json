@@ -23,15 +23,15 @@
     "difficultyBlocks": 30,
     "difficultyMinimum": 100,
     "genesis": {
-      "timestamp": 1755759184545,
-      "premineAmount": 2100000000000,
-      "premineAddress": "1Ggdo3kTzGvmhSDuoZBuFZQeqDSg57FEf6",
+      "timestamp": 1758616663226,
+      "premineAmount": 25000000000000,
+      "premineAddress": "1DevYb1ky6qaVBUVGccr5H2x1RiAnTvoms",
       "difficulty": 100,
-      "nonce": 5,
-      "hash": "00c0cc0383b990ef3e4aea68eb26fe08f9bda81f6de4033e27fe159e154e112e",
+      "nonce": 47,
+      "hash": "00010bf9d8af6b606573fb6dda15a04f6b5cf48397a73c0a04d9abce21c1ea0d",
       "algorithm": "velora",
-      "coinbaseNonce": "mel1op7nf5ebjh5gvecs11q9mvqt",
-      "coinbaseAtomicSequence": "1755759184545-genesis-coinbase-195883"
+      "coinbaseNonce": "mfwaydvf2081dcb5b77fbe1a4654f98db07dba9f",
+      "coinbaseAtomicSequence": "1758616663226-genesis-coinbase-120785"
     },
     "difficulty": 100
   },
