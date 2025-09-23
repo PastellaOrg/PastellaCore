@@ -64,6 +64,11 @@ class WalletFunctions {
     // Auto-save state tracking
     this.autoSaveInterval = null;
 
+    // UTXO Management System
+    this.utxoCache = new Map(); // address -> { utxos: Map(txId:index -> utxoData), lastSync: timestamp }
+    this.pendingTransactions = new Map(); // txId -> { utxos: [utxo], timestamp, confirmed: false }
+    this.utxoSyncInterval = null;
+
     // Load global sync state from file
     this.loadGlobalSyncState();
 
@@ -76,6 +81,9 @@ class WalletFunctions {
     setTimeout(() => {
       this.startBlockchainSync();
     }, 3000);
+
+    // Start periodic UTXO sync (every 2 minutes)
+    this.startUTXOSync();
   }
 
   /**
@@ -932,28 +940,57 @@ class WalletFunctions {
       // Use default fee if not provided (100000 atomic units = 0.001 PAS)
       const atomicFee = fee ? parseInt(fee) : 100000;
 
-      // Get UTXOs and balance from daemon for this address
-      const utxoResponse = await this.daemonAPI.get(`/api/wallet/utxos/${fromAddress}`);
-      const utxos = utxoResponse.data.utxos || [];
+      // Get available UTXOs using UTXO management system
+      const availableUTXOs = await this.getAvailableUTXOs(fromAddress);
 
-      if (utxos.length === 0) {
+      if (availableUTXOs.length === 0) {
         throw new Error('No unspent outputs available for this address');
       }
 
-      // Update wallet's internal state with daemon data
-      const totalBalance = utxos.reduce((sum, utxo) => sum + utxo.amount, 0);
+      // Validate UTXOs with daemon before spending (real-time check)
+      const validUTXOs = await this.validateUTXOsBeforeSpending(availableUTXOs);
+
+      if (validUTXOs.length === 0) {
+        throw new Error('No valid UTXOs available - all UTXOs may have been spent');
+      }
+
+      // Update wallet's internal state with validated UTXOs
+      const totalBalance = validUTXOs.reduce((sum, utxo) => sum + utxo.amount, 0);
       wallet.balance = totalBalance;
-      wallet.utxos = utxos;
+      wallet.utxos = validUTXOs;
 
       // Create transaction using wallet method
       const transaction = wallet.createTransaction(toAddress, atomicAmount, atomicFee, null, undefined, paymentId);
 
-      // Submit complete transaction to daemon API
-      const submitResponse = await this.daemonAPI.post('/api/transactions/submit', {
-        transaction
-      });
+      // Mark UTXOs as pending BEFORE submitting the transaction
+      const usedUTXOs = transaction.inputs.map(input => {
+        const utxo = validUTXOs.find(u => u.transactionId === input.txId && u.outputIndex === input.outputIndex);
+        return { ...utxo, address: fromAddress };
+      }).filter(Boolean);
 
-      const result = submitResponse.data;
+      this.markUTXOsAsPending(usedUTXOs, transaction.id);
+
+      // Submit complete transaction to daemon API
+      let submitResponse;
+      let result;
+
+      try {
+        submitResponse = await this.daemonAPI.post('/api/transactions/submit', {
+          transaction
+        });
+        result = submitResponse.data;
+
+        // If transaction was accepted, confirm it in our tracking
+        if (result.success !== false) {
+          // Transaction was accepted - UTXOs remain marked as pending until confirmation
+          logger.info('WALLET_API', `Transaction ${transaction.id} submitted successfully`);
+        }
+      } catch (submitError) {
+        // Transaction submission failed - reject the transaction to free up UTXOs
+        this.rejectTransaction(transaction.id);
+        logger.error('WALLET_API', `Transaction submission failed: ${submitError.message}`);
+        throw submitError;
+      }
 
       logger.info(
         'WALLET_API',
@@ -1029,18 +1066,24 @@ class WalletFunctions {
       // Use default fee if not provided (100000 atomic units = 0.001 PAS)
       const atomicFee = fee ? parseInt(fee) : 100000;
 
-      // Get UTXOs and balance from daemon for this address
-      const utxoResponse = await this.daemonAPI.get(`/api/wallet/utxos/${fromAddress}`);
-      const utxos = utxoResponse.data.utxos || [];
+      // Get available UTXOs using UTXO management system
+      const availableUTXOs = await this.getAvailableUTXOs(fromAddress);
 
-      if (utxos.length === 0) {
+      if (availableUTXOs.length === 0) {
         throw new Error('No unspent outputs available for this address');
       }
 
-      // Update wallet's internal state with daemon data
-      const totalBalance = utxos.reduce((sum, utxo) => sum + utxo.amount, 0);
+      // Validate UTXOs with daemon before spending (real-time check)
+      const validUTXOs = await this.validateUTXOsBeforeSpending(availableUTXOs);
+
+      if (validUTXOs.length === 0) {
+        throw new Error('No valid UTXOs available - all UTXOs may have been spent');
+      }
+
+      // Update wallet's internal state with validated UTXOs
+      const totalBalance = validUTXOs.reduce((sum, utxo) => sum + utxo.amount, 0);
       wallet.balance = totalBalance;
-      wallet.utxos = utxos;
+      wallet.utxos = validUTXOs;
 
       // Check if wallet has sufficient balance
       if (totalBalance < totalAtomicAmount + atomicFee) {
@@ -1052,12 +1095,35 @@ class WalletFunctions {
       // Create multi-output transaction using wallet method
       const transaction = wallet.createMultiTransaction(atomicOutputs, atomicFee, null, undefined, paymentId);
 
-      // Submit complete transaction to daemon API
-      const submitResponse = await this.daemonAPI.post('/api/transactions/submit', {
-        transaction
-      });
+      // Mark UTXOs as pending BEFORE submitting the transaction
+      const usedUTXOs = transaction.inputs.map(input => {
+        const utxo = validUTXOs.find(u => u.transactionId === input.txId && u.outputIndex === input.outputIndex);
+        return { ...utxo, address: fromAddress };
+      }).filter(Boolean);
 
-      const result = submitResponse.data;
+      this.markUTXOsAsPending(usedUTXOs, transaction.id);
+
+      // Submit complete transaction to daemon API
+      let submitResponse;
+      let result;
+
+      try {
+        submitResponse = await this.daemonAPI.post('/api/transactions/submit', {
+          transaction
+        });
+        result = submitResponse.data;
+
+        // If transaction was accepted, confirm it in our tracking
+        if (result.success !== false) {
+          // Transaction was accepted - UTXOs remain marked as pending until confirmation
+          logger.info('WALLET_API', `Multi-output transaction ${transaction.id} submitted successfully`);
+        }
+      } catch (submitError) {
+        // Transaction submission failed - reject the transaction to free up UTXOs
+        this.rejectTransaction(transaction.id);
+        logger.error('WALLET_API', `Multi-output transaction submission failed: ${submitError.message}`);
+        throw submitError;
+      }
 
       logger.info(
         'WALLET_API',
@@ -1452,10 +1518,11 @@ class WalletFunctions {
       this.syncState.syncInterval = null;
     }
 
-    // Also stop auto-save
+    // Also stop auto-save and UTXO sync
     this.stopAutoSave();
+    this.stopUTXOSync();
 
-    logger.info('WALLET_API', 'Blockchain sync and auto-save stopped');
+    logger.info('WALLET_API', 'Blockchain sync, auto-save, and UTXO sync stopped');
   }
 
   /**
@@ -1676,6 +1743,324 @@ class WalletFunctions {
     } catch (error) {
       logger.warn('WALLET_API', `Could not calculate confirmations: ${error.message}`);
       return 0;
+    }
+  }
+
+  // =============================================
+  // UTXO MANAGEMENT SYSTEM
+  // =============================================
+
+  /**
+   * Sync UTXOs from daemon and update local cache
+   * @param {string} address - Wallet address to sync UTXOs for
+   */
+  async syncUTXOsFromDaemon(address) {
+    try {
+      const response = await this.daemonAPI.get(`/api/wallet/utxos/${address}`);
+      const freshUTXOs = response.data.utxos || [];
+
+      // Create UTXO map for fast lookup: "txId:index" -> utxoData
+      const utxoMap = new Map();
+      for (const utxo of freshUTXOs) {
+        const key = `${utxo.transactionId}:${utxo.outputIndex}`;
+        utxoMap.set(key, {
+          ...utxo,
+          address,
+          isPending: false,
+          lastChecked: Date.now(),
+        });
+      }
+
+      // Update cache for this address
+      this.utxoCache.set(address, {
+        utxos: utxoMap,
+        lastSync: Date.now(),
+      });
+
+      logger.debug('WALLET_API', `Synced ${freshUTXOs.length} UTXOs for address ${address}`);
+      return utxoMap;
+    } catch (error) {
+      logger.error('WALLET_API', `Error syncing UTXOs for ${address}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Get available UTXOs for an address (excluding pending ones)
+   * @param {string} address - Wallet address
+   * @param {boolean} forceSync - Force sync from daemon if true
+   */
+  async getAvailableUTXOs(address, forceSync = false) {
+    try {
+      let addressCache = this.utxoCache.get(address);
+
+      // Sync from daemon if no cache or force sync or cache is older than 5 minutes
+      const cacheAge = Date.now() - (addressCache?.lastSync || 0);
+      if (!addressCache || forceSync || cacheAge > 300000) {
+        await this.syncUTXOsFromDaemon(address);
+        addressCache = this.utxoCache.get(address);
+      }
+
+      if (!addressCache) {
+        return [];
+      }
+
+      // Filter out pending UTXOs and return available ones
+      const availableUTXOs = [];
+      for (const [key, utxo] of addressCache.utxos) {
+        if (!utxo.isPending) {
+          availableUTXOs.push(utxo);
+        }
+      }
+
+      return availableUTXOs;
+    } catch (error) {
+      logger.error('WALLET_API', `Error getting available UTXOs for ${address}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Mark UTXOs as pending for a transaction
+   * @param {Array} utxos - Array of UTXOs being spent
+   * @param {string} txId - Transaction ID
+   */
+  markUTXOsAsPending(utxos, txId) {
+    try {
+      for (const utxo of utxos) {
+        const address = utxo.address;
+        const key = `${utxo.transactionId}:${utxo.outputIndex}`;
+
+        // Update UTXO cache
+        const addressCache = this.utxoCache.get(address);
+        if (addressCache && addressCache.utxos.has(key)) {
+          addressCache.utxos.get(key).isPending = true;
+          addressCache.utxos.get(key).pendingTxId = txId;
+        }
+      }
+
+      // Track pending transaction
+      this.pendingTransactions.set(txId, {
+        utxos: utxos.map(u => ({
+          transactionId: u.transactionId,
+          outputIndex: u.outputIndex,
+          address: u.address,
+        })),
+        timestamp: Date.now(),
+        confirmed: false,
+      });
+
+      logger.debug('WALLET_API', `Marked ${utxos.length} UTXOs as pending for transaction ${txId}`);
+    } catch (error) {
+      logger.error('WALLET_API', `Error marking UTXOs as pending: ${error.message}`);
+    }
+  }
+
+  /**
+   * Validate UTXOs with daemon before spending (real-time check)
+   * @param {Array} utxos - UTXOs to validate
+   * @returns {Array} Valid UTXOs that can be spent
+   */
+  async validateUTXOsBeforeSpending(utxos) {
+    try {
+      const validUTXOs = [];
+
+      for (const utxo of utxos) {
+        try {
+          // Check if UTXO still exists on daemon
+          const response = await this.daemonAPI.get(`/api/wallet/utxos/${utxo.address}`);
+          const currentUTXOs = response.data.utxos || [];
+
+          // Find if this UTXO is still available
+          const isStillAvailable = currentUTXOs.some(
+            u => u.transactionId === utxo.transactionId && u.outputIndex === utxo.outputIndex
+          );
+
+          if (isStillAvailable) {
+            validUTXOs.push(utxo);
+          } else {
+            logger.warn('WALLET_API', `UTXO ${utxo.transactionId}:${utxo.outputIndex} is no longer available`);
+
+            // Remove from local cache if it exists
+            const address = utxo.address;
+            const key = `${utxo.transactionId}:${utxo.outputIndex}`;
+            const addressCache = this.utxoCache.get(address);
+            if (addressCache && addressCache.utxos.has(key)) {
+              addressCache.utxos.delete(key);
+            }
+          }
+        } catch (error) {
+          logger.warn('WALLET_API', `Error validating UTXO ${utxo.transactionId}:${utxo.outputIndex}: ${error.message}`);
+        }
+      }
+
+      logger.debug('WALLET_API', `Validated ${validUTXOs.length}/${utxos.length} UTXOs as spendable`);
+      return validUTXOs;
+    } catch (error) {
+      logger.error('WALLET_API', `Error validating UTXOs: ${error.message}`);
+      return utxos; // Return original UTXOs if validation fails
+    }
+  }
+
+  /**
+   * Confirm a transaction (remove from pending, update UTXO cache)
+   * @param {string} txId - Transaction ID that was confirmed
+   */
+  confirmTransaction(txId) {
+    try {
+      const pendingTx = this.pendingTransactions.get(txId);
+      if (!pendingTx) {
+        return;
+      }
+
+      // Remove confirmed UTXOs from cache and mark transaction as confirmed
+      for (const utxo of pendingTx.utxos) {
+        const address = utxo.address;
+        const key = `${utxo.transactionId}:${utxo.outputIndex}`;
+
+        const addressCache = this.utxoCache.get(address);
+        if (addressCache && addressCache.utxos.has(key)) {
+          // Remove the spent UTXO from cache
+          addressCache.utxos.delete(key);
+        }
+      }
+
+      // Mark as confirmed and keep for a while for tracking
+      pendingTx.confirmed = true;
+      pendingTx.confirmedAt = Date.now();
+
+      logger.debug('WALLET_API', `Confirmed transaction ${txId} and removed ${pendingTx.utxos.length} UTXOs from cache`);
+    } catch (error) {
+      logger.error('WALLET_API', `Error confirming transaction ${txId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Reject/cancel a pending transaction (mark UTXOs as available again)
+   * @param {string} txId - Transaction ID to reject
+   */
+  rejectTransaction(txId) {
+    try {
+      const pendingTx = this.pendingTransactions.get(txId);
+      if (!pendingTx) {
+        return;
+      }
+
+      // Mark UTXOs as available again
+      for (const utxo of pendingTx.utxos) {
+        const address = utxo.address;
+        const key = `${utxo.transactionId}:${utxo.outputIndex}`;
+
+        const addressCache = this.utxoCache.get(address);
+        if (addressCache && addressCache.utxos.has(key)) {
+          const cachedUTXO = addressCache.utxos.get(key);
+          cachedUTXO.isPending = false;
+          delete cachedUTXO.pendingTxId;
+        }
+      }
+
+      // Remove from pending transactions
+      this.pendingTransactions.delete(txId);
+
+      logger.debug('WALLET_API', `Rejected transaction ${txId} and marked ${pendingTx.utxos.length} UTXOs as available`);
+    } catch (error) {
+      logger.error('WALLET_API', `Error rejecting transaction ${txId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Start periodic UTXO sync
+   */
+  startUTXOSync() {
+    if (this.utxoSyncInterval) {
+      clearInterval(this.utxoSyncInterval);
+    }
+
+    // Sync UTXOs every 2 minutes for all loaded wallet addresses
+    this.utxoSyncInterval = setInterval(async () => {
+      try {
+        for (const [walletName, wallet] of this.wallets) {
+          const address = wallet.getAddress();
+          await this.syncUTXOsFromDaemon(address);
+        }
+
+        // Clean up old confirmed transactions (keep for 1 hour)
+        this.cleanupOldTransactions();
+
+        logger.debug('WALLET_API', `Periodic UTXO sync completed for ${this.wallets.size} wallets`);
+      } catch (error) {
+        logger.error('WALLET_API', `Error in periodic UTXO sync: ${error.message}`);
+      }
+    }, 120000); // 2 minutes
+
+    logger.info('WALLET_API', 'UTXO sync started (syncing every 2 minutes)');
+  }
+
+  /**
+   * Stop periodic UTXO sync
+   */
+  stopUTXOSync() {
+    if (this.utxoSyncInterval) {
+      clearInterval(this.utxoSyncInterval);
+      this.utxoSyncInterval = null;
+      logger.info('WALLET_API', 'UTXO sync stopped');
+    }
+  }
+
+  /**
+   * Clean up old confirmed transactions from pending list
+   */
+  cleanupOldTransactions() {
+    try {
+      const oneHourAgo = Date.now() - 3600000; // 1 hour
+      let cleanedCount = 0;
+
+      for (const [txId, pendingTx] of this.pendingTransactions) {
+        if (pendingTx.confirmed && pendingTx.confirmedAt && pendingTx.confirmedAt < oneHourAgo) {
+          this.pendingTransactions.delete(txId);
+          cleanedCount++;
+        }
+      }
+
+      if (cleanedCount > 0) {
+        logger.debug('WALLET_API', `Cleaned up ${cleanedCount} old confirmed transactions`);
+      }
+    } catch (error) {
+      logger.error('WALLET_API', `Error cleaning up old transactions: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get UTXO cache status for debugging
+   */
+  getUTXOCacheStatus() {
+    try {
+      const status = {
+        addresses: [],
+        totalUTXOs: 0,
+        pendingTransactions: this.pendingTransactions.size,
+      };
+
+      for (const [address, cache] of this.utxoCache) {
+        const utxoCount = cache.utxos.size;
+        const pendingCount = Array.from(cache.utxos.values()).filter(u => u.isPending).length;
+        const availableCount = utxoCount - pendingCount;
+
+        status.addresses.push({
+          address,
+          totalUTXOs: utxoCount,
+          availableUTXOs: availableCount,
+          pendingUTXOs: pendingCount,
+          lastSync: new Date(cache.lastSync).toISOString(),
+        });
+
+        status.totalUTXOs += utxoCount;
+      }
+
+      return status;
+    } catch (error) {
+      logger.error('WALLET_API', `Error getting UTXO cache status: ${error.message}`);
+      return { error: error.message };
     }
   }
 }

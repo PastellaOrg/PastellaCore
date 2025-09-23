@@ -9,7 +9,6 @@ const path = require('path');
 
 const cors = require('cors');
 const express = require('express');
-const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
 // Import wallet functions
@@ -30,8 +29,6 @@ class WalletAPIServer {
       port: config.port || 3001,
       host: config.host || '127.0.0.1',
       apiKey: config.apiKey || this.generateAPIKey(),
-      rateLimitWindow: config.rateLimitWindow || 15 * 60 * 1000, // 15 minutes
-      rateLimitMax: config.rateLimitMax || 100,
       cors: config.cors || false,
       // Daemon connection settings
       daemonHost: config.daemonHost || 'localhost',
@@ -70,16 +67,6 @@ class WalletAPIServer {
     if (this.config.cors) {
       this.app.use(cors());
     }
-
-    // Rate limiting
-    const limiter = rateLimit({
-      windowMs: this.config.rateLimitWindow,
-      max: this.config.rateLimitMax,
-      message: { error: 'Rate limit exceeded. Please try again later.' },
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
-    this.app.use(limiter);
 
     // Body parser
     this.app.use(express.json({ limit: '10mb' }));
@@ -465,13 +452,12 @@ SERVER OPTIONS:
   --port <number>         Server port (default: 3001)
   --host <string>         Server host (default: 127.0.0.1)
   --cors                  Enable CORS
-  --rate-limit <number>   Rate limit max requests per window (default: 100)
   --help                  Show this help message
 
 EXAMPLES:
   node wallet-api.js --create-wallet "exchange-hot" --password "secure123" --port 3001 --api-key mykey
   node wallet-api.js --load-wallet "exchange-hot" --password "secure123" --host 0.0.0.0 --cors
-  node wallet-api.js --load-wallet "my-wallet" --password "pass123" --api-key mykey --rate-limit 1000
+  node wallet-api.js --load-wallet "my-wallet" --password "pass123" --api-key mykey
 
 IMPORTANT - ATOMIC UNITS:
   - All transaction amounts and fees must be provided in ATOMIC UNITS
@@ -546,9 +532,6 @@ function parseArgs() {
         break;
       case '--cors':
         config.cors = true;
-        break;
-      case '--rate-limit':
-        config.rateLimitMax = parseInt(args[++i]);
         break;
       default:
         console.error(`Unknown option: ${args[i]}`);
