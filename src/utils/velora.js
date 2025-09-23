@@ -16,10 +16,10 @@ class VeloraUtils {
     // Velora parameters
     this.SCRATCHPAD_SIZE = 64 * 1024 * 1024; // 64MB scratchpad
     this.SCRATCHPAD_WORDS = this.SCRATCHPAD_SIZE / 4; // 16,777,216 words (32-bit integers)
-    this.MEMORY_READS = 1000;
+    this.MEMORY_READS = 262144;
     this.MIXING_ROUNDS = 2;
     this.MIXING_CONSTANT = 0x5bd1e995;
-    this.EPOCH_LENGTH = 10000; // Change pattern every 10000 blocks
+    this.EPOCH_LENGTH = 2016; // Change pattern every 10000 blocks
 
     // GPU.js configuration
     this.GPU_CONFIG = {
