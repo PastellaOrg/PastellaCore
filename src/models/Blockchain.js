@@ -438,7 +438,10 @@ class Blockchain {
               'BLOCKCHAIN',
               `🚨 TRANSACTION ID COLLISION DETECTED! Transaction ID ${transaction.id} already exists in blockchain`
             );
-            throw new Error(`Transaction ID collision detected: ${transaction.id}`);
+            logger.error(
+              'BLOCKCHAIN',
+              `Transaction ID collision detected: ${transaction.id}`
+            );
           }
 
           // Also track by transaction ID for duplicate detection
