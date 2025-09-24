@@ -962,7 +962,6 @@ async function main() {
     console.log(chalk.cyan('  --no-api             '), chalk.white('Disable REST API server'));
     console.log(chalk.cyan('  --no-p2p             '), chalk.white('Disable P2P network'));
     console.log(chalk.cyan('  --disable-upnp       '), chalk.white('Disable UPnP automatic port mapping'));
-    console.log(chalk.cyan('  --block-time <ms>    '), chalk.white('Set block time in milliseconds (default: 60000)'));
     console.log(chalk.cyan('  --min-seed-conn <n>  '), chalk.white('Minimum seed node connections (0-10, default: 2)'));
     console.log(chalk.cyan('  --api-key <key>      '), chalk.white('API key for authentication (default: none)'));
     console.log(chalk.cyan('  --host <ip>          '), chalk.white('API server host binding (default: 127.0.0.1)'));
@@ -1445,16 +1444,6 @@ async function main() {
     }
     config.blockchain.difficultyAlgorithm = difficultyAlgorithm;
     logger.info('SYSTEM', `Difficulty algorithm set to: ${difficultyAlgorithm}`);
-  }
-
-  const blockTime = parseArgValue('--block-time');
-  if (blockTime) {
-    const time = parseInt(blockTime);
-    if (isNaN(time) || time < 1000 || time > 300000) {
-      logger.error('SYSTEM', 'Invalid block time. Must be between 1000 and 300000 ms.');
-      process.exit(1);
-    }
-    config.blockchain.blockTime = time;
   }
 
   const minSeedConn = parseArgValue('--min-seed-conn');
