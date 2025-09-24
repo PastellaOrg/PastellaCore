@@ -446,12 +446,19 @@ class MessageHandler {
           let blockAddError = null;
           const totalBlocksToAdd = blocksToAdd.length;
           const saveInterval = 100; // Save every 100 blocks
+          const fastSyncThreshold = 50; // Use fast sync for bulk operations (50+ blocks)
+          const useFastSync = totalBlocksToAdd >= fastSyncThreshold;
+
+          if (useFastSync) {
+            logger.info('MESSAGE_HANDLER', `🚀 Using fast sync mode for ${totalBlocksToAdd} blocks (threshold: ${fastSyncThreshold})`);
+            logger.info('MESSAGE_HANDLER', `Fast sync will skip expensive operations and rebuild state at the end`);
+          }
 
           logger.info('MESSAGE_HANDLER', `Starting sync of ${totalBlocksToAdd} blocks with periodic saves every ${saveInterval} blocks`);
 
           for (const block of blocksToAdd) {
             try {
-              if (this.blockchain.addBlock(block, false, true)) { // skipValidation=false, useBlockDifficulty=true
+              if (this.blockchain.addBlock(block, false, true, useFastSync)) { // skipValidation=false, useBlockDifficulty=true, fastSyncMode=useFastSync
                 logger.debug('MESSAGE_HANDLER', `Added block ${block.index} to blockchain`);
                 addedCount++;
 
@@ -494,6 +501,28 @@ class MessageHandler {
 
           if (addedCount === blocksToAdd.length) {
             logger.info('MESSAGE_HANDLER', `Successfully added all ${addedCount} blocks to blockchain`);
+
+            // Perform final state rebuild if fast sync was used
+            if (useFastSync && addedCount > 0) {
+              logger.info('MESSAGE_HANDLER', '🔄 Fast sync complete, starting final state rebuild...');
+              try {
+                const rebuildSuccess = this.blockchain.performFinalStateRebuild(localHeight);
+                if (rebuildSuccess) {
+                  logger.info('MESSAGE_HANDLER', '✅ Final state rebuild completed successfully');
+                } else {
+                  logger.error('MESSAGE_HANDLER', '❌ Final state rebuild failed - blockchain state may be inconsistent');
+                }
+              } catch (error) {
+                logger.error('MESSAGE_HANDLER', `❌ Final state rebuild error: ${error.message}`);
+
+                // Check for transaction ID collision during rebuild
+                if (error.message && error.message.includes('Transaction ID collision detected')) {
+                  logger.error('MESSAGE_HANDLER', '🚨 Transaction ID collision during state rebuild - triggering full resync');
+                  await this.performFullBlockchainResync(ws, peerAddress);
+                  return;
+                }
+              }
+            }
           } else {
             logger.warn('MESSAGE_HANDLER', `Only added ${addedCount} out of ${blocksToAdd.length} blocks - sync incomplete`);
             if (blockAddError) {

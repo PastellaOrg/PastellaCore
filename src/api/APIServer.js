@@ -172,6 +172,7 @@ class APIServer {
     this.app.post('/api/blockchain/validator-signature', this.addValidatorSignature.bind(this));
     this.app.post('/api/blockchain/reset', this.resetBlockchain.bind(this)); // Behind Key
     this.app.get('/api/blockchain/blocks', this.getBlocks.bind(this));
+    this.app.get('/api/blockchain/download', this.downloadBlockchain.bind(this)); // Download blockchain.json with rate limiting
     this.app.get('/api/blockchain/latest', this.getLatestBlock.bind(this));
     this.app.get('/api/blockchain/transactions', this.getPendingTransactions.bind(this));
     this.app.get('/api/blockchain/transactions-range/:page/:limit', this.getTransactionsRange.bind(this));
@@ -780,6 +781,128 @@ class APIServer {
     } catch (error) {
       res.status(500).json({
         error: error.message,
+      });
+    }
+  }
+
+  /**
+   * Download blockchain.json file with rate limiting (1 MB/s max) and forced download
+   */
+  downloadBlockchain(req, res) {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+
+      // Get blockchain file path from configuration
+      const blockchainPath = path.join(
+        this.config?.storage?.dataDir || './data',
+        this.config?.storage?.blockchainFile || 'blockchain.json'
+      );
+
+      // Check if blockchain file exists
+      if (!fs.existsSync(blockchainPath)) {
+        return res.status(404).json({
+          error: 'Blockchain file not found',
+          message: 'The blockchain.json file does not exist'
+        });
+      }
+
+      // Get file stats for size
+      const stats = fs.statSync(blockchainPath);
+      const fileSizeInBytes = stats.size;
+      const fileSizeInMB = (fileSizeInBytes / (1024 * 1024)).toFixed(2);
+
+      // Get client IP address (handle proxies and load balancers)
+      const clientIP = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+                      req.headers['x-real-ip'] ||
+                      req.connection?.remoteAddress ||
+                      req.socket?.remoteAddress ||
+                      req.ip ||
+                      'unknown';
+
+      logger.info('API_SERVER', `Blockchain download requested from IP: ${clientIP} - file size: ${fileSizeInMB} MB`);
+
+      // Set headers for forced download
+      const filename = `blockchain-${Date.now()}.json`;
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', fileSizeInBytes);
+      res.setHeader('Cache-Control', 'no-cache');
+
+      // Rate limiting: 1 MB/s = 1,048,576 bytes per second
+      const maxBytesPerSecond = 1048576; // 1 MB/s
+      const chunkSize = 64 * 1024; // 64KB chunks
+      const chunkDelayMs = (chunkSize / maxBytesPerSecond) * 1000; // Delay between chunks
+
+      // Create read stream
+      const readStream = fs.createReadStream(blockchainPath, {
+        highWaterMark: chunkSize
+      });
+
+      let totalBytesSent = 0;
+      let startTime = Date.now();
+
+      // Handle stream events
+      readStream.on('data', (chunk) => {
+        totalBytesSent += chunk.length;
+
+        // Pause stream to implement rate limiting
+        readStream.pause();
+
+        // Write chunk to response
+        res.write(chunk);
+
+        // Calculate progress
+        const progress = ((totalBytesSent / fileSizeInBytes) * 100).toFixed(1);
+
+        // Log progress every 10%
+        if (Math.floor(progress) % 10 === 0 && progress % 10 < 1) {
+          const elapsedSeconds = (Date.now() - startTime) / 1000;
+          const currentSpeed = (totalBytesSent / elapsedSeconds / 1024 / 1024).toFixed(2);
+          logger.debug('API_SERVER', `Download progress [${clientIP}]: ${progress}% (${currentSpeed} MB/s average)`);
+        }
+
+        // Resume after delay to maintain 1 MB/s rate
+        setTimeout(() => {
+          if (!res.destroyed) {
+            readStream.resume();
+          }
+        }, chunkDelayMs);
+      });
+
+      readStream.on('end', () => {
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        const averageSpeed = (totalBytesSent / elapsedSeconds / 1024 / 1024).toFixed(2);
+
+        logger.info('API_SERVER', `Blockchain download completed: ${fileSizeInMB} MB in ${elapsedSeconds.toFixed(1)}s (${averageSpeed} MB/s average)`);
+        res.end();
+      });
+
+      readStream.on('error', (error) => {
+        logger.error('API_SERVER', `Blockchain download error: ${error.message}`);
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: 'Download failed',
+            message: error.message
+          });
+        } else {
+          res.end();
+        }
+      });
+
+      // Handle client disconnect
+      req.on('close', () => {
+        if (!readStream.destroyed) {
+          readStream.destroy();
+          logger.info('API_SERVER', 'Blockchain download cancelled by client');
+        }
+      });
+
+    } catch (error) {
+      logger.error('API_SERVER', `Blockchain download setup error: ${error.message}`);
+      res.status(500).json({
+        error: 'Download setup failed',
+        message: error.message
       });
     }
   }

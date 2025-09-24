@@ -279,10 +279,10 @@ class Blockchain {
    * @param skipValidation
    * @param useBlockDifficulty - If true, use the block's embedded difficulty for validation instead of global difficulty
    */
-  addBlock(block, skipValidation = false, useBlockDifficulty = false) {
+  addBlock(block, skipValidation = false, useBlockDifficulty = false, fastSyncMode = false) {
     logger.debug(
       'BLOCKCHAIN',
-      `Adding block to chain: index=${block.index}, hash=${block.hash?.substring(0, 16)}..., previousHash=${block.previousHash?.substring(0, 16)}..., skipValidation=${skipValidation}, useBlockDifficulty=${useBlockDifficulty}`
+      `Adding block to chain: index=${block.index}, hash=${block.hash?.substring(0, 16)}..., previousHash=${block.previousHash?.substring(0, 16)}..., skipValidation=${skipValidation}, useBlockDifficulty=${useBlockDifficulty}, fastSyncMode=${fastSyncMode}`
     );
     logger.debug(
       'BLOCKCHAIN',
@@ -359,20 +359,23 @@ class Blockchain {
       // Add block to chain
       this.chain.push(block);
 
-      // CRITICAL: Update UTXO set BEFORE historical database to prevent race condition double-spend attacks
-      this.utxoManager.updateUTXOSet(block);
+      // Skip expensive operations during fast sync mode
+      if (!fastSyncMode) {
+        // CRITICAL: Update UTXO set BEFORE historical database to prevent race condition double-spend attacks
+        this.utxoManager.updateUTXOSet(block);
 
-      // Process contract transactions in the block
-      this.processContractTransactions(block);
+        // Process contract transactions in the block
+        this.processContractTransactions(block);
 
-      // Add transactions to historical database for replay attack protection (after UTXO update)
-      this.addTransactionsToHistoricalDatabase(block);
+        // Add transactions to historical database for replay attack protection (after UTXO update)
+        this.addTransactionsToHistoricalDatabase(block);
 
-      // Remove transactions from pending pool
-      this.memoryPool.removeTransactions(block.transactions);
+        // Remove transactions from pending pool
+        this.memoryPool.removeTransactions(block.transactions);
 
-      // Adjust difficulty
-      this.adjustDifficulty();
+        // Adjust difficulty
+        this.adjustDifficulty();
+      }
 
       logger.info('BLOCKCHAIN', `Block ${block.index} added to chain successfully. Hash: ${block.hash}`);
       return true;
@@ -388,6 +391,73 @@ class Blockchain {
       if (error.message && error.message.includes('Transaction ID collision detected')) {
         logger.error('BLOCKCHAIN', 'Re-throwing Transaction ID collision error for blockchain resync handling');
         throw error; // Re-throw to allow MessageHandler to detect and handle resync
+      }
+
+      return false;
+    }
+  }
+
+  /**
+   * Perform final state rebuild after fast sync completion
+   * This rebuilds UTXO set, processes contracts, and updates historical database
+   * @param {number} startFromBlock - Block index to start rebuilding from (default: 1, skip genesis)
+   */
+  performFinalStateRebuild(startFromBlock = 1) {
+    logger.info('BLOCKCHAIN', '🔄 Starting final state rebuild after fast sync...');
+    const totalBlocks = this.chain.length;
+    const blocksToProcess = totalBlocks - startFromBlock;
+
+    logger.info('BLOCKCHAIN', `Rebuilding state for ${blocksToProcess} blocks (from block ${startFromBlock} to ${totalBlocks - 1})`);
+
+    // Clear existing state to rebuild from scratch
+    this.utxoManager.clear();
+    this.historicalTransactions.clear();
+    this.historicalTransactionIds.clear();
+    this.globalNonceUsage.clear();
+
+    let processedCount = 0;
+    const progressInterval = Math.max(1, Math.floor(blocksToProcess / 20)); // Show progress every 5%
+
+    try {
+      // Process each block in order
+      for (let i = startFromBlock; i < totalBlocks; i++) {
+        const block = this.chain[i];
+
+        // Update UTXO set
+        this.utxoManager.updateUTXOSet(block);
+
+        // Process contract transactions
+        this.processContractTransactions(block);
+
+        // Add transactions to historical database
+        this.addTransactionsToHistoricalDatabase(block);
+
+        processedCount++;
+
+        // Log progress
+        if (processedCount % progressInterval === 0 || i === totalBlocks - 1) {
+          const percentage = Math.round((processedCount / blocksToProcess) * 100);
+          logger.info('BLOCKCHAIN', `State rebuild progress: ${processedCount}/${blocksToProcess} blocks (${percentage}%) - Current block: ${block.index}`);
+        }
+      }
+
+      // Adjust difficulty to current state
+      this.adjustDifficulty();
+
+      logger.info('BLOCKCHAIN', `✅ Final state rebuild completed successfully! Processed ${processedCount} blocks`);
+      logger.info('BLOCKCHAIN', `  - UTXO set updated with all transactions`);
+      logger.info('BLOCKCHAIN', `  - Contract state processed for all blocks`);
+      logger.info('BLOCKCHAIN', `  - Historical transaction database rebuilt`);
+      logger.info('BLOCKCHAIN', `  - Difficulty adjusted to current network state`);
+
+      return true;
+    } catch (error) {
+      logger.error('BLOCKCHAIN', `❌ Final state rebuild failed at block ${startFromBlock + processedCount}: ${error.message}`);
+      logger.error('BLOCKCHAIN', `Error stack: ${error.stack}`);
+
+      // Re-throw critical errors
+      if (error.message && error.message.includes('Transaction ID collision detected')) {
+        throw error;
       }
 
       return false;

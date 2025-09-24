@@ -741,6 +741,185 @@ class PastellaDaemon {
   }
 }
 
+/**
+ * Convert WebSocket seed node URLs to HTTP endpoints for blockchain download
+ * @param {string} wsUrl - WebSocket URL (ws:// or wss://)
+ * @returns {Array<string>} - Array of HTTP endpoints to try
+ */
+function convertWsToHttpEndpoints(wsUrl) {
+  try {
+    const url = new URL(wsUrl);
+    const isSecure = url.protocol === 'wss:';
+    const protocol = isSecure ? 'https:' : 'http:';
+
+    // Convert port: 23XXX -> 22XXX (23000->22000, 23001->22001, 23002->22002)
+    let port = url.port;
+    if (port && port.startsWith('23')) {
+      port = '22' + port.substring(2);
+    }
+
+    const baseUrl = `${protocol}//${url.hostname}:${port}`;
+
+    // Return endpoints for ports 22000, 22001, 22002
+    const ports = ['22000', '22001', '22002'];
+    return ports.map(p => `${protocol}//${url.hostname}:${p}/api/blockchain/download`);
+  } catch (error) {
+    logger.error('FAST_SYNC', `Failed to convert WebSocket URL: ${wsUrl} - ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Download blockchain from a single HTTP endpoint
+ * @param {string} url - HTTP endpoint URL
+ * @param {string} outputPath - Path to save blockchain file
+ * @returns {Promise<boolean>} - Success/failure
+ */
+async function downloadBlockchainFromEndpoint(url, outputPath) {
+  const https = require('https');
+  const http = require('http');
+
+  return new Promise((resolve, reject) => {
+    logger.info('FAST_SYNC', `Attempting to download blockchain from: ${url}`);
+
+    const client = url.startsWith('https:') ? https : http;
+    const timeout = 120000; // 2 minutes timeout
+
+    const req = client.get(url, { timeout }, (res) => {
+      if (res.statusCode !== 200) {
+        logger.warn('FAST_SYNC', `HTTP ${res.statusCode} from ${url}`);
+        return resolve(false);
+      }
+
+      const fileStream = fs.createWriteStream(outputPath);
+      let downloadedBytes = 0;
+      const startTime = Date.now();
+
+      res.on('data', (chunk) => {
+        downloadedBytes += chunk.length;
+        const elapsedSec = (Date.now() - startTime) / 1000;
+        const speedKBps = Math.round((downloadedBytes / 1024) / elapsedSec);
+
+        // Log progress every 10MB
+        if (downloadedBytes % (10 * 1024 * 1024) < chunk.length) {
+          const downloadedMB = Math.round(downloadedBytes / (1024 * 1024));
+          logger.info('FAST_SYNC', `Downloaded ${downloadedMB} MB (${speedKBps} KB/s)`);
+        }
+      });
+
+      res.pipe(fileStream);
+
+      fileStream.on('finish', () => {
+        const totalMB = Math.round(downloadedBytes / (1024 * 1024));
+        const elapsedSec = (Date.now() - startTime) / 1000;
+        const avgSpeedKBps = Math.round((downloadedBytes / 1024) / elapsedSec);
+
+        logger.info('FAST_SYNC', `✅ Download completed: ${totalMB} MB in ${elapsedSec.toFixed(1)}s (avg: ${avgSpeedKBps} KB/s)`);
+        resolve(true);
+      });
+
+      fileStream.on('error', (error) => {
+        logger.error('FAST_SYNC', `File write error: ${error.message}`);
+        resolve(false);
+      });
+    });
+
+    req.on('error', (error) => {
+      logger.warn('FAST_SYNC', `Request failed for ${url}: ${error.message}`);
+      resolve(false);
+    });
+
+    req.on('timeout', () => {
+      logger.warn('FAST_SYNC', `Request timeout for ${url}`);
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+/**
+ * Perform fast blockchain download from seed nodes or custom host
+ * @param {Object} config - Daemon configuration
+ * @param {string} customHost - Optional custom download host URL
+ */
+async function performFastDownloadSync(config, customHost = null) {
+  logger.info('FAST_SYNC', '🚀 Starting fast blockchain download...');
+
+  let allEndpoints = [];
+
+  if (customHost) {
+    // Use custom host directly
+    const downloadUrl = customHost.endsWith('/api/blockchain/download')
+      ? customHost
+      : `${customHost}/api/blockchain/download`;
+    allEndpoints = [downloadUrl];
+    logger.info('FAST_SYNC', `Using custom download host: ${downloadUrl}`);
+  } else {
+    // Use seed nodes from config
+    const seedNodes = config.network?.seedNodes || [];
+    if (seedNodes.length === 0) {
+      throw new Error('No seed nodes configured for fast download sync');
+    }
+
+    // Convert seed node WebSocket URLs to HTTP endpoints
+    for (const seedNode of seedNodes) {
+      const endpoints = convertWsToHttpEndpoints(seedNode);
+      allEndpoints.push(...endpoints);
+    }
+
+    if (allEndpoints.length === 0) {
+      throw new Error('Failed to generate HTTP endpoints from seed nodes');
+    }
+
+    logger.info('FAST_SYNC', `Generated ${allEndpoints.length} HTTP endpoints from ${seedNodes.length} seed nodes`);
+  }
+
+  // Determine output path
+  const dataDir = config.storage?.dataDir || './data';
+  const blockchainFile = config.storage?.blockchainFile || 'blockchain.json';
+  const outputPath = path.join(dataDir, blockchainFile);
+
+  // Ensure data directory exists
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+    logger.info('FAST_SYNC', `Created data directory: ${dataDir}`);
+  }
+
+  // Try each endpoint until one succeeds
+  for (let i = 0; i < allEndpoints.length; i++) {
+    const endpoint = allEndpoints[i];
+    logger.info('FAST_SYNC', `Trying endpoint ${i + 1}/${allEndpoints.length}: ${endpoint}`);
+
+    try {
+      const success = await downloadBlockchainFromEndpoint(endpoint, outputPath);
+      if (success) {
+        // Verify the downloaded file
+        if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+          logger.info('FAST_SYNC', `✅ Successfully downloaded blockchain to: ${outputPath}`);
+
+          // Verify it's valid JSON
+          try {
+            const content = fs.readFileSync(outputPath, 'utf8');
+            JSON.parse(content);
+            logger.info('FAST_SYNC', '✅ Blockchain file validation successful');
+            return;
+          } catch (parseError) {
+            logger.warn('FAST_SYNC', `Downloaded file is not valid JSON: ${parseError.message}`);
+            // Delete invalid file and try next endpoint
+            fs.unlinkSync(outputPath);
+          }
+        } else {
+          logger.warn('FAST_SYNC', 'Downloaded file is empty or missing');
+        }
+      }
+    } catch (error) {
+      logger.warn('FAST_SYNC', `Error with endpoint ${endpoint}: ${error.message}`);
+    }
+  }
+
+  throw new Error('Failed to download blockchain from any seed node endpoint');
+}
+
 // Main execution
 /**
  *
@@ -787,6 +966,8 @@ async function main() {
     console.log(chalk.cyan('  --min-seed-conn <n>  '), chalk.white('Minimum seed node connections (0-10, default: 2)'));
     console.log(chalk.cyan('  --api-key <key>      '), chalk.white('API key for authentication (default: none)'));
     console.log(chalk.cyan('  --host <ip>          '), chalk.white('API server host binding (default: 127.0.0.1)'));
+    console.log(chalk.cyan('  --fast-download-sync '), chalk.white('Download blockchain from seed nodes before startup'));
+    console.log(chalk.cyan('  --download-host <url>'), chalk.white('Custom host for blockchain download (e.g., https://localhost:22000)'));
     console.log(chalk.cyan('  --generate-genesis   '), chalk.white('Generate new genesis block configuration'));
     console.log('');
     console.log(chalk.yellow.bold('💡 EXAMPLES:'));
@@ -826,6 +1007,14 @@ async function main() {
     console.log(
       chalk.cyan('  node src/index.js --disable-upnp                      '),
       chalk.white('Run without UPnP port mapping')
+    );
+    console.log(
+      chalk.cyan('  node src/index.js --fast-download-sync                '),
+      chalk.white('Download blockchain from seed nodes')
+    );
+    console.log(
+      chalk.cyan('  node src/index.js --download-host https://node.example.com:22000'),
+      chalk.white('Download from custom host')
     );
     console.log('');
     console.log(chalk.yellow.bold('🔗 SERVICES:'));
@@ -1323,6 +1512,38 @@ async function main() {
       logger.info('SYSTEM', `Loaded custom config from: ${configPath}`);
     } catch (error) {
       logger.error('SYSTEM', `Failed to load config file: ${error.message}`);
+      process.exit(1);
+    }
+  }
+
+  // Parse download host parameter
+  const downloadHost = parseArgValue('--download-host');
+  if (downloadHost) {
+    // Validate download host URL format
+    try {
+      const url = new URL(downloadHost);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        logger.error('SYSTEM', 'Invalid download host URL. Must use http:// or https:// protocol.');
+        logger.error('SYSTEM', 'Example: https://localhost:22000 or http://192.168.1.100:22000');
+        process.exit(1);
+      }
+      logger.info('SYSTEM', `Using custom download host: ${downloadHost}`);
+    } catch (error) {
+      logger.error('SYSTEM', 'Invalid download host URL format.');
+      logger.error('SYSTEM', 'Example: https://localhost:22000 or http://192.168.1.100:22000');
+      process.exit(1);
+    }
+  }
+
+  // Parse fast download sync flag
+  const fastDownloadSync = args.includes('--fast-download-sync');
+  if (fastDownloadSync) {
+    logger.info('SYSTEM', '🚀 Fast download sync enabled - will download blockchain from seed nodes before startup');
+
+    try {
+      await performFastDownloadSync(config, downloadHost);
+    } catch (error) {
+      logger.error('SYSTEM', `Fast download sync failed: ${error.message}`);
       process.exit(1);
     }
   }
