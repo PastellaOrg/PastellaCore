@@ -1219,6 +1219,74 @@ class APIServer {
             transactionWithBlock.blockHash = block.hash;
             transactionWithBlock.blockTimestamp = block.timestamp;
             transactionWithBlock.confirmations = this.blockchain.chain.length - 1 - block.index;
+
+            // Calculate net amounts for all addresses involved in this transaction
+            const addressNetAmounts = {};
+
+            // Collect all unique addresses from inputs and outputs
+            const involvedAddresses = new Set();
+
+            // Add output addresses
+            tx.outputs.forEach(output => {
+              if (output.address) {
+                involvedAddresses.add(output.address);
+              }
+            });
+
+            // Add input addresses (derived from public keys)
+            tx.inputs.forEach(input => {
+              try {
+                if (input.publicKey) {
+                  const { CryptoUtils } = require('../utils/crypto');
+                  const inputAddress = CryptoUtils.publicKeyToAddress(input.publicKey);
+                  involvedAddresses.add(inputAddress);
+                }
+              } catch (error) {
+                // Skip if unable to derive address
+              }
+            });
+
+            // Calculate net amount for each involved address
+            involvedAddresses.forEach(address => {
+              addressNetAmounts[address] = this.calculateNetAmountForAddress(tx, address);
+            });
+
+            // Calculate transaction value (total outputs to external addresses)
+            // For coinbase transactions, use total outputs
+            let transactionValue = 0;
+            if (tx.isCoinbase) {
+              transactionValue = tx.outputs.reduce((sum, output) => sum + output.amount, 0);
+            } else {
+              // For regular transactions, find the largest output (usually the main transfer)
+              // or sum outputs to addresses different from the sender
+              const senderAddresses = new Set();
+
+              // Collect sender addresses from inputs
+              tx.inputs.forEach(input => {
+                try {
+                  if (input.publicKey) {
+                    const { CryptoUtils } = require('../utils/crypto');
+                    const inputAddress = CryptoUtils.publicKeyToAddress(input.publicKey);
+                    senderAddresses.add(inputAddress);
+                  }
+                } catch (error) {
+                  // Skip if unable to derive address
+                }
+              });
+
+              // Sum outputs that are NOT change (sent to different addresses)
+              transactionValue = tx.outputs
+                .filter(output => !senderAddresses.has(output.address))
+                .reduce((sum, output) => sum + output.amount, 0);
+
+              // If no external outputs found, use the largest output as transaction value
+              if (transactionValue === 0 && tx.outputs.length > 0) {
+                transactionValue = Math.max(...tx.outputs.map(output => output.amount));
+              }
+            }
+
+            transactionWithBlock.netAmounts = addressNetAmounts;
+            transactionWithBlock.netAmount = transactionValue;
             allTransactions.push(transactionWithBlock);
           });
         }
@@ -1517,6 +1585,21 @@ class APIServer {
    * @param res
    */
   getInfo(req, res) {
+    // Count transactions across all blocks, separating coinbase from regular transactions
+    let totalTransactions = 0; // Non-coinbase transactions
+    let totalTransactionsWithCoinbase = 0; // All transactions including coinbase
+
+    this.blockchain.chain.forEach(block => {
+      if (block && block.transactions) {
+        block.transactions.forEach(tx => {
+          totalTransactionsWithCoinbase++; // Count all transactions
+          if (!tx.isCoinbase) {
+            totalTransactions++; // Count only non-coinbase transactions
+          }
+        });
+      }
+    });
+
     res.json({
       name: this.config.name,
       ticker: this.config.ticker,
@@ -1528,6 +1611,9 @@ class APIServer {
       height: this.blockchain.chain.length,
       difficulty: this.blockchain.difficulty,
       pendingTransactions: this.blockchain.memoryPool.getPendingTransactionCount(),
+      totalTransactions: totalTransactions,
+      totalTransactionsWithCoinbase: totalTransactionsWithCoinbase,
+      totalSupply: this.blockchain.getTotalSupply(),
       blockTime: this.config.blockchain.blockTime,
       coinbaseReward: this.config.blockchain.coinbaseReward,
       halvingBlocks: this.config.blockchain.halvingBlocks || 1000,
