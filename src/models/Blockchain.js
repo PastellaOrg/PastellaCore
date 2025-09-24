@@ -277,11 +277,12 @@ class Blockchain {
    * Add new block to the chain
    * @param block
    * @param skipValidation
+   * @param useBlockDifficulty - If true, use the block's embedded difficulty for validation instead of global difficulty
    */
-  addBlock(block, skipValidation = false) {
+  addBlock(block, skipValidation = false, useBlockDifficulty = false) {
     logger.debug(
       'BLOCKCHAIN',
-      `Adding block to chain: index=${block.index}, hash=${block.hash?.substring(0, 16)}..., previousHash=${block.previousHash?.substring(0, 16)}..., skipValidation=${skipValidation}`
+      `Adding block to chain: index=${block.index}, hash=${block.hash?.substring(0, 16)}..., previousHash=${block.previousHash?.substring(0, 16)}..., skipValidation=${skipValidation}, useBlockDifficulty=${useBlockDifficulty}`
     );
     logger.debug(
       'BLOCKCHAIN',
@@ -301,8 +302,10 @@ class Blockchain {
 
         // Enforce network difficulty policy (reject blocks mined with incorrect difficulty)
         if (block.index > 0) {
-          const expectedDifficulty = this.difficulty;
-          if (block.difficulty !== expectedDifficulty) {
+          const expectedDifficulty = useBlockDifficulty ? block.difficulty : this.difficulty;
+          logger.debug('BLOCKCHAIN', `Difficulty validation: useBlockDifficulty=${useBlockDifficulty}, expectedDifficulty=${expectedDifficulty}, blockDifficulty=${block.difficulty}, globalDifficulty=${this.difficulty}`);
+
+          if (!useBlockDifficulty && block.difficulty !== expectedDifficulty) {
             logger.error(
               'BLOCKCHAIN',
               `Block ${block.index} rejected: difficulty mismatch (block=${block.difficulty}, expected=${expectedDifficulty})`
@@ -310,7 +313,7 @@ class Blockchain {
             return false;
           }
 
-          // Verify hash meets CURRENT network difficulty (not just the block's embedded difficulty)
+          // Verify hash meets the expected difficulty (block's own difficulty when syncing, or current network difficulty when mining)
           try {
             const maxTarget = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
             const target = maxTarget / BigInt(Math.max(1, expectedDifficulty));
@@ -318,7 +321,7 @@ class Blockchain {
             if (hashNum > target) {
               logger.error(
                 'BLOCKCHAIN',
-                `Block ${block.index} rejected: hash does not meet network difficulty (hash > target)`
+                `Block ${block.index} rejected: hash does not meet expected difficulty (hash > target, difficulty=${expectedDifficulty})`
               );
               logger.debug('BLOCKCHAIN', `  hash:   0x${hashNum.toString(16).padStart(64, '0')}`);
               logger.debug('BLOCKCHAIN', `  target: 0x${target.toString(16).padStart(64, '0')}`);
@@ -380,6 +383,13 @@ class Blockchain {
         'BLOCKCHAIN',
         `Block data: index=${block.index}, hash=${block.hash}, previousHash=${block.previousHash}`
       );
+
+      // CRITICAL: Re-throw transaction ID collision errors to trigger blockchain resync
+      if (error.message && error.message.includes('Transaction ID collision detected')) {
+        logger.error('BLOCKCHAIN', 'Re-throwing Transaction ID collision error for blockchain resync handling');
+        throw error; // Re-throw to allow MessageHandler to detect and handle resync
+      }
+
       return false;
     }
   }
@@ -1023,7 +1033,7 @@ class Blockchain {
     logger.debug('BLOCKCHAIN', `adjustDifficulty: new=${this.difficulty} (min=${this.difficultyMinimum})`);
 
     if (this.difficulty !== oldDifficulty) {
-      logger.info('BLOCKCHAIN', `Difficulty adjusted from ${oldDifficulty} to ${this.difficulty}`);
+      logger.debug('BLOCKCHAIN', `Difficulty adjusted from ${oldDifficulty} to ${this.difficulty}`);
     }
   }
 

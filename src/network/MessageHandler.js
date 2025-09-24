@@ -193,7 +193,7 @@ class MessageHandler {
    * @param peerAddress
    * @param isPeerAuthenticated
    */
-  handleMessage(ws, message, peerAddress, isPeerAuthenticated) {
+  async handleMessage(ws, message, peerAddress, isPeerAuthenticated) {
     logger.debug('MESSAGE_HANDLER', `Handling incoming message from peer ${peerAddress}...`);
     logger.debug(
       'MESSAGE_HANDLER',
@@ -314,7 +314,7 @@ class MessageHandler {
     const handler = this.messageHandlers.get(message.type);
     if (handler) {
       try {
-        handler(ws, message, peerAddress);
+        await handler(ws, message, peerAddress);
         // Update reputation for successful message handling
         this.peerReputation.updatePeerReputation(peerAddress, 'good_behavior', {
           reason: 'message_handled_successfully',
@@ -375,7 +375,7 @@ class MessageHandler {
    * @param message
    * @param peerAddress
    */
-  handleResponseBlockchain(ws, message, peerAddress) {
+  async handleResponseBlockchain(ws, message, peerAddress) {
     logger.debug(
       'MESSAGE_HANDLER',
       `Blockchain response received from ${peerAddress} with ${message.data.length} blocks`
@@ -417,31 +417,98 @@ class MessageHandler {
         const isValidChain = this.blockchain.isValidChain(convertedChain);
 
         if (isValidChain) {
-          logger.info('MESSAGE_HANDLER', 'Received chain is valid, replacing local blockchain');
+          logger.info('MESSAGE_HANDLER', 'Received chain is valid, verifying consistency with local chain');
 
-          // Clear the current chain and add all blocks from the received chain
-          this.blockchain.chain = [];
-          // Don't reinitialize - just add the received blocks directly
+          // CRITICAL: Verify that the received chain is consistent with our local chain
+          const localHeight = this.blockchain.chain.length;
+          const chainConsistencyCheck = this.verifyChainConsistency(convertedChain, this.blockchain.chain);
 
-          // Add all blocks from the received chain
-          for (const block of convertedChain) {
-            if (this.blockchain.addBlock(block)) {
-              logger.debug('MESSAGE_HANDLER', `Added block ${block.index} to blockchain`);
-            } else {
-              logger.error('MESSAGE_HANDLER', `Failed to add block ${block.index}`);
+          if (!chainConsistencyCheck.consistent) {
+            logger.error('MESSAGE_HANDLER', `Chain consistency check failed: ${chainConsistencyCheck.reason}`);
+            logger.error('MESSAGE_HANDLER', `Mismatch at block ${chainConsistencyCheck.blockIndex}: ${chainConsistencyCheck.details}`);
+            logger.warn('MESSAGE_HANDLER', 'Rejecting inconsistent chain - potential fork or corrupted data');
+            return;
+          }
+
+          logger.info('MESSAGE_HANDLER', `Chain consistency verified up to block ${localHeight - 1}`);
+
+          const blocksToAdd = convertedChain.slice(localHeight); // Only get the new blocks
+
+          if (blocksToAdd.length === 0) {
+            logger.info('MESSAGE_HANDLER', 'No new blocks to add - chains are already synchronized');
+            return;
+          }
+
+          logger.info('MESSAGE_HANDLER', `Adding ${blocksToAdd.length} new blocks (from height ${localHeight} to ${convertedChain.length - 1})`);
+
+          // Add only the new blocks
+          let addedCount = 0;
+          let blockAddError = null;
+          const totalBlocksToAdd = blocksToAdd.length;
+          const saveInterval = 100; // Save every 100 blocks
+
+          logger.info('MESSAGE_HANDLER', `Starting sync of ${totalBlocksToAdd} blocks with periodic saves every ${saveInterval} blocks`);
+
+          for (const block of blocksToAdd) {
+            try {
+              if (this.blockchain.addBlock(block, false, true)) { // skipValidation=false, useBlockDifficulty=true
+                logger.debug('MESSAGE_HANDLER', `Added block ${block.index} to blockchain`);
+                addedCount++;
+
+                // Periodic save every 100 blocks to preserve progress
+                if (addedCount % saveInterval === 0) {
+                  try {
+                    const blockchainPath = path.join(
+                      this.config?.storage?.dataDir || './data',
+                      this.config?.storage?.blockchainFile || 'blockchain.json'
+                    );
+                    this.blockchain.saveToFile(blockchainPath);
+                    logger.info('MESSAGE_HANDLER', `📄 Periodic save: Saved blockchain progress at ${addedCount}/${totalBlocksToAdd} blocks (current height: ${block.index})`);
+                  } catch (saveError) {
+                    logger.warn('MESSAGE_HANDLER', `Failed to save blockchain during sync: ${saveError.message}`);
+                  }
+                }
+              } else {
+                logger.error('MESSAGE_HANDLER', `Failed to add block ${block.index} - unknown error`);
+                blockAddError = `Failed to add block ${block.index}`;
+                break; // Stop adding if we encounter an error
+              }
+            } catch (error) {
+              logger.error('MESSAGE_HANDLER', `Error adding block ${block.index}: ${error.message}`);
+              blockAddError = error.message;
+
+              // Check for transaction ID collision - this indicates corrupted blockchain data
+              if (error.message && error.message.includes('Transaction ID collision detected')) {
+                logger.error('MESSAGE_HANDLER', '🚨 BLOCKCHAIN CORRUPTION DETECTED: Transaction ID collision during sync');
+                logger.error('MESSAGE_HANDLER', 'This indicates the local blockchain data is corrupted and needs complete resync');
+                logger.warn('MESSAGE_HANDLER', 'Initiating full blockchain resync from genesis block...');
+
+                // Perform complete blockchain reset and resync
+                await this.performFullBlockchainResync(ws, peerAddress);
+                return; // Exit early - full resync will handle everything
+              }
+
+              break; // Stop adding if we encounter an error
             }
           }
 
-          logger.info('MESSAGE_HANDLER', `Successfully synced blockchain to ${receivedChain.length} blocks`);
+          if (addedCount === blocksToAdd.length) {
+            logger.info('MESSAGE_HANDLER', `Successfully added all ${addedCount} blocks to blockchain`);
+          } else {
+            logger.warn('MESSAGE_HANDLER', `Only added ${addedCount} out of ${blocksToAdd.length} blocks - sync incomplete`);
+            if (blockAddError) {
+              logger.warn('MESSAGE_HANDLER', `Sync stopped due to error: ${blockAddError}`);
+            }
+          }
 
-          // Save blockchain after syncing all blocks
+          // Save blockchain after syncing new blocks
           try {
             const blockchainPath = path.join(
               this.config?.storage?.dataDir || './data',
               this.config?.storage?.blockchainFile || 'blockchain.json'
             );
             this.blockchain.saveToFile(blockchainPath);
-            logger.debug('MESSAGE_HANDLER', `Blockchain saved after syncing ${receivedChain.length} blocks`);
+            logger.debug('MESSAGE_HANDLER', `Blockchain saved after adding ${addedCount} blocks`);
           } catch (error) {
             logger.warn('MESSAGE_HANDLER', `Failed to save blockchain after sync: ${error.message}`);
           }
@@ -1591,6 +1658,152 @@ class MessageHandler {
       }
     } catch (error) {
       logger.error('MESSAGE_HANDLER', `Failed to handle PONG from ${peerAddress}: ${error.message}`);
+    }
+  }
+
+  /**
+   * CRITICAL: Verify that the received chain is consistent with the local chain
+   * @param {Array} receivedChain - The received blockchain to check
+   * @param {Array} localChain - The local blockchain to compare against
+   * @returns {Object} - {consistent: boolean, reason: string, blockIndex?: number, details?: string}
+   */
+  verifyChainConsistency(receivedChain, localChain) {
+    const localHeight = localChain.length;
+    const receivedHeight = receivedChain.length;
+
+    // If received chain is shorter than local chain, it's definitely inconsistent
+    if (receivedHeight < localHeight) {
+      return {
+        consistent: false,
+        reason: `Received chain is shorter than local chain (received: ${receivedHeight}, local: ${localHeight})`,
+        blockIndex: receivedHeight
+      };
+    }
+
+    // Compare each block in the local chain with the corresponding block in the received chain
+    for (let i = 0; i < localHeight; i++) {
+      const localBlock = localChain[i];
+      const receivedBlock = receivedChain[i];
+
+      // Check if block exists at this index
+      if (!receivedBlock) {
+        return {
+          consistent: false,
+          reason: `Missing block at index ${i} in received chain`,
+          blockIndex: i
+        };
+      }
+
+      // Check block index consistency
+      if (localBlock.index !== receivedBlock.index) {
+        return {
+          consistent: false,
+          reason: `Block index mismatch at position ${i}`,
+          blockIndex: i,
+          details: `Local: ${localBlock.index}, Received: ${receivedBlock.index}`
+        };
+      }
+
+      // Check block hash consistency (most important check)
+      if (localBlock.hash !== receivedBlock.hash) {
+        return {
+          consistent: false,
+          reason: `Block hash mismatch at index ${i}`,
+          blockIndex: i,
+          details: `Local: ${localBlock.hash?.substring(0, 16)}..., Received: ${receivedBlock.hash?.substring(0, 16)}...`
+        };
+      }
+
+      // Check previous hash consistency
+      if (localBlock.previousHash !== receivedBlock.previousHash) {
+        return {
+          consistent: false,
+          reason: `Previous hash mismatch at index ${i}`,
+          blockIndex: i,
+          details: `Local: ${localBlock.previousHash?.substring(0, 16)}..., Received: ${receivedBlock.previousHash?.substring(0, 16)}...`
+        };
+      }
+
+      // Check timestamp consistency (should be exact match for deterministic blocks)
+      if (localBlock.timestamp !== receivedBlock.timestamp) {
+        return {
+          consistent: false,
+          reason: `Timestamp mismatch at index ${i}`,
+          blockIndex: i,
+          details: `Local: ${localBlock.timestamp}, Received: ${receivedBlock.timestamp}`
+        };
+      }
+
+      logger.debug('MESSAGE_HANDLER', `Block ${i} consistency check passed: ${localBlock.hash?.substring(0, 16)}...`);
+    }
+
+    logger.info('MESSAGE_HANDLER', `Chain consistency verified: all ${localHeight} local blocks match received chain`);
+
+    return {
+      consistent: true,
+      reason: `All ${localHeight} blocks verified successfully`
+    };
+  }
+
+  /**
+   * CRITICAL: Perform complete blockchain resync from genesis when corruption is detected
+   * @param {WebSocket} ws - WebSocket connection to the peer
+   * @param {string} peerAddress - Address of the peer
+   */
+  async performFullBlockchainResync(ws, peerAddress) {
+    try {
+      logger.warn('MESSAGE_HANDLER', '🔄 INITIATING FULL BLOCKCHAIN RESYNC');
+      logger.warn('MESSAGE_HANDLER', 'This will reset the entire blockchain and resync from genesis block');
+
+      // Step 1: Clear the corrupted blockchain completely
+      logger.info('MESSAGE_HANDLER', 'Step 1: Clearing corrupted blockchain data...');
+      this.blockchain.clearChain();
+      logger.info('MESSAGE_HANDLER', 'Local blockchain cleared - starting fresh from genesis');
+
+      // Step 2: Reinitialize blockchain with genesis block
+      logger.info('MESSAGE_HANDLER', 'Step 2: Reinitializing blockchain with genesis block...');
+      // Use the configured miner address or a default one for genesis
+      const genesisAddress = this.config?.mining?.address || 'PAS1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq8h7h0';
+      this.blockchain.initialize(genesisAddress, this.config, true); // suppressLogging = true
+      logger.info('MESSAGE_HANDLER', `Genesis block reinitialized for address: ${genesisAddress}`);
+
+      // Step 3: Request full blockchain from the peer
+      logger.info('MESSAGE_HANDLER', 'Step 3: Requesting complete blockchain from peer...');
+      logger.info('MESSAGE_HANDLER', `Requesting full chain from ${peerAddress} for complete resync`);
+
+      // Send QUERY_ALL to get the complete blockchain
+      const queryMessage = {
+        type: 'QUERY_ALL',
+        timestamp: Date.now(),
+        reason: 'full_blockchain_resync_after_corruption'
+      };
+
+      this.sendMessage(ws, queryMessage);
+
+      // Step 4: Save the reset state
+      logger.info('MESSAGE_HANDLER', 'Step 4: Saving reset blockchain state...');
+      try {
+        const blockchainPath = path.join(
+          this.config?.storage?.dataDir || './data',
+          this.config?.storage?.blockchainFile || 'blockchain.json'
+        );
+        this.blockchain.saveToFile(blockchainPath);
+        logger.info('MESSAGE_HANDLER', 'Reset blockchain saved - ready for full resync');
+      } catch (saveError) {
+        logger.error('MESSAGE_HANDLER', `Failed to save reset blockchain: ${saveError.message}`);
+      }
+
+      logger.warn('MESSAGE_HANDLER', '✅ Full blockchain resync initiated successfully');
+      logger.warn('MESSAGE_HANDLER', 'Waiting for peer to send complete blockchain...');
+
+    } catch (error) {
+      logger.error('MESSAGE_HANDLER', `Critical error during full blockchain resync: ${error.message}`);
+      logger.error('MESSAGE_HANDLER', `Error stack: ${error.stack}`);
+
+      // If resync fails, we're in a critical state - log clearly
+      logger.error('MESSAGE_HANDLER', '💥 CRITICAL: Full blockchain resync failed!');
+      logger.error('MESSAGE_HANDLER', 'Manual intervention may be required');
+      logger.error('MESSAGE_HANDLER', 'Consider deleting blockchain data files and restarting the daemon');
     }
   }
 

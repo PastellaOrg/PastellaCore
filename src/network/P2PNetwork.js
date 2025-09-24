@@ -625,7 +625,7 @@ class P2PNetwork {
    * @param peerAddress
    */
   setupMessageHandlers(ws, peerAddress) {
-    ws.on('message', data => {
+    ws.on('message', async (data) => {
       try {
         const message = JSON.parse(data);
 
@@ -633,7 +633,7 @@ class P2PNetwork {
         this.peerReputation.updatePeerReputation(peerAddress, 'message_received');
 
         // Handle message through message handler
-        this.messageHandler.handleMessage(ws, message, peerAddress, this.isPeerAuthenticated(peerAddress));
+        await this.messageHandler.handleMessage(ws, message, peerAddress, this.isPeerAuthenticated(peerAddress));
       } catch (error) {
         logger.error('P2P', `Error parsing message: ${error.message}`);
         this.peerReputation.updatePeerReputation(peerAddress, 'invalid_message', { reason: 'json_parse_error' });
