@@ -962,7 +962,6 @@ async function main() {
     console.log(chalk.cyan('  --no-api             '), chalk.white('Disable REST API server'));
     console.log(chalk.cyan('  --no-p2p             '), chalk.white('Disable P2P network'));
     console.log(chalk.cyan('  --disable-upnp       '), chalk.white('Disable UPnP automatic port mapping'));
-    console.log(chalk.cyan('  --min-seed-conn <n>  '), chalk.white('Minimum seed node connections (0-10, default: 2)'));
     console.log(chalk.cyan('  --api-key <key>      '), chalk.white('API key for authentication (default: none)'));
     console.log(chalk.cyan('  --host <ip>          '), chalk.white('API server host binding (default: 127.0.0.1)'));
     console.log(chalk.cyan('  --fast-download-sync '), chalk.white('Download blockchain from seed nodes before startup'));
@@ -986,10 +985,6 @@ async function main() {
     console.log(
       chalk.cyan('  node src/index.js --data-dir /path/to/data            '),
       chalk.white('Custom data directory')
-    );
-    console.log(
-      chalk.cyan('  node src/index.js --min-seed-conn 1                   '),
-      chalk.white('Require only 1 seed connection')
     );
     console.log(
       chalk.cyan('  node src/index.js --api-key mysecretkey               '),
@@ -1204,7 +1199,7 @@ async function main() {
 
             console.log(chalk.green.bold('   🎉 GENESIS BLOCK MINED!'));
             console.log(chalk.green('   ════════════════════════════════════════════════════════════'));
-            console.log(chalk.cyan('   �� Mining Statistics:'));
+            console.log(chalk.cyan('   Mining Statistics:'));
             console.log(chalk.gray(`      • Nonce: ${nonce.toLocaleString()}`));
             console.log(chalk.gray(`      • Hash: ${genesisBlock.hash}`));
             console.log(chalk.gray(`      • Time: ${miningTime}s`));
@@ -1436,25 +1431,6 @@ async function main() {
     config.storage.dataDir = dataDir;
   }
 
-  const difficultyAlgorithm = parseArgValue('--difficulty-algorithm');
-  if (difficultyAlgorithm) {
-    if (!['aggressive', 'dogecoin', 'lwma3'].includes(difficultyAlgorithm)) {
-      logger.error('SYSTEM', 'Invalid difficulty algorithm. Must be "aggressive", "dogecoin", or "lwma3".');
-      process.exit(1);
-    }
-    config.blockchain.difficultyAlgorithm = difficultyAlgorithm;
-    logger.info('SYSTEM', `Difficulty algorithm set to: ${difficultyAlgorithm}`);
-  }
-
-  const minSeedConn = parseArgValue('--min-seed-conn');
-  if (minSeedConn) {
-    const minConn = parseInt(minSeedConn);
-    if (isNaN(minConn) || minConn < 0 || minConn > 10) {
-      logger.error('SYSTEM', 'Invalid minimum seed connections. Must be between 0 and 10.');
-      process.exit(1);
-    }
-    config.network.minSeedConnections = minConn;
-  }
 
   const apiKey = parseArgValue('--api-key');
   if (apiKey) {
