@@ -313,10 +313,28 @@ class BlockchainValidation {
           `SECURITY VIOLATION: Input ${i} references non-existent or spent UTXO: ${txHash}:${input.outputIndex}`
         );
         logger.error('BLOCKCHAIN_VALIDATION', `This could be a blockchain manipulation attempt or double-spend attack`);
-        return {
-          valid: false,
-          reason: `Input ${i} references non-existent or spent UTXO: ${txHash}:${input.outputIndex}`,
-        };
+
+        // CRITICAL SECURITY: Immediately shutdown daemon to prevent blockchain corruption
+        logger.error('BLOCKCHAIN_VALIDATION', '🚨 CRITICAL BLOCKCHAIN SECURITY VIOLATION DETECTED');
+        logger.error('BLOCKCHAIN_VALIDATION', '🛑 SHUTTING DOWN DAEMON TO PREVENT FURTHER CORRUPTION');
+        logger.error('BLOCKCHAIN_VALIDATION', '⚠️  Manual intervention required - check blockchain integrity');
+
+        console.error('\n╔══════════════════════════════════════════════════════════════╗');
+        console.error('║                    🚨 CRITICAL ERROR                         ║');
+        console.error('║                BLOCKCHAIN SECURITY VIOLATION                 ║');
+        console.error('╚══════════════════════════════════════════════════════════════╝');
+        console.error('');
+        console.error('💥 UTXO validation failed - potential blockchain attack detected');
+        console.error(`💥 Invalid UTXO reference: ${txHash}:${input.outputIndex}`);
+        console.error('💥 Daemon shutdown to prevent blockchain corruption');
+        console.error('');
+        console.error('🔧 Manual intervention required:');
+        console.error('   1. Check blockchain integrity');
+        console.error('   2. Verify network consensus');
+        console.error('   3. Consider blockchain resync if corrupted');
+        console.error('');
+
+        process.exit(1);
       }
 
       // Verify the input amount matches what's expected (if available)

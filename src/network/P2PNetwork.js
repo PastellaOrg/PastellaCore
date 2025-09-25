@@ -535,14 +535,7 @@ class P2PNetwork {
     // Set up message handlers
     this.setupMessageHandlers(ws, addressForTracking);
 
-    // Initiate version check for outgoing connections
-    if (this.forkManager) {
-      setTimeout(() => {
-        this.messageHandler.initiateVersionCheck(ws, addressForTracking);
-      }, 1000); // 1 second delay to ensure connection is stable
-    } else {
-      logger.warn('P2P_NETWORK', 'ForkManager not available - skipping version check');
-    }
+    // NOTE: Version check now initiated after handshake completion in MessageHandler
   }
 
   /**
@@ -630,14 +623,7 @@ class P2PNetwork {
     // Set up message handlers
     this.setupMessageHandlers(ws, addressForTracking);
 
-    // Initiate version check for new connections
-    if (this.forkManager) {
-      setTimeout(() => {
-        this.messageHandler.initiateVersionCheck(ws, addressForTracking);
-      }, 1000); // 1 second delay to ensure connection is stable
-    } else {
-      logger.warn('P2P_NETWORK', 'ForkManager not available - skipping version check');
-    }
+    // NOTE: Version check now initiated after handshake completion in MessageHandler
   }
 
   /**

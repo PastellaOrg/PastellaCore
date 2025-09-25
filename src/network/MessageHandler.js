@@ -1125,6 +1125,13 @@ class MessageHandler {
         }
       }
 
+      // CRITICAL: Initiate version check after successful handshake
+      if (this.forkManager) {
+        setTimeout(() => {
+          this.initiateVersionCheck(ws, peerAddress);
+        }, 500); // Short delay to ensure connection is fully stable
+      }
+
       // MEMPOOL SYNC: Request current mempool from newly connected peer
       try {
         const mempoolSyncMessage = {
@@ -1925,7 +1932,7 @@ class MessageHandler {
       data: ourVersionInfo
     };
 
-    logger.info('MESSAGE_HANDLER', `📤 Sending VERSION_RESPONSE to ${peerAddress}: v${ourVersionInfo.version}`);
+    logger.info('MESSAGE_HANDLER', `Sending VERSION_RESPONSE to ${peerAddress}: v${ourVersionInfo.version}`);
     this.sendMessage(ws, response);
 
     // If peer sent their version info, validate it and clear timeout
