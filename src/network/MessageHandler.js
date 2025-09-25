@@ -1119,7 +1119,7 @@ class MessageHandler {
         const hasOutgoingToSameSeedNode = existingAddresses.includes(targetAddress);
 
         if (hasOutgoingToSameSeedNode) {
-          logger.info('MESSAGE_HANDLER', `🚫 Closing bidirectional connection from seed node ${peerAddress} (already connected to ${targetAddress})`);
+          logger.info('MESSAGE_HANDLER', `Closing bidirectional connection from seed node ${peerAddress} (already connected to ${targetAddress})`);
           ws.close();
           return;
         }
@@ -1947,7 +1947,7 @@ class MessageHandler {
    * @param {string} peerAddress - Peer address
    */
   handleVersionResponse(ws, message, peerAddress) {
-    logger.info('MESSAGE_HANDLER', `📥 VERSION_RESPONSE received from ${peerAddress}`);
+    logger.info('MESSAGE_HANDLER', `VERSION_RESPONSE received from ${peerAddress}`);
     logger.debug('MESSAGE_HANDLER', `Version response data: ${JSON.stringify(message.data)}`);
 
     if (!this.forkManager) {
@@ -1964,7 +1964,7 @@ class MessageHandler {
       return;
     }
 
-    logger.info('MESSAGE_HANDLER', `✅ Valid VERSION_RESPONSE from ${peerAddress}: v${message.data.version}`);
+    logger.info('MESSAGE_HANDLER', `Valid VERSION_RESPONSE from ${peerAddress}: v${message.data.version}`);
 
     // Clear version check timeout - peer responded with valid data
     this.clearVersionCheckTimeout(peerAddress);
@@ -1979,12 +1979,18 @@ class MessageHandler {
    * @param {Object} peerVersionInfo - Peer version information
    */
   validatePeerVersion(ws, peerAddress, peerVersionInfo) {
+    // CRITICAL: Prevent duplicate validation for already validated peers
+    if (this.versionValidatedPeers.has(peerAddress)) {
+      logger.debug('MESSAGE_HANDLER', `⏭️  SKIPPED: Peer ${peerAddress} already validated - no duplicate processing needed`);
+      return;
+    }
+
     const validation = this.forkManager.validatePeerVersionInfo(peerVersionInfo);
 
     logger.info('MESSAGE_HANDLER', `Version Validation for ${peerAddress}:`);
     logger.info('MESSAGE_HANDLER', `   Peer Version: ${peerVersionInfo.version}`);
     logger.info('MESSAGE_HANDLER', `   Peer Fork: ${peerVersionInfo.forkName || 'Unknown'}`);
-    logger.info('MESSAGE_HANDLER', `   Compatible: ${validation.success ? '✅ YES' : '❌ NO'}`);
+    logger.info('MESSAGE_HANDLER', `   Compatible: ${validation.success ? 'YES' : 'NO'}`);
 
     if (!validation.success) {
       logger.warn('MESSAGE_HANDLER', 'INCOMPATIBLE PEER VERSION DETECTED');
@@ -2095,7 +2101,18 @@ class MessageHandler {
       return;
     }
 
-    logger.info('MESSAGE_HANDLER', `Initiating MANDATORY version check with ${peerAddress}`);
+    // CRITICAL: Prevent duplicate version checks
+    if (this.versionValidatedPeers.has(peerAddress)) {
+      logger.debug('MESSAGE_HANDLER', `  SKIPPED: Version check for ${peerAddress} - peer already validated`);
+      return;
+    }
+
+    if (this.pendingVersionChecks.has(peerAddress)) {
+      logger.debug('MESSAGE_HANDLER', `  SKIPPED: Version check for ${peerAddress} - check already in progress`);
+      return;
+    }
+
+    logger.info('MESSAGE_HANDLER', ` Initiating MANDATORY version check with ${peerAddress}`);
 
     const ourVersionInfo = this.forkManager.getVersionInfo();
     const message = {
@@ -2144,7 +2161,7 @@ class MessageHandler {
   clearVersionCheckTimeout(peerAddress) {
     const pendingCheck = this.pendingVersionChecks.get(peerAddress);
     if (pendingCheck) {
-      logger.debug('MESSAGE_HANDLER', `✅ Clearing version check timeout for ${peerAddress}`);
+      logger.debug('MESSAGE_HANDLER', `Clearing version check timeout for ${peerAddress}`);
       clearTimeout(pendingCheck.timeoutId);
       this.pendingVersionChecks.delete(peerAddress);
     }
