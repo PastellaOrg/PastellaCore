@@ -1907,7 +1907,7 @@ class MessageHandler {
    * @param {string} peerAddress - Peer address
    */
   handleVersionCheck(ws, message, peerAddress) {
-    logger.info('MESSAGE_HANDLER', `📥 VERSION_CHECK received from ${peerAddress}`);
+    logger.debug('MESSAGE_HANDLER', `VERSION_CHECK received from ${peerAddress}`);
     logger.debug('MESSAGE_HANDLER', `Version check message data: ${JSON.stringify(message.data)}`);
 
     if (!this.forkManager) {
@@ -1930,11 +1930,11 @@ class MessageHandler {
 
     // If peer sent their version info, validate it and clear timeout
     if (message.data && typeof message.data.version === 'number') {
-      logger.info('MESSAGE_HANDLER', `✅ Peer ${peerAddress} provided version data: v${message.data.version}`);
+      logger.info('MESSAGE_HANDLER', `Peer ${peerAddress} provided version data: v${message.data.version}`);
       this.clearVersionCheckTimeout(peerAddress);
       this.validatePeerVersion(ws, peerAddress, message.data);
     } else {
-      logger.warn('MESSAGE_HANDLER', `⚠️ Peer ${peerAddress} sent VERSION_CHECK without valid version data`);
+      logger.warn('MESSAGE_HANDLER', `Peer ${peerAddress} sent VERSION_CHECK without valid version data`);
       logger.warn('MESSAGE_HANDLER', `Message data: ${JSON.stringify(message.data)}`);
       // Don't clear timeout - peer must send proper version info
     }
@@ -1981,17 +1981,17 @@ class MessageHandler {
   validatePeerVersion(ws, peerAddress, peerVersionInfo) {
     const validation = this.forkManager.validatePeerVersionInfo(peerVersionInfo);
 
-    logger.info('MESSAGE_HANDLER', `🔍 Version Validation for ${peerAddress}:`);
+    logger.info('MESSAGE_HANDLER', `Version Validation for ${peerAddress}:`);
     logger.info('MESSAGE_HANDLER', `   Peer Version: ${peerVersionInfo.version}`);
     logger.info('MESSAGE_HANDLER', `   Peer Fork: ${peerVersionInfo.forkName || 'Unknown'}`);
     logger.info('MESSAGE_HANDLER', `   Compatible: ${validation.success ? '✅ YES' : '❌ NO'}`);
 
     if (!validation.success) {
-      logger.warn('MESSAGE_HANDLER', '🚫 INCOMPATIBLE PEER VERSION DETECTED');
+      logger.warn('MESSAGE_HANDLER', 'INCOMPATIBLE PEER VERSION DETECTED');
       logger.warn('MESSAGE_HANDLER', `   Reason: ${validation.message}`);
 
       if (validation.upgradeRequired) {
-        logger.warn('MESSAGE_HANDLER', '   ⚠️  Peer needs to upgrade their daemon');
+        logger.warn('MESSAGE_HANDLER', '   Peer needs to upgrade their daemon');
       }
 
       // Disconnect the peer with a clear reason
@@ -1999,7 +1999,7 @@ class MessageHandler {
       return;
     }
 
-    logger.info('MESSAGE_HANDLER', `✅ Peer ${peerAddress} version validated successfully`);
+    logger.info('MESSAGE_HANDLER', `Peer ${peerAddress} version validated successfully`);
 
     // Log compatibility details
     if (validation.peerFork) {
@@ -2008,7 +2008,7 @@ class MessageHandler {
 
     // CRITICAL: Add peer to validated set to allow blockchain operations
     this.versionValidatedPeers.add(peerAddress);
-    logger.info('MESSAGE_HANDLER', `🎯 Peer ${peerAddress} added to validated peers - blockchain operations now ALLOWED`);
+    logger.info('MESSAGE_HANDLER', `Peer ${peerAddress} added to validated peers - blockchain operations now ALLOWED`);
     logger.debug('MESSAGE_HANDLER', `Total validated peers: ${this.versionValidatedPeers.size}`);
   }
 
