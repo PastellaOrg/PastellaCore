@@ -275,7 +275,7 @@ class MessageHandler {
 
     // Check for duplicate messages (prevent flooding attacks)
     if (this.isDuplicateMessage(message, peerAddress)) {
-      logger.debug('MESSAGE_HANDLER', `🔄 DUPLICATE: Blocking duplicate message from ${peerAddress} (type: ${message.type})`);
+      logger.debug('MESSAGE_HANDLER', `DUPLICATE: Blocking duplicate message from ${peerAddress} (type: ${message.type})`);
 
       // Apply reputation penalties based on message type
       const maintenanceMessages = ['QUERY_LATEST', 'PING', 'PONG', 'QUERY_TRANSACTION', 'MEMPOOL_SYNC_REQUEST', 'HEARTBEAT', 'RESPONSE_BLOCKCHAIN'];
@@ -2017,7 +2017,7 @@ class MessageHandler {
    * @param {string} peerAddress - Peer address to clean up
    */
   cleanupPeerData(peerAddress) {
-    logger.debug('MESSAGE_HANDLER', `🧹 Cleaning up data for disconnected peer ${peerAddress}`);
+    logger.debug('MESSAGE_HANDLER', `Cleaning up data for disconnected peer ${peerAddress}`);
 
     // Remove from validated peers
     const wasValidated = this.versionValidatedPeers.delete(peerAddress);
@@ -2038,7 +2038,7 @@ class MessageHandler {
     // Clean up other peer-related data
     this.peerMessageRates.delete(peerAddress);
 
-    logger.debug('MESSAGE_HANDLER', `✅ Cleanup completed for ${peerAddress}`);
+    logger.debug('MESSAGE_HANDLER', `Cleanup completed for ${peerAddress}`);
     logger.debug('MESSAGE_HANDLER', `Remaining validated peers: ${this.versionValidatedPeers.size}`);
   }
 

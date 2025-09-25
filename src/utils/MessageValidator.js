@@ -164,7 +164,8 @@ class MessageValidator {
               version: { type: 'number', minimum: 0, description: 'Peer daemon version' },
               forkName: { type: 'string', minLength: 1, description: 'Peer fork name' },
               features: { type: 'array', items: { type: 'string' }, description: 'Array of peer enabled features' },
-              minimumAcceptableVersion: { type: 'number', minimum: 0, description: 'Peer minimum acceptable version' }
+              minimumAcceptableVersion: { type: 'number', minimum: 0, description: 'Peer minimum acceptable version' },
+              compatible: { type: 'boolean', description: 'Compatibility flag (optional)' }
             }
           }
         }

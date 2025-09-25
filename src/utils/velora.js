@@ -336,8 +336,8 @@ class VeloraUtils {
       accumulatorBuffer,
     ]);
 
-    // 🎯 CRITICAL DEBUG: Show exact 96-byte input data for comparison with miner
-    logger.debug('BLOCK', '=== 🎯 DAEMON FINAL HASH - 96-BYTE INPUT DEBUG ===');
+    // CRITICAL DEBUG: Show exact 96-byte input data for comparison with miner
+    logger.debug('BLOCK', '=== DAEMON FINAL HASH - 96-BYTE INPUT DEBUG ===');
     logger.debug('BLOCK', `Block number: ${blockNumber}`);
     logger.debug('BLOCK', `Nonce: ${nonce}`);
     logger.debug('BLOCK', `Timestamp: ${timestamp}`);
