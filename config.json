@@ -33,7 +33,31 @@
       "coinbaseNonce": "mfwaydvf2081dcb5b77fbe1a4654f98db07dba9f",
       "coinbaseAtomicSequence": "1758616663226-genesis-coinbase-120785"
     },
-    "difficulty": 100
+    "difficulty": 100,
+    "forkHeights": {
+      "currentVersion": 2,
+      "minimumAcceptableVersion": 1,
+      "forks": {
+        "0": {
+          "name": "Genesis",
+          "description": "Initial blockchain launch",
+          "minimumVersion": 0,
+          "features": ["basic_transactions", "mining", "velora_algorithm"]
+        },
+        "1": {
+          "name": "Network Stability",
+          "description": "Enhanced network stability and security",
+          "minimumVersion": 1,
+          "features": ["improved_p2p", "enhanced_validation", "spam_protection"]
+        },
+        "2": {
+          "name": "Fast Sync",
+          "description": "Fast blockchain synchronization and performance improvements",
+          "minimumVersion": 2,
+          "features": ["fast_sync", "state_rebuild", "optimized_validation"]
+        }
+      }
+    }
   },
   "wallet": {
     "defaultFee": 100000,
