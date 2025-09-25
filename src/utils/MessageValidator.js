@@ -134,6 +134,42 @@ class MessageValidator {
         },
       },
 
+      // Fork version compatibility messages
+      VERSION_CHECK: {
+        required: ['type', 'data'],
+        properties: {
+          type: { type: 'string', enum: ['VERSION_CHECK'] },
+          data: {
+            type: 'object',
+            required: ['version', 'minimumAcceptableVersion', 'forkName', 'features'],
+            properties: {
+              version: { type: 'number', minimum: 0, description: 'Current daemon version' },
+              minimumAcceptableVersion: { type: 'number', minimum: 0, description: 'Minimum acceptable version for peer connections' },
+              forkName: { type: 'string', minLength: 1, description: 'Current fork name' },
+              features: { type: 'array', items: { type: 'string' }, description: 'Array of enabled features' },
+              compatible: { type: 'boolean', description: 'Compatibility flag' }
+            }
+          }
+        }
+      },
+
+      VERSION_RESPONSE: {
+        required: ['type', 'data'],
+        properties: {
+          type: { type: 'string', enum: ['VERSION_RESPONSE'] },
+          data: {
+            type: 'object',
+            required: ['version', 'forkName'],
+            properties: {
+              version: { type: 'number', minimum: 0, description: 'Peer daemon version' },
+              forkName: { type: 'string', minLength: 1, description: 'Peer fork name' },
+              features: { type: 'array', items: { type: 'string' }, description: 'Array of peer enabled features' },
+              minimumAcceptableVersion: { type: 'number', minimum: 0, description: 'Peer minimum acceptable version' }
+            }
+          }
+        }
+      },
+
       // Blockchain messages
       QUERY_LATEST: {
         required: ['type'],
