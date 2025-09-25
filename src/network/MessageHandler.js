@@ -16,8 +16,9 @@ class MessageHandler {
    * @param blockchain
    * @param peerReputation
    * @param config
+   * @param forkManager
    */
-  constructor(blockchain, peerReputation, config) {
+  constructor(blockchain, peerReputation, config, forkManager = null) {
     logger.debug('MESSAGE_HANDLER', `Initializing MessageHandler...`);
     logger.debug(
       'MESSAGE_HANDLER',
@@ -31,10 +32,15 @@ class MessageHandler {
       'MESSAGE_HANDLER',
       `Config instance: ${config ? 'present' : 'null'}, networkId: ${config?.networkId || 'undefined'}`
     );
+    logger.debug(
+      'MESSAGE_HANDLER',
+      `ForkManager instance: ${forkManager ? 'present' : 'null'}`
+    );
 
     this.blockchain = blockchain;
     this.peerReputation = peerReputation;
     this.config = config;
+    this.forkManager = forkManager;
     this.p2pNetwork = null; // Will be set by P2PNetwork after initialization
     this.messageHandlers = new Map();
     this.messageValidator = new MessageValidator(config);
@@ -51,6 +57,11 @@ class MessageHandler {
 
     // Message deduplication to prevent flooding attacks
     this.seenMessages = new Map(); // Map<messageHash, {timestamp, count, peerAddress}>
+
+    // Version check tracking for mandatory fork compatibility
+    this.pendingVersionChecks = new Map(); // Map<peerAddress, {timestamp, timeoutId, ws}>
+    this.versionCheckTimeout = 5000; // 5 seconds timeout for version response (reduced for faster enforcement)
+    this.versionValidatedPeers = new Set(); // Track peers that passed version validation
     this.maxSeenMessages = 5000; // Limit cache size
     this.messageTTL = 60000; // 1 minute TTL for seen messages
     this.maxDuplicatesPerPeer = 3; // Max allowed duplicates per peer
@@ -99,6 +110,10 @@ class MessageHandler {
     this.messageHandlers.set('NEW_BLOCK', this.handleNewBlock.bind(this));
     this.messageHandlers.set('NEW_TRANSACTION', this.handleNewTransaction.bind(this));
     this.messageHandlers.set('SEED_NODE_INFO', this.handleSeedNodeInfo.bind(this));
+
+    // Fork version compatibility message handlers
+    this.messageHandlers.set('VERSION_CHECK', this.handleVersionCheck.bind(this));
+    this.messageHandlers.set('VERSION_RESPONSE', this.handleVersionResponse.bind(this));
 
     // Mempool synchronization message handlers (Bitcoin-style)
     logger.debug('MESSAGE_HANDLER', `Setting up mempool synchronization handlers...`);
@@ -339,12 +354,41 @@ class MessageHandler {
   }
 
   /**
+   * Check if peer has completed mandatory version validation
+   * @param peerAddress - Peer address to check
+   * @param messageType - Message type for logging
+   * @returns {boolean} True if peer is validated or fork manager is disabled
+   */
+  isPeerVersionValidated(peerAddress, messageType) {
+    // If no fork manager, allow all operations (backward compatibility)
+    if (!this.forkManager) {
+      return true;
+    }
+
+    // Check if peer has completed version validation
+    const isValidated = this.versionValidatedPeers.has(peerAddress);
+
+    if (!isValidated) {
+      logger.warn('MESSAGE_HANDLER', `BLOCKED: ${messageType} from ${peerAddress} - version validation required`);
+      logger.warn('MESSAGE_HANDLER', `Peer must respond to VERSION_CHECK before blockchain operations are allowed`);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Handle query latest block
    * @param ws
    * @param message
    * @param peerAddress
    */
   handleQueryLatest(ws, message, peerAddress) {
+    // MANDATORY: Check version validation before responding to blockchain queries
+    if (!this.isPeerVersionValidated(peerAddress, 'QUERY_LATEST')) {
+      return; // Block operation until version validation completes
+    }
+
     logger.debug('MESSAGE_HANDLER', `Latest block queried by ${peerAddress}`);
     const latestBlock = this.blockchain.getLatestBlock();
     const response = {
@@ -361,6 +405,11 @@ class MessageHandler {
    * @param peerAddress
    */
   handleQueryAll(ws, message, peerAddress) {
+    // MANDATORY: Check version validation before responding to blockchain queries
+    if (!this.isPeerVersionValidated(peerAddress, 'QUERY_ALL')) {
+      return; // Block operation until version validation completes
+    }
+
     logger.debug('MESSAGE_HANDLER', `All blocks queried by ${peerAddress}`);
     const response = {
       type: 'RESPONSE_BLOCKCHAIN',
@@ -376,6 +425,11 @@ class MessageHandler {
    * @param peerAddress
    */
   async handleResponseBlockchain(ws, message, peerAddress) {
+    // CRITICAL: Block blockchain sync until version validation completes
+    if (!this.isPeerVersionValidated(peerAddress, 'RESPONSE_BLOCKCHAIN')) {
+      return; // Block operation until version validation completes
+    }
+
     logger.debug(
       'MESSAGE_HANDLER',
       `Blockchain response received from ${peerAddress} with ${message.data.length} blocks`
@@ -604,6 +658,11 @@ class MessageHandler {
    * @param peerAddress
    */
   handleNewBlock(ws, message, peerAddress) {
+    // MANDATORY: Check version validation before processing new blocks
+    if (!this.isPeerVersionValidated(peerAddress, 'NEW_BLOCK')) {
+      return; // Block operation until version validation completes
+    }
+
     logger.debug('MESSAGE_HANDLER', `New block announced by ${peerAddress}`);
 
     try {
@@ -675,6 +734,11 @@ class MessageHandler {
    * @param peerAddress
    */
   handleNewTransaction(ws, message, peerAddress) {
+    // MANDATORY: Check version validation before processing new transactions
+    if (!this.isPeerVersionValidated(peerAddress, 'NEW_TRANSACTION')) {
+      return; // Block operation until version validation completes
+    }
+
     logger.info('MESSAGE_HANDLER', `📥 NEW TRANSACTION received from ${peerAddress}`);
     logger.debug('MESSAGE_HANDLER', `Transaction ID: ${message.data?.id || 'unknown'}`);
 
@@ -1833,6 +1897,256 @@ class MessageHandler {
       logger.error('MESSAGE_HANDLER', '💥 CRITICAL: Full blockchain resync failed!');
       logger.error('MESSAGE_HANDLER', 'Manual intervention may be required');
       logger.error('MESSAGE_HANDLER', 'Consider deleting blockchain data files and restarting the daemon');
+    }
+  }
+
+  /**
+   * Handle version check message from peer
+   * @param {WebSocket} ws - WebSocket connection
+   * @param {Object} message - Version check message
+   * @param {string} peerAddress - Peer address
+   */
+  handleVersionCheck(ws, message, peerAddress) {
+    logger.info('MESSAGE_HANDLER', `📥 VERSION_CHECK received from ${peerAddress}`);
+    logger.debug('MESSAGE_HANDLER', `Version check message data: ${JSON.stringify(message.data)}`);
+
+    if (!this.forkManager) {
+      logger.error('MESSAGE_HANDLER', 'ForkManager not available for version checking');
+      this.disconnectPeerWithReason(ws, peerAddress, 'Server configuration error');
+      return;
+    }
+
+    // Get our version info
+    const ourVersionInfo = this.forkManager.getVersionInfo();
+
+    // Send our version response
+    const response = {
+      type: 'VERSION_RESPONSE',
+      data: ourVersionInfo
+    };
+
+    logger.info('MESSAGE_HANDLER', `📤 Sending VERSION_RESPONSE to ${peerAddress}: v${ourVersionInfo.version}`);
+    this.sendMessage(ws, response);
+
+    // If peer sent their version info, validate it and clear timeout
+    if (message.data && typeof message.data.version === 'number') {
+      logger.info('MESSAGE_HANDLER', `✅ Peer ${peerAddress} provided version data: v${message.data.version}`);
+      this.clearVersionCheckTimeout(peerAddress);
+      this.validatePeerVersion(ws, peerAddress, message.data);
+    } else {
+      logger.warn('MESSAGE_HANDLER', `⚠️ Peer ${peerAddress} sent VERSION_CHECK without valid version data`);
+      logger.warn('MESSAGE_HANDLER', `Message data: ${JSON.stringify(message.data)}`);
+      // Don't clear timeout - peer must send proper version info
+    }
+  }
+
+  /**
+   * Handle version response from peer
+   * @param {WebSocket} ws - WebSocket connection
+   * @param {Object} message - Version response message
+   * @param {string} peerAddress - Peer address
+   */
+  handleVersionResponse(ws, message, peerAddress) {
+    logger.info('MESSAGE_HANDLER', `📥 VERSION_RESPONSE received from ${peerAddress}`);
+    logger.debug('MESSAGE_HANDLER', `Version response data: ${JSON.stringify(message.data)}`);
+
+    if (!this.forkManager) {
+      logger.error('MESSAGE_HANDLER', 'ForkManager not available for version validation');
+      this.disconnectPeerWithReason(ws, peerAddress, 'Server configuration error');
+      return;
+    }
+
+    if (!message.data || typeof message.data.version !== 'number') {
+      logger.error('MESSAGE_HANDLER', `❌ INVALID VERSION_RESPONSE from ${peerAddress}`);
+      logger.error('MESSAGE_HANDLER', `Expected version number, got: ${JSON.stringify(message.data)}`);
+      logger.error('MESSAGE_HANDLER', `⚠️ DISCONNECTING: Invalid version information`);
+      this.disconnectPeerWithReason(ws, peerAddress, 'Invalid version information - version number required');
+      return;
+    }
+
+    logger.info('MESSAGE_HANDLER', `✅ Valid VERSION_RESPONSE from ${peerAddress}: v${message.data.version}`);
+
+    // Clear version check timeout - peer responded with valid data
+    this.clearVersionCheckTimeout(peerAddress);
+
+    this.validatePeerVersion(ws, peerAddress, message.data);
+  }
+
+  /**
+   * Validate peer version and disconnect if incompatible
+   * @param {WebSocket} ws - WebSocket connection
+   * @param {string} peerAddress - Peer address
+   * @param {Object} peerVersionInfo - Peer version information
+   */
+  validatePeerVersion(ws, peerAddress, peerVersionInfo) {
+    const validation = this.forkManager.validatePeerVersionInfo(peerVersionInfo);
+
+    logger.info('MESSAGE_HANDLER', `🔍 Version Validation for ${peerAddress}:`);
+    logger.info('MESSAGE_HANDLER', `   Peer Version: ${peerVersionInfo.version}`);
+    logger.info('MESSAGE_HANDLER', `   Peer Fork: ${peerVersionInfo.forkName || 'Unknown'}`);
+    logger.info('MESSAGE_HANDLER', `   Compatible: ${validation.success ? '✅ YES' : '❌ NO'}`);
+
+    if (!validation.success) {
+      logger.warn('MESSAGE_HANDLER', '🚫 INCOMPATIBLE PEER VERSION DETECTED');
+      logger.warn('MESSAGE_HANDLER', `   Reason: ${validation.message}`);
+
+      if (validation.upgradeRequired) {
+        logger.warn('MESSAGE_HANDLER', '   ⚠️  Peer needs to upgrade their daemon');
+      }
+
+      // Disconnect the peer with a clear reason
+      this.disconnectPeerWithReason(ws, peerAddress, `Version incompatibility: ${validation.message}`);
+      return;
+    }
+
+    logger.info('MESSAGE_HANDLER', `✅ Peer ${peerAddress} version validated successfully`);
+
+    // Log compatibility details
+    if (validation.peerFork) {
+      logger.debug('MESSAGE_HANDLER', `   Peer Fork Details: ${validation.peerFork.name} - ${validation.peerFork.description}`);
+    }
+
+    // CRITICAL: Add peer to validated set to allow blockchain operations
+    this.versionValidatedPeers.add(peerAddress);
+    logger.info('MESSAGE_HANDLER', `🎯 Peer ${peerAddress} added to validated peers - blockchain operations now ALLOWED`);
+    logger.debug('MESSAGE_HANDLER', `Total validated peers: ${this.versionValidatedPeers.size}`);
+  }
+
+  /**
+   * Clean up peer-related data when peer disconnects
+   * @param {string} peerAddress - Peer address to clean up
+   */
+  cleanupPeerData(peerAddress) {
+    logger.debug('MESSAGE_HANDLER', `🧹 Cleaning up data for disconnected peer ${peerAddress}`);
+
+    // Remove from validated peers
+    const wasValidated = this.versionValidatedPeers.delete(peerAddress);
+    if (wasValidated) {
+      logger.debug('MESSAGE_HANDLER', `Removed ${peerAddress} from validated peers list`);
+    }
+
+    // Clear version check timeout if still pending
+    const pendingCheck = this.pendingVersionChecks.get(peerAddress);
+    if (pendingCheck) {
+      if (pendingCheck.timeoutId) {
+        clearTimeout(pendingCheck.timeoutId);
+      }
+      this.pendingVersionChecks.delete(peerAddress);
+      logger.debug('MESSAGE_HANDLER', `Cleared pending version check for ${peerAddress}`);
+    }
+
+    // Clean up other peer-related data
+    this.peerMessageRates.delete(peerAddress);
+
+    logger.debug('MESSAGE_HANDLER', `✅ Cleanup completed for ${peerAddress}`);
+    logger.debug('MESSAGE_HANDLER', `Remaining validated peers: ${this.versionValidatedPeers.size}`);
+  }
+
+  /**
+   * Disconnect a peer with a specific reason and logging
+   * @param {WebSocket} ws - WebSocket connection
+   * @param {string} peerAddress - Peer address
+   * @param {string} reason - Disconnection reason
+   */
+  disconnectPeerWithReason(ws, peerAddress, reason) {
+    logger.warn('MESSAGE_HANDLER', `Disconnecting peer ${peerAddress}: ${reason}`);
+
+    // Send disconnection message if connection is still open
+    if (ws.readyState === 1) {
+      try {
+        const disconnectMessage = {
+          type: 'DISCONNECT',
+          data: {
+            reason: reason,
+            timestamp: Date.now()
+          }
+        };
+        this.sendMessage(ws, disconnectMessage);
+      } catch (error) {
+        logger.debug('MESSAGE_HANDLER', `Failed to send disconnect message to ${peerAddress}: ${error.message}`);
+      }
+
+      // Close the connection
+      setTimeout(() => {
+        if (ws.readyState === 1) {
+          ws.close(1000, reason);
+        }
+      }, 100); // Small delay to ensure message is sent
+    }
+
+    // Update peer reputation if available
+    if (this.peerReputation) {
+      this.peerReputation.updatePeerReputation(peerAddress, 'bad_behavior', { reason: reason });
+    }
+
+    // Clean up peer data (version validation, timeouts, etc.)
+    this.cleanupPeerData(peerAddress);
+  }
+
+  /**
+   * Initiate version check with a peer
+   * MANDATORY: Peer must respond within timeout or will be disconnected
+   * @param {WebSocket} ws - WebSocket connection
+   * @param {string} peerAddress - Peer address
+   */
+  initiateVersionCheck(ws, peerAddress) {
+    if (!this.forkManager) {
+      logger.warn('MESSAGE_HANDLER', 'ForkManager not available - skipping version check');
+      return;
+    }
+
+    logger.info('MESSAGE_HANDLER', `Initiating MANDATORY version check with ${peerAddress}`);
+
+    const ourVersionInfo = this.forkManager.getVersionInfo();
+    const message = {
+      type: 'VERSION_CHECK',
+      data: ourVersionInfo
+    };
+
+    // Set up timeout for version response - MANDATORY for all peers
+    const timeoutId = setTimeout(() => {
+      this.handleVersionCheckTimeout(peerAddress, ws);
+    }, this.versionCheckTimeout);
+
+    // Track pending version check
+    this.pendingVersionChecks.set(peerAddress, {
+      timestamp: Date.now(),
+      timeoutId,
+      ws
+    });
+
+    logger.debug('MESSAGE_HANDLER', `Version check timeout set: ${this.versionCheckTimeout}ms for ${peerAddress}`);
+    this.sendMessage(ws, message);
+  }
+
+  /**
+   * Handle version check timeout - disconnect non-compliant peers
+   * @param {string} peerAddress - Peer address that timed out
+   * @param {WebSocket} ws - WebSocket connection
+   */
+  handleVersionCheckTimeout(peerAddress, ws) {
+    if (this.pendingVersionChecks.has(peerAddress)) {
+      logger.error('MESSAGE_HANDLER', `VERSION CHECK TIMEOUT: Peer ${peerAddress} did not respond to version check`);
+      logger.error('MESSAGE_HANDLER', `DISCONNECTING: Peer lacks fork compatibility mechanism - connection rejected`);
+
+      // Clean up tracking
+      this.pendingVersionChecks.delete(peerAddress);
+
+      // Disconnect the non-compliant peer
+      this.disconnectPeerWithReason(ws, peerAddress, 'Version check timeout - fork compatibility required');
+    }
+  }
+
+  /**
+   * Clear version check timeout for a peer that responded
+   * @param {string} peerAddress - Peer address that responded
+   */
+  clearVersionCheckTimeout(peerAddress) {
+    const pendingCheck = this.pendingVersionChecks.get(peerAddress);
+    if (pendingCheck) {
+      logger.debug('MESSAGE_HANDLER', `✅ Clearing version check timeout for ${peerAddress}`);
+      clearTimeout(pendingCheck.timeoutId);
+      this.pendingVersionChecks.delete(peerAddress);
     }
   }
 

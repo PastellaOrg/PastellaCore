@@ -48,16 +48,19 @@ class P2PNetwork {
    * @param blockchain
    * @param port
    * @param config
+   * @param forkManager
    */
-  constructor(blockchain, port = 3001, config = null) {
+  constructor(blockchain, port = 3001, config = null, forkManager = null) {
     logger.debug('P2P_NETWORK', `Initializing P2P Network: port=${port}, config=${config ? 'present' : 'null'}`);
     logger.debug('P2P_NETWORK', `Blockchain instance: ${blockchain ? 'present' : 'null'}, type: ${typeof blockchain}`);
+    logger.debug('P2P_NETWORK', `ForkManager instance: ${forkManager ? 'present' : 'null'}`);
 
     this.blockchain = blockchain;
     this.port = port;
     this.wss = null;
     this.isRunning = false;
     this.config = config;
+    this.forkManager = forkManager;
 
     // Get data directory from config
     const dataDir = config?.storage?.dataDir || './data';
@@ -79,8 +82,8 @@ class P2PNetwork {
       this.peerDiscovery = new PeerDiscovery(config, dataDir, config?.network?.maxPeers || 20);
       logger.debug('P2P_NETWORK', `PeerDiscovery initialized: dataDir=${dataDir}, maxPeers=${config?.network?.maxPeers || 20}`);
 
-      this.messageHandler = new MessageHandler(blockchain, this.peerReputation, config);
-      logger.debug('P2P_NETWORK', `MessageHandler initialized with blockchain and peerReputation`);
+      this.messageHandler = new MessageHandler(blockchain, this.peerReputation, config, forkManager);
+      logger.debug('P2P_NETWORK', `MessageHandler initialized with blockchain, peerReputation, and forkManager`);
 
       // Connect MessageHandler and PeerDiscovery
       this.messageHandler.setPeerDiscovery(this.peerDiscovery);
@@ -531,6 +534,15 @@ class P2PNetwork {
 
     // Set up message handlers
     this.setupMessageHandlers(ws, addressForTracking);
+
+    // Initiate version check for outgoing connections
+    if (this.forkManager) {
+      setTimeout(() => {
+        this.messageHandler.initiateVersionCheck(ws, addressForTracking);
+      }, 1000); // 1 second delay to ensure connection is stable
+    } else {
+      logger.warn('P2P_NETWORK', 'ForkManager not available - skipping version check');
+    }
   }
 
   /**
@@ -617,6 +629,15 @@ class P2PNetwork {
 
     // Set up message handlers
     this.setupMessageHandlers(ws, addressForTracking);
+
+    // Initiate version check for new connections
+    if (this.forkManager) {
+      setTimeout(() => {
+        this.messageHandler.initiateVersionCheck(ws, addressForTracking);
+      }, 1000); // 1 second delay to ensure connection is stable
+    } else {
+      logger.warn('P2P_NETWORK', 'ForkManager not available - skipping version check');
+    }
   }
 
   /**
@@ -656,6 +677,11 @@ class P2PNetwork {
       this.authenticatedPeers.delete(peerAddress);
       this.pendingChallenges.delete(peerAddress);
       this.initiatedAuthentication.delete(peerAddress);
+
+      // Clean up MessageHandler peer data (version validation, timeouts, etc.)
+      if (this.messageHandler) {
+        this.messageHandler.cleanupPeerData(peerAddress);
+      }
 
       // Check if this was a seed node connection
       const wasSeedNode = this.seedNodeManager.markSeedNodeAsDisconnected(peerAddress);

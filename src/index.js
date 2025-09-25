@@ -7,6 +7,7 @@ const chalk = require('chalk');
 const APIServer = require('./api/APIServer');
 const Blockchain = require('./models/Blockchain');
 const P2PNetwork = require('./network/P2PNetwork');
+const ForkManager = require('./models/ForkManager');
 const logger = require('./utils/logger');
 const { fromAtomicUnits } = require('./utils/atomicUnits');
 
@@ -27,6 +28,7 @@ class PastellaDaemon {
    */
   constructor() {
     this.blockchain = new Blockchain('./data', config); // Pass config for memory limits
+    this.forkManager = new ForkManager(config);
     this.p2pNetwork = null;
     this.apiServer = null;
     this.isRunning = false;
@@ -87,6 +89,23 @@ class PastellaDaemon {
     const currentConfig = updatedConfig || config;
     // Display comprehensive intro
     this.displayIntro(currentConfig);
+
+    // Check fork version compatibility before proceeding
+    const networkParticipation = this.forkManager.checkNetworkParticipation();
+    if (!networkParticipation.canParticipate) {
+      logger.error('SYSTEM', '🚨 DAEMON STARTUP BLOCKED - INCOMPATIBLE VERSION');
+      logger.error('SYSTEM', `Reason: ${networkParticipation.blockReason}`);
+
+      if (networkParticipation.upgradeRequired) {
+        logger.error('SYSTEM', '');
+        logger.error('SYSTEM', '⚠️  DAEMON UPGRADE REQUIRED');
+        logger.error('SYSTEM', '   Your daemon version is too old to participate in the current network.');
+        logger.error('SYSTEM', '   Please update to a newer version to continue.');
+        logger.error('SYSTEM', '');
+      }
+
+      throw new Error(`Network participation blocked: ${networkParticipation.blockReason}`);
+    }
 
     // Ensure data directory exists
     if (!fs.existsSync(currentConfig.storage.dataDir)) {
@@ -153,7 +172,7 @@ class PastellaDaemon {
     // Initialize components
     logger.info('SYSTEM', 'Initializing system components...');
 
-    this.p2pNetwork = new P2PNetwork(this.blockchain, currentConfig.network.p2pPort, currentConfig);
+    this.p2pNetwork = new P2PNetwork(this.blockchain, currentConfig.network.p2pPort, currentConfig, this.forkManager);
     this.apiServer = new APIServer(this.blockchain, null, null, this.p2pNetwork, currentConfig.api.port, currentConfig, customApiKey);
 
     // Safe logging of blockchain height
