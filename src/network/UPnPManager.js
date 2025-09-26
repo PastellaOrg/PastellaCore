@@ -205,7 +205,7 @@ class UPnPManager {
       logger.info('UPNP', `Port mapping created successfully: ${this.externalPort} → ${this.internalPort}`);
 
     } catch (error) {
-      logger.error('UPNP', `Failed to create port mapping: ${error.message}`);
+      logger.warn('UPNP', `Failed to create port mapping: ${error.message}`);
       throw error;
     }
   }

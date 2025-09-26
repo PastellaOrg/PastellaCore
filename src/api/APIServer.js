@@ -1817,7 +1817,6 @@ class APIServer {
         const mismatchReasons = [];
         try {
           // Enhanced Merkle Root Validation - ALWAYS LOG FOR DEBUGGING
-          logger.info('API', `Starting merkle root validation for block ${blockObj.index}...`);
           const recomputedMerkle = blockObj.calculateMerkleRoot();
 
           // ALWAYS log transaction information for debugging
@@ -2035,9 +2034,6 @@ class APIServer {
           return res.status(400).json(errorResponse);
         }
         logger.debug('API', `Block ${blockObj.index} validation passed`);
-
-        // ALWAYS end the debug section after validation
-        logger.info('API', `=== END MERKLE ROOT VALIDATION DEBUG ===`);
 
         // Coinbase verification for submitted block
         logger.debug('API', `Starting coinbase verification for block ${blockObj.index}`);
@@ -2363,10 +2359,6 @@ class APIServer {
         response.suggestion =
           'Ensure that the merkle root in the submitted block matches the merkle root calculated from the actual transaction set in the block.';
       }
-
-      // ALWAYS end the debug section
-      logger.info('API', `=== END MERKLE ROOT VALIDATION DEBUG ===`);
-
       res.json(response);
     } catch (error) {
       logger.error('API', `Merkle root validation error: ${error.message}`);
