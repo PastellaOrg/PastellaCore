@@ -669,9 +669,8 @@ class MessageHandler {
       // Convert plain object to proper Block instance
       const newBlock = Block.fromJSON(message.data);
 
-      if (this.blockchain.addBlock(newBlock)) {
-        logger.info('MESSAGE_HANDLER', 'New block added from peer');
-
+      // FIXED: Network blocks should always use block's embedded difficulty
+      if (this.blockchain.addBlock(newBlock, false, true, false)) { // skipValidation=false, useBlockDifficulty=true, fastSyncMode=false
         // CRITICAL: Invalidate mempool transactions that are now in the block (Bitcoin-style)
         this.invalidateMempoolTransactions(newBlock);
 

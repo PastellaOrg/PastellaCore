@@ -539,6 +539,162 @@ class InputValidator {
       return null;
     }
   }
+
+  /**
+   * SECURE: Safe JSON parsing with validation and error handling
+   * @param {string} jsonString - JSON string to parse
+   * @param {object} options - Parsing options
+   * @returns {object|null} - Parsed object or null if invalid
+   */
+  static safeJsonParse(jsonString, options = {}) {
+    const {
+      maxSize = 50 * 1024 * 1024, // 50MB default limit
+      allowFunctions = false,
+      throwOnError = false
+    } = options;
+
+    try {
+      // Input validation
+      if (typeof jsonString !== 'string') {
+        if (throwOnError) throw new Error('Input must be a string');
+        return null;
+      }
+
+      // Size validation to prevent DoS
+      if (jsonString.length > maxSize) {
+        if (throwOnError) throw new Error(`JSON string too large: ${jsonString.length} > ${maxSize}`);
+        return null;
+      }
+
+      // Security check: prevent function execution
+      if (!allowFunctions && /\b(function|eval|constructor|prototype|__proto__)\b/i.test(jsonString)) {
+        if (throwOnError) throw new Error('JSON contains potentially dangerous content');
+        return null;
+      }
+
+      // Safe parsing
+      const parsed = JSON.parse(jsonString);
+
+      // Additional validation that it's a proper object/array
+      if (parsed === null || typeof parsed === 'undefined') {
+        if (throwOnError) throw new Error('Parsed JSON is null or undefined');
+        return null;
+      }
+
+      return parsed;
+    } catch (error) {
+      logger.error('VALIDATION', `Safe JSON parse error: ${error.message}`);
+      if (throwOnError) throw error;
+      return null;
+    }
+  }
+
+  /**
+   * SECURE: Safe integer parsing with validation
+   * @param {string|number} input - Input to parse as integer
+   * @param {object} options - Parsing options
+   * @returns {number|null} - Parsed integer or null if invalid
+   */
+  static safeParseInt(input, options = {}) {
+    const {
+      min = Number.MIN_SAFE_INTEGER,
+      max = Number.MAX_SAFE_INTEGER,
+      radix = 10,
+      throwOnError = false
+    } = options;
+
+    try {
+      // Handle null/undefined
+      if (input === null || input === undefined || input === '') {
+        if (throwOnError) throw new Error('Input is null, undefined, or empty');
+        return null;
+      }
+
+      // Convert to string for parsing
+      const stringInput = String(input).trim();
+
+      // Validate radix
+      if (radix < 2 || radix > 36) {
+        if (throwOnError) throw new Error(`Invalid radix: ${radix}`);
+        return null;
+      }
+
+      // Parse integer
+      const parsed = parseInt(stringInput, radix);
+
+      // Check if parsing was successful
+      if (isNaN(parsed)) {
+        if (throwOnError) throw new Error(`Cannot parse '${stringInput}' as integer`);
+        return null;
+      }
+
+      // Range validation
+      if (parsed < min || parsed > max) {
+        if (throwOnError) throw new Error(`Parsed integer ${parsed} out of range [${min}, ${max}]`);
+        return null;
+      }
+
+      return parsed;
+    } catch (error) {
+      logger.error('VALIDATION', `Safe parseInt error: ${error.message}`);
+      if (throwOnError) throw error;
+      return null;
+    }
+  }
+
+  /**
+   * SECURE: Safe float parsing with validation
+   * @param {string|number} input - Input to parse as float
+   * @param {object} options - Parsing options
+   * @returns {number|null} - Parsed float or null if invalid
+   */
+  static safeParseFloat(input, options = {}) {
+    const {
+      min = Number.MIN_VALUE,
+      max = Number.MAX_VALUE,
+      allowInfinity = false,
+      allowNaN = false,
+      throwOnError = false
+    } = options;
+
+    try {
+      // Handle null/undefined
+      if (input === null || input === undefined || input === '') {
+        if (throwOnError) throw new Error('Input is null, undefined, or empty');
+        return null;
+      }
+
+      // Convert to string for parsing
+      const stringInput = String(input).trim();
+
+      // Parse float
+      const parsed = parseFloat(stringInput);
+
+      // Check if parsing was successful
+      if (isNaN(parsed) && !allowNaN) {
+        if (throwOnError) throw new Error(`Cannot parse '${stringInput}' as float`);
+        return null;
+      }
+
+      // Check for infinity
+      if (!isFinite(parsed) && !allowInfinity) {
+        if (throwOnError) throw new Error(`Parsed float is not finite: ${parsed}`);
+        return null;
+      }
+
+      // Range validation (only if finite)
+      if (isFinite(parsed) && (parsed < min || parsed > max)) {
+        if (throwOnError) throw new Error(`Parsed float ${parsed} out of range [${min}, ${max}]`);
+        return null;
+      }
+
+      return parsed;
+    } catch (error) {
+      logger.error('VALIDATION', `Safe parseFloat error: ${error.message}`);
+      if (throwOnError) throw error;
+      return null;
+    }
+  }
 }
 
 module.exports = InputValidator;

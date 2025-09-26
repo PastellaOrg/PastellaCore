@@ -76,7 +76,24 @@ class Blockchain {
     this.historicalTransactions = new Map(); // Key: "nonce:senderAddress", Value: {txId, blockHeight, timestamp}
     this.historicalTransactionIds = new Set(); // Track all transaction IDs ever processed
 
+    // CRITICAL: Temporary transaction buffer for unsaved blocks (prevents replay attack gaps)
+    this.unsavedTransactions = new Map(); // Key: "nonce:senderAddress", Value: {txId, blockHeight, timestamp}
+    this.unsavedTransactionIds = new Set(); // Track transaction IDs in unsaved blocks
+    this.unsavedGlobalNonceUsage = new Map(); // Track nonce usage for unsaved blocks
+    this.lastSavedBlockHeight = -1; // Track last saved block height
+
     // CRITICAL: Nonce collision detection and tracking
+
+    // SYNC PROGRESS TRACKING
+    this.syncStatus = {
+      isSyncing: false,
+      syncStartTime: null,
+      syncStartHeight: 0,
+      lastSyncUpdate: null,
+      expectedHeight: 0, // Estimated final height based on peer info
+      syncSpeed: 0, // Blocks per second
+      recentBlockTimes: [], // Track recent block addition times for speed calculation
+    };
 
     // CRITICAL: Consensus protection state
     this.blockAcceptancePaused = false;
@@ -280,9 +297,15 @@ class Blockchain {
    * @param useBlockDifficulty - If true, use the block's embedded difficulty for validation instead of global difficulty
    */
   addBlock(block, skipValidation = false, useBlockDifficulty = false, fastSyncMode = false) {
+    // SYNC DETECTION: useBlockDifficulty=true means syncing from network
+    const isSyncingFromNetwork = useBlockDifficulty;
+
+    // Update sync status tracking
+    this.updateSyncStatus(block, isSyncingFromNetwork, fastSyncMode);
+
     logger.debug(
       'BLOCKCHAIN',
-      `Adding block to chain: index=${block.index}, hash=${block.hash?.substring(0, 16)}..., previousHash=${block.previousHash?.substring(0, 16)}..., skipValidation=${skipValidation}, useBlockDifficulty=${useBlockDifficulty}, fastSyncMode=${fastSyncMode}`
+      `Adding block to chain: index=${block.index}, hash=${block.hash?.substring(0, 16)}..., previousHash=${block.previousHash?.substring(0, 16)}..., skipValidation=${skipValidation}, useBlockDifficulty=${useBlockDifficulty}, fastSyncMode=${fastSyncMode}, syncMode=${isSyncingFromNetwork ? 'NETWORK' : 'MINING'}`
     );
     logger.debug(
       'BLOCKCHAIN',
@@ -305,12 +328,20 @@ class Blockchain {
           const expectedDifficulty = useBlockDifficulty ? block.difficulty : this.difficulty;
           logger.debug('BLOCKCHAIN', `Difficulty validation: useBlockDifficulty=${useBlockDifficulty}, expectedDifficulty=${expectedDifficulty}, blockDifficulty=${block.difficulty}, globalDifficulty=${this.difficulty}`);
 
+          // FIXED: Only enforce strict difficulty matching for locally mined blocks
+          // Blocks from network (sync or new blocks from peers) should use their embedded difficulty
           if (!useBlockDifficulty && block.difficulty !== expectedDifficulty) {
+            // This is a locally mined block that doesn't match our current difficulty
             logger.error(
               'BLOCKCHAIN',
-              `Block ${block.index} rejected: difficulty mismatch (block=${block.difficulty}, expected=${expectedDifficulty})`
+              `Block ${block.index} rejected: locally mined block difficulty mismatch (block=${block.difficulty}, expected=${expectedDifficulty})`
             );
             return false;
+          }
+
+          // For network blocks, always use the block's embedded difficulty for hash validation
+          if (useBlockDifficulty) {
+            logger.debug('BLOCKCHAIN', `Using embedded block difficulty ${block.difficulty} for network block validation`);
           }
 
           // Verify hash meets the expected difficulty (block's own difficulty when syncing, or current network difficulty when mining)
@@ -359,25 +390,30 @@ class Blockchain {
       // Add block to chain
       this.chain.push(block);
 
-      // Skip expensive operations during fast sync mode
+      // CRITICAL: Update UTXO set BEFORE historical database to prevent race condition double-spend attacks
+      this.utxoManager.updateUTXOSet(block);
+
+      // Process contract transactions in the block (CRITICAL for security)
+      this.processContractTransactions(block);
+
+      // Add transactions to historical database for replay attack protection (CRITICAL)
+      this.addTransactionsToHistoricalDatabase(block);
+
+      // Only skip non-critical performance operations in fast sync mode
       if (!fastSyncMode) {
-        // CRITICAL: Update UTXO set BEFORE historical database to prevent race condition double-spend attacks
-        this.utxoManager.updateUTXOSet(block);
-
-        // Process contract transactions in the block
-        this.processContractTransactions(block);
-
-        // Add transactions to historical database for replay attack protection (after UTXO update)
-        this.addTransactionsToHistoricalDatabase(block);
-
-        // Remove transactions from pending pool
+        // Remove transactions from pending pool (performance optimization)
         this.memoryPool.removeTransactions(block.transactions);
-
-        // Adjust difficulty
+        // Adjust difficulty (can be deferred in fast sync)
         this.adjustDifficulty();
       }
 
-      logger.info('BLOCKCHAIN', `Block ${block.index} added to chain successfully. Hash: ${block.hash}`);
+      // Enhanced logging with sync progress
+      const progressInfo = this.getSyncProgressInfo();
+      if (isSyncingFromNetwork) {
+        logger.info('BLOCKCHAIN', `[SYNC] Block ${block.index} added to chain successfully. Hash: ${block.hash} ${progressInfo}`);
+      } else {
+        logger.info('BLOCKCHAIN', `[MINING] Block ${block.index} added to chain successfully. Hash: ${block.hash}`);
+      }
       return true;
     } catch (error) {
       logger.error('BLOCKCHAIN', `Error adding block ${block.index}: ${error.message}`);
@@ -476,51 +512,61 @@ class Blockchain {
         if (senderAddress) {
           const key = `${transaction.nonce}:${senderAddress}`;
 
-          // Store transaction info
-          this.historicalTransactions.set(key, {
+          // Store transaction info in both permanent and temporary storage
+          const transactionInfo = {
             txId: transaction.id,
             blockHeight: block.index,
             timestamp: transaction.timestamp,
             nonce: transaction.nonce,
             senderAddress,
-          });
+          };
 
-          // CRITICAL: Track nonce usage for collision detection
-          const currentUsage = this.globalNonceUsage.get(transaction.nonce) || 0;
-          this.globalNonceUsage.set(transaction.nonce, currentUsage + 1);
+          // CRITICAL: Only process NEW transactions to avoid false collision alerts during sync
+          const isNewTransaction = !this.historicalTransactionIds.has(transaction.id) && !this.unsavedTransactionIds.has(transaction.id);
 
-          // Log potential nonce collision attacks
-          if (currentUsage + 1 > this.nonceCollisionThreshold) {
-            logger.warn(
-              'BLOCKCHAIN',
-              `🚨 NONCE COLLISION ATTACK DETECTED: Nonce ${transaction.nonce} used ${currentUsage + 1} times (threshold: ${this.nonceCollisionThreshold})`
-            );
-          } else if (currentUsage + 1 > 10) {
+          if (isNewTransaction) {
+            // Add to permanent historical database
+            this.historicalTransactions.set(key, transactionInfo);
+
+            // CRITICAL: Add to temporary unsaved buffer for blocks not yet saved to disk
+            if (block.index > this.lastSavedBlockHeight) {
+              this.unsavedTransactions.set(key, transactionInfo);
+              this.unsavedTransactionIds.add(transaction.id);
+
+              // Track nonce usage in unsaved buffer
+              const unsavedUsage = this.unsavedGlobalNonceUsage.get(transaction.nonce) || 0;
+              this.unsavedGlobalNonceUsage.set(transaction.nonce, unsavedUsage + 1);
+            }
+
+            // CRITICAL: Track nonce usage for collision detection
+            const currentUsage = this.globalNonceUsage.get(transaction.nonce) || 0;
+            this.globalNonceUsage.set(transaction.nonce, currentUsage + 1);
+
+            // Log potential nonce collision attacks
+            if (currentUsage + 1 > this.nonceCollisionThreshold) {
+              logger.warn(
+                'BLOCKCHAIN',
+                `🚨 NONCE COLLISION ATTACK DETECTED: Nonce ${transaction.nonce} used ${currentUsage + 1} times (threshold: ${this.nonceCollisionThreshold})`
+              );
+            } else if (currentUsage + 1 > 10) {
+              logger.debug(
+                'BLOCKCHAIN',
+                `Nonce collision warning: Nonce ${transaction.nonce} used ${currentUsage + 1} times`
+              );
+            }
+            // Add transaction ID to tracking
+            this.historicalTransactionIds.add(transaction.id);
             logger.debug(
               'BLOCKCHAIN',
-              `Nonce collision warning: Nonce ${transaction.nonce} used ${currentUsage + 1} times`
+              `Added NEW transaction ${transaction.id} to historical database with nonce ${transaction.nonce} from ${senderAddress} (block ${block.index})`
+            );
+          } else {
+            // Transaction already exists - this is normal during blockchain sync/re-processing
+            logger.debug(
+              'BLOCKCHAIN',
+              `Transaction ${transaction.id} already tracked - normal during sync (block ${block.index})`
             );
           }
-
-          // CRITICAL: Transaction ID collision detection
-          if (this.historicalTransactionIds.has(transaction.id)) {
-            logger.error(
-              'BLOCKCHAIN',
-              `🚨 TRANSACTION ID COLLISION DETECTED! Transaction ID ${transaction.id} already exists in blockchain`
-            );
-            logger.error(
-              'BLOCKCHAIN',
-              `Transaction ID collision detected: ${transaction.id}`
-            );
-          }
-
-          // Also track by transaction ID for duplicate detection
-          this.historicalTransactionIds.add(transaction.id);
-
-          logger.debug(
-            'BLOCKCHAIN',
-            `Added transaction ${transaction.id} to historical database with nonce ${transaction.nonce} from ${senderAddress}`
-          );
         }
       }
     });
@@ -594,9 +640,9 @@ class Blockchain {
       return true; // Reject transactions without nonce
     }
 
-    // Check if transaction ID already exists in historical database
-    if (this.historicalTransactionIds.has(transaction.id)) {
-      logger.warn('BLOCKCHAIN', `Replay attack detected: Transaction ${transaction.id} already exists in blockchain`);
+    // CRITICAL: Check if transaction ID already exists in historical database OR unsaved buffer
+    if (this.historicalTransactionIds.has(transaction.id) || this.unsavedTransactionIds.has(transaction.id)) {
+      logger.warn('BLOCKCHAIN', `Replay attack detected: Transaction ${transaction.id} already exists in blockchain (saved or unsaved)`);
       return true;
     }
 
@@ -609,7 +655,8 @@ class Blockchain {
     }
 
     const key = `${transaction.nonce}:${senderAddress}`;
-    const existing = this.historicalTransactions.get(key);
+    // CRITICAL: Check both saved historical transactions AND unsaved buffer
+    const existing = this.historicalTransactions.get(key) || this.unsavedTransactions.get(key);
 
     if (existing) {
       logger.warn(
@@ -620,11 +667,15 @@ class Blockchain {
     }
 
     // CRITICAL: Check for nonce collision attacks (same nonce used by too many different senders)
+    // Include both saved and unsaved nonce usage
     const globalUsage = this.globalNonceUsage.get(transaction.nonce) || 0;
-    if (globalUsage >= this.nonceCollisionThreshold) {
+    const unsavedUsage = this.unsavedGlobalNonceUsage.get(transaction.nonce) || 0;
+    const totalUsage = globalUsage + unsavedUsage;
+
+    if (totalUsage >= this.nonceCollisionThreshold) {
       logger.error(
         'BLOCKCHAIN',
-        `🚨 NONCE COLLISION ATTACK: Transaction ${transaction.id} rejected - nonce ${transaction.nonce} already used ${globalUsage} times (threshold: ${this.nonceCollisionThreshold})`
+        `🚨 NONCE COLLISION ATTACK: Transaction ${transaction.id} rejected - nonce ${transaction.nonce} already used ${totalUsage} times (saved: ${globalUsage}, unsaved: ${unsavedUsage}, threshold: ${this.nonceCollisionThreshold})`
       );
       return true; // Treat as replay attack to reject transaction
     }
@@ -1257,10 +1308,11 @@ class Blockchain {
       };
 
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-      logger.info(
-        'BLOCKCHAIN',
-        `Blockchain saved to file with ${this.chain.length} blocks and ${this.historicalTransactions.size} historical transactions`
-      );
+
+      // CRITICAL: After successful save, clear unsaved buffer and update last saved block height
+      this.lastSavedBlockHeight = this.chain.length - 1;
+      this.clearUnsavedBuffer();
+      
       return true;
     } catch (error) {
       logger.error('BLOCKCHAIN', `Failed to save blockchain: ${error.message}`);
@@ -1603,10 +1655,14 @@ class Blockchain {
         logger.debug('BLOCKCHAIN', `Rebuilding UTXO set from ${this.chain.length} validated blocks`);
         this.utxoManager.rebuildUTXOSet(this.chain);
 
+        // CRITICAL: Set last saved block height to current chain length since we just loaded from file
+        this.lastSavedBlockHeight = this.chain.length - 1;
+        this.clearUnsavedBuffer(); // Ensure unsaved buffer is clean
+
         logger.info('BLOCKCHAIN', `Blockchain loaded from file with ${this.chain.length} blocks`);
         logger.debug(
           'BLOCKCHAIN',
-          `Final blockchain state: chain.length=${this.chain.length}, difficulty=${this.difficulty}, miningReward=${this.miningReward}`
+          `Final blockchain state: chain.length=${this.chain.length}, difficulty=${this.difficulty}, miningReward=${this.miningReward}, lastSavedBlock=${this.lastSavedBlockHeight}`
         );
         return true;
       }
@@ -1618,6 +1674,129 @@ class Blockchain {
       logger.error('BLOCKCHAIN', `File path: ${filePath}`);
       return false;
     }
+  }
+
+  /**
+   * CRITICAL: Clear unsaved transaction buffer after successful save
+   */
+  clearUnsavedBuffer() {
+    const unsavedCount = this.unsavedTransactions.size;
+    this.unsavedTransactions.clear();
+    this.unsavedTransactionIds.clear();
+    this.unsavedGlobalNonceUsage.clear();
+
+    if (unsavedCount > 0) {
+      logger.debug('BLOCKCHAIN', `Cleared unsaved transaction buffer with ${unsavedCount} transactions`);
+    }
+  }
+
+  /**
+   * CRITICAL: Get unsaved buffer statistics for monitoring
+   */
+  getUnsavedBufferStats() {
+    return {
+      unsavedTransactionCount: this.unsavedTransactions.size,
+      unsavedTransactionIdCount: this.unsavedTransactionIds.size,
+      unsavedNonceCount: this.unsavedGlobalNonceUsage.size,
+      lastSavedBlockHeight: this.lastSavedBlockHeight,
+      currentBlockHeight: this.chain.length - 1,
+      blocksUnsaved: Math.max(0, (this.chain.length - 1) - this.lastSavedBlockHeight),
+    };
+  }
+
+  /**
+   * Update sync status tracking for progress monitoring
+   * @param {Block} block - Block being added
+   * @param {boolean} isSyncingFromNetwork - True if syncing from network
+   * @param {boolean} fastSyncMode - True if in fast sync mode
+   */
+  updateSyncStatus(block, isSyncingFromNetwork, fastSyncMode) {
+    const currentTime = Date.now();
+
+    if (isSyncingFromNetwork) {
+      // Start sync tracking if not already syncing
+      if (!this.syncStatus.isSyncing) {
+        this.syncStatus.isSyncing = true;
+        this.syncStatus.syncStartTime = currentTime;
+        this.syncStatus.syncStartHeight = this.chain.length;
+        this.syncStatus.recentBlockTimes = [];
+        logger.info('BLOCKCHAIN', '🔄 Network synchronization started...');
+      }
+
+      // Track recent block addition times for speed calculation
+      this.syncStatus.recentBlockTimes.push(currentTime);
+      if (this.syncStatus.recentBlockTimes.length > 20) {
+        this.syncStatus.recentBlockTimes.shift(); // Keep only last 20 for speed calculation
+      }
+
+      // Calculate sync speed (blocks per second)
+      if (this.syncStatus.recentBlockTimes.length >= 2) {
+        const timeSpan = currentTime - this.syncStatus.recentBlockTimes[0];
+        const blockCount = this.syncStatus.recentBlockTimes.length - 1;
+        this.syncStatus.syncSpeed = (blockCount / (timeSpan / 1000)).toFixed(2);
+      }
+
+      this.syncStatus.lastSyncUpdate = currentTime;
+    } else {
+      // Stop sync tracking if we were syncing (switched to mining)
+      if (this.syncStatus.isSyncing) {
+        this.syncStatus.isSyncing = false;
+        const syncDuration = currentTime - this.syncStatus.syncStartTime;
+        const blocksAdded = this.chain.length - this.syncStatus.syncStartHeight;
+        logger.info('BLOCKCHAIN', `✅ Network synchronization completed! Added ${blocksAdded} blocks in ${(syncDuration / 1000).toFixed(1)}s`);
+      }
+    }
+  }
+
+  /**
+   * Get sync progress information for logging
+   * @returns {string} Progress information string
+   */
+  getSyncProgressInfo() {
+    if (!this.syncStatus.isSyncing) {
+      return '';
+    }
+
+    const currentHeight = this.chain.length;
+    let progressStr = `(Top Height: ${currentHeight}`;
+
+    // Add estimated progress if we know expected height
+    if (this.syncStatus.expectedHeight > 0 && this.syncStatus.expectedHeight > currentHeight) {
+      const progress = ((currentHeight / this.syncStatus.expectedHeight) * 100).toFixed(1);
+      progressStr += `, Progress: ${progress}%`;
+    }
+
+    progressStr += ')';
+    return progressStr;
+  }
+
+  /**
+   * Set expected blockchain height for progress calculation
+   * @param {number} expectedHeight - Expected final height from peers
+   */
+  setExpectedHeight(expectedHeight) {
+    if (expectedHeight > this.chain.length) {
+      this.syncStatus.expectedHeight = expectedHeight;
+      logger.info('BLOCKCHAIN', `📊 Expected blockchain height set to ${expectedHeight} (current: ${this.chain.length})`);
+    }
+  }
+
+  /**
+   * Get comprehensive sync status
+   * @returns {Object} Sync status information
+   */
+  getSyncStatus() {
+    return {
+      isSyncing: this.syncStatus.isSyncing,
+      currentHeight: this.chain.length,
+      expectedHeight: this.syncStatus.expectedHeight,
+      syncSpeed: this.syncStatus.syncSpeed,
+      syncProgress: this.syncStatus.expectedHeight > 0 ?
+        ((this.chain.length / this.syncStatus.expectedHeight) * 100).toFixed(1) : 0,
+      blocksRemaining: Math.max(0, this.syncStatus.expectedHeight - this.chain.length),
+      syncStartTime: this.syncStatus.syncStartTime,
+      lastSyncUpdate: this.syncStatus.lastSyncUpdate,
+    };
   }
 
   /**
@@ -1773,6 +1952,8 @@ class Blockchain {
     this.blockTime = 60000;
     this.historicalTransactions.clear();
     this.historicalTransactionIds.clear();
+    this.clearUnsavedBuffer(); // Clear unsaved transaction buffer
+    this.lastSavedBlockHeight = -1; // Reset last saved block height
     this.utxoManager.clearUTXOs();
     this.memoryPool.clear();
     this.spamProtection.reset();

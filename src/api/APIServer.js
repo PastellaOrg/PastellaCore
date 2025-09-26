@@ -2098,8 +2098,9 @@ class APIServer {
       logger.debug('API', `Block ${blockObj.index} is not a duplicate`);
 
       // Add block to blockchain
+      // FIXED: API submitted blocks should use embedded difficulty (could be from remote miners/pools)
       logger.debug('API', `Adding block ${blockObj.index} to blockchain`);
-      const addResult = this.blockchain.addBlock(blockObj);
+      const addResult = this.blockchain.addBlock(blockObj, false, true, false); // skipValidation=false, useBlockDifficulty=true, fastSyncMode=false
       logger.debug('API', `Blockchain addBlock result: ${addResult}`);
 
       if (addResult) {

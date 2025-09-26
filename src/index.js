@@ -11,6 +11,7 @@ const ForkManager = require('./models/ForkManager');
 const MonitorServer = require('./monitor/MonitorServer');
 const logger = require('./utils/logger');
 const { fromAtomicUnits } = require('./utils/atomicUnits');
+const InputValidator = require('./utils/validation');
 
 // Import core modules
 
@@ -580,8 +581,13 @@ class PastellaDaemon {
         const seedPort = seedUrl.split(':')[1];
 
         // Check if this is the current node
+        const parsedSeedPort = InputValidator.safeParseInt(seedPort, {
+          min: 1,
+          max: 65535,
+          throwOnError: false
+        });
         const isCurrentNode =
-          (seedHost === 'localhost' || seedHost === '127.0.0.1') && parseInt(seedPort) === networkStatus.port;
+          (seedHost === 'localhost' || seedHost === '127.0.0.1') && parsedSeedPort === networkStatus.port;
 
         if (isCurrentNode) {
           // This is the current node
@@ -940,7 +946,13 @@ async function performFastDownloadSync(config, customHost = null) {
           // Verify it's valid JSON
           try {
             const content = fs.readFileSync(outputPath, 'utf8');
-            JSON.parse(content);
+            const parsed = InputValidator.safeJsonParse(content, {
+              maxSize: 100 * 1024 * 1024, // 100MB limit for blockchain files
+              throwOnError: true
+            });
+            if (!parsed) {
+              throw new Error('Failed to parse blockchain JSON');
+            }
             logger.info('FAST_SYNC', '✅ Blockchain file validation successful');
             return;
           } catch (parseError) {
@@ -1117,10 +1129,19 @@ async function main() {
 
         // Get user input
         const premineAddress = await question(chalk.cyan('🏦 Premine Address: '));
-        const premineAmount = parseFloat(await question(chalk.cyan('💰 Premine Amount (PAS): '))) * 100000000; // Convert to atomic units
-        const difficulty = parseInt(
-          await question(chalk.cyan('⚡ Mining Difficulty (100-10000000, recommended: 1000): '))
-        );
+        const premineAmountInput = await question(chalk.cyan('💰 Premine Amount (PAS): '));
+        const premineAmount = InputValidator.safeParseFloat(premineAmountInput, {
+          min: 0,
+          max: 1000000000, // 1 billion PAS max
+          throwOnError: true
+        }) * 100000000; // Convert to atomic units
+
+        const difficultyInput = await question(chalk.cyan('⚡ Mining Difficulty (100-10000000, recommended: 1000): '));
+        const difficulty = InputValidator.safeParseInt(difficultyInput, {
+          min: 100,
+          max: 10000000,
+          throwOnError: true
+        });
         const timestamp = await question(
           chalk.cyan('🕐 Genesis Timestamp (Unix timestamp, or press Enter for current time): ')
         );
@@ -1139,8 +1160,14 @@ async function main() {
         }
 
         // Use current timestamp if not provided
-        const genesisTimestamp = timestamp.trim() === '' ? Date.now() : parseInt(timestamp);
-        if (isNaN(genesisTimestamp) || genesisTimestamp <= 0) {
+        const genesisTimestamp = timestamp.trim() === '' ? Date.now() :
+          InputValidator.safeParseInt(timestamp.trim(), {
+            min: 1,
+            max: Date.now() + (365 * 24 * 60 * 60 * 1000), // Max 1 year in future
+            throwOnError: true
+          });
+
+        if (!genesisTimestamp || genesisTimestamp <= 0) {
           throw new Error('Invalid timestamp');
         }
 
@@ -1458,7 +1485,11 @@ async function main() {
   // Parse configurable values
   const apiPort = parseArgValue('--api-port');
   if (apiPort) {
-    const port = parseInt(apiPort);
+    const port = InputValidator.safeParseInt(apiPort, {
+      min: 1,
+      max: 65535,
+      throwOnError: false
+    }) || 22000;
     if (isNaN(port) || port < 1 || port > 65535) {
       logger.error('SYSTEM', 'Invalid API port. Must be between 1 and 65535.');
       process.exit(1);
@@ -1468,7 +1499,11 @@ async function main() {
 
   const p2pPort = parseArgValue('--p2p-port');
   if (p2pPort) {
-    const port = parseInt(p2pPort);
+    const port = InputValidator.safeParseInt(p2pPort, {
+      min: 1,
+      max: 65535,
+      throwOnError: false
+    }) || 23000;
     if (isNaN(port) || port < 1 || port > 65535) {
       logger.error('SYSTEM', 'Invalid P2P port. Must be between 1 and 65535.');
       process.exit(1);
@@ -1556,7 +1591,11 @@ async function main() {
   let monitorPort = 24000; // default port
 
   if (monitorPortArg) {
-    const port = parseInt(monitorPortArg);
+    const port = InputValidator.safeParseInt(monitorPortArg, {
+      min: 1,
+      max: 65535,
+      throwOnError: false
+    }) || 24000;
     if (isNaN(port) || port < 1 || port > 65535) {
       logger.error('SYSTEM', `Invalid monitor port: ${monitorPortArg}. Must be between 1-65535.`);
       process.exit(1);
