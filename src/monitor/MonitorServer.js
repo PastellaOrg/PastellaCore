@@ -17,7 +17,7 @@ const MiningService = require('./services/MiningService');
 // const WalletService = require('./services/WalletService');
 // const APIService = require('./services/APIService');
 // const PerformanceService = require('./services/PerformanceService');
-// const SecurityService = require('./services/SecurityService');
+const SecurityService = require('./services/SecurityService');
 // const LogService = require('./services/LogService');
 // const ConfigService = require('./services/ConfigService');
 // const ControlService = require('./services/ControlService');
@@ -108,13 +108,13 @@ class MonitorServer {
       blockchain: new BlockchainService(this.daemon),
       network: new NetworkService(this.daemon),
       transaction: new TransactionService(this.daemon),
-      mining: new MiningService(this.daemon)
+      mining: new MiningService(this.daemon),
       // Additional services will be initialized as they are implemented
       // utxo: new UTXOService(this.daemon),
       // wallet: new WalletService(this.daemon),
       // api: new APIService(this.daemon),
       // performance: new PerformanceService(this.daemon),
-      // security: new SecurityService(this.daemon),
+      security: new SecurityService(this.daemon),
       // log: new LogService(this.daemon),
       // config: new ConfigService(this.daemon),
       // control: new ControlService(this.daemon),
@@ -290,6 +290,66 @@ class MonitorServer {
       }
     });
 
+    // Memory Pool Status endpoint
+    this.app.get('/api/mempool/status', (req, res) => {
+      try {
+        const status = this.services.transaction.getMempoolStatus();
+        res.json(status);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Memory Pool Transactions endpoint
+    this.app.get('/api/mempool/transactions', (req, res) => {
+      try {
+        const limit = parseInt(req.query.limit) || 30;
+        const offset = parseInt(req.query.offset) || 0;
+        const sortBy = req.query.sortBy || 'fee';
+        const type = req.query.type || null;
+
+        const pendingTransactions = this.services.transaction.getPendingTransactions();
+
+        // Filter by type if specified
+        let filteredTransactions = type ?
+          pendingTransactions.filter(tx => tx.type === type || tx.tag === type) :
+          pendingTransactions;
+
+        // Sort transactions
+        switch (sortBy) {
+          case 'fee':
+            filteredTransactions.sort((a, b) => (b.fee || 0) - (a.fee || 0));
+            break;
+          case 'time':
+            filteredTransactions.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            break;
+          case 'size':
+            filteredTransactions.sort((a, b) => (b.size || 0) - (a.size || 0));
+            break;
+          case 'type':
+            filteredTransactions.sort((a, b) => (a.type || a.tag || '').localeCompare(b.type || b.tag || ''));
+            break;
+        }
+
+        // Apply pagination
+        const total = filteredTransactions.length;
+        const transactions = filteredTransactions.slice(offset, offset + limit);
+
+        res.json({
+          transactions,
+          pagination: {
+            total,
+            limit,
+            offset,
+            hasNext: offset + limit < total,
+            hasPrevious: offset > 0
+          }
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
     this.app.get('/api/transactions/recent', (req, res) => {
       try {
         const limit = parseInt(req.query.limit) || 20;
@@ -304,6 +364,104 @@ class MonitorServer {
       try {
         const details = this.services.transaction.getTransactionDetails(req.params.id);
         res.json({ transaction: details, timestamp: new Date().toISOString() });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/transactions/search', (req, res) => {
+      try {
+        const query = req.query.q || '';
+        const options = {
+          type: req.query.type || null,
+          limit: parseInt(req.query.limit) || 50,
+          offset: parseInt(req.query.offset) || 0,
+          fromDate: req.query.fromDate || null,
+          toDate: req.query.toDate || null,
+          minAmount: req.query.minAmount ? parseFloat(req.query.minAmount) : null,
+          maxAmount: req.query.maxAmount ? parseFloat(req.query.maxAmount) : null
+        };
+        const searchResult = this.services.transaction.searchTransactions(query, options);
+
+        // Structure response to match frontend expectations
+        res.json({
+          success: true,
+          data: {
+            transactions: searchResult.results,
+            pagination: {
+              total: searchResult.total,
+              limit: searchResult.limit,
+              offset: searchResult.offset,
+              hasPrevious: searchResult.offset > 0,
+              hasNext: searchResult.hasMore
+            }
+          },
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/transactions/details/:id', (req, res) => {
+      try {
+        const transactionId = req.params.id;
+        const details = this.services.transaction.getTransactionDetails(transactionId);
+
+        if (!details) {
+          return res.status(404).json({
+            success: false,
+            error: 'Transaction not found'
+          });
+        }
+
+        res.json({
+          success: true,
+          data: details,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+    });
+
+    this.app.get('/api/transactions/statistics', (req, res) => {
+      try {
+        const stats = this.services.transaction.getTransactionStatistics();
+        res.json({
+          success: true,
+          data: stats,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/transactions/fee-analysis', (req, res) => {
+      try {
+        const analysis = this.services.transaction.getFeeAnalysis();
+        res.json({
+          success: true,
+          data: analysis,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/transactions/queue-analytics', (req, res) => {
+      try {
+        const analytics = this.services.transaction.getQueueAnalytics();
+        res.json({
+          success: true,
+          data: analytics,
+          timestamp: new Date().toISOString()
+        });
       } catch (error) {
         res.status(500).json({ error: error.message });
       }
@@ -407,6 +565,111 @@ class MonitorServer {
         res.json({
           success: true,
           message: 'Node shutdown scheduled',
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Security monitoring endpoints
+    this.app.get('/api/security/dashboard', (req, res) => {
+      try {
+        const securityData = this.services.security.getSecurityDashboard();
+        res.json({
+          success: true,
+          data: securityData,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/security/attacks', (req, res) => {
+      try {
+        const attacks = this.services.security.detectNetworkAttacks();
+        res.json({
+          success: true,
+          data: attacks,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/security/peers', (req, res) => {
+      try {
+        const peerAnalysis = this.services.security.analyzePeerBehavior();
+        res.json({
+          success: true,
+          data: peerAnalysis,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/security/transactions', (req, res) => {
+      try {
+        const transactionThreats = this.services.security.detectTransactionThreats();
+        res.json({
+          success: true,
+          data: transactionThreats,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/security/mining', (req, res) => {
+      try {
+        const miningAttacks = this.services.security.detectMiningAttacks();
+        res.json({
+          success: true,
+          data: miningAttacks,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/security/consensus', (req, res) => {
+      try {
+        const consensusAnomalies = this.services.security.detectConsensusAnomalies();
+        res.json({
+          success: true,
+          data: consensusAnomalies,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/security/resources', (req, res) => {
+      try {
+        const resourceStatus = this.services.security.getResourceAbuseStatus();
+        res.json({
+          success: true,
+          data: resourceStatus,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.get('/api/security/rate-limiting', (req, res) => {
+      try {
+        const rateLimitingStatus = this.services.security.getRateLimitingStatus();
+        res.json({
+          success: true,
+          data: rateLimitingStatus,
           timestamp: new Date().toISOString()
         });
       } catch (error) {
