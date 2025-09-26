@@ -1,4 +1,5 @@
 const logger = require('./logger');
+const crypto = require('crypto');
 
 /**
  * Authentication utilities for API key validation
@@ -11,6 +12,35 @@ class AuthMiddleware {
   constructor(apiKey = null) {
     this.apiKey = apiKey;
     this.enabled = !!apiKey;
+  }
+
+  /**
+   * SECURE: Constant-time string comparison to prevent timing attacks
+   * @param {string} provided - Provided API key
+   * @param {string} expected - Expected API key
+   * @returns {boolean} - True if keys match
+   */
+  secureCompare(provided, expected) {
+    if (!provided || !expected) {
+      return false;
+    }
+
+    // Ensure both strings are the same length to prevent length-based timing attacks
+    if (provided.length !== expected.length) {
+      return false;
+    }
+
+    try {
+      // Convert strings to buffers for crypto.timingSafeEqual
+      const providedBuffer = Buffer.from(provided, 'utf8');
+      const expectedBuffer = Buffer.from(expected, 'utf8');
+
+      // Use constant-time comparison
+      return crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+    } catch (error) {
+      logger.error('AUTH', `Error during secure comparison: ${error.message}`);
+      return false;
+    }
   }
 
   /**
@@ -68,7 +98,7 @@ class AuthMiddleware {
       });
     }
 
-    if (providedKey !== this.apiKey) {
+    if (!this.secureCompare(providedKey, this.apiKey)) {
       logger.warn('AUTH', `Invalid API key provided: ${req.method} ${req.path}`);
       return res.status(403).json({
         error: 'Invalid API key',

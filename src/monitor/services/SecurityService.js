@@ -1,4 +1,5 @@
 const logger = require('../../utils/logger');
+const { CryptoUtils } = require('../../utils/crypto');
 
 /**
  * SECURITY MONITORING SERVICE
@@ -998,7 +999,7 @@ class SecurityService {
       // Update threat levels
       attacks.attacks.forEach(attack => {
         const threat = {
-          id: Date.now() + Math.random(),
+          id: CryptoUtils.secureRandomId(),
           type: attack.type,
           severity: attack.severity,
           description: attack.description,

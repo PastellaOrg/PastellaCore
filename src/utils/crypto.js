@@ -670,6 +670,55 @@ class CryptoUtils {
       return false;
     }
   }
+
+  /**
+   * SECURE: Generate cryptographically secure random bytes
+   * @param {number} length - Number of bytes to generate
+   * @returns {Buffer} - Secure random bytes
+   */
+  static secureRandomBytes(length) {
+    return crypto.randomBytes(length);
+  }
+
+  /**
+   * SECURE: Generate cryptographically secure random integer
+   * @param {number} min - Minimum value (inclusive)
+   * @param {number} max - Maximum value (exclusive)
+   * @returns {number} - Secure random integer
+   */
+  static secureRandomInt(min, max) {
+    if (min >= max) {
+      throw new Error('Min must be less than max');
+    }
+    const range = max - min;
+    const bytes = Math.ceil(Math.log2(range) / 8);
+    let randomValue;
+
+    do {
+      randomValue = this.secureRandomBytes(bytes).readUIntBE(0, bytes);
+    } while (randomValue >= range * Math.floor(Math.pow(256, bytes) / range));
+
+    return min + (randomValue % range);
+  }
+
+  /**
+   * SECURE: Generate cryptographically secure random float between 0 and 1
+   * @returns {number} - Secure random float [0, 1)
+   */
+  static secureRandomFloat() {
+    const bytes = this.secureRandomBytes(4);
+    return bytes.readUInt32BE(0) / 0x100000000;
+  }
+
+  /**
+   * SECURE: Generate cryptographically secure unique ID
+   * @returns {string} - Secure unique identifier
+   */
+  static secureRandomId() {
+    const timestamp = Date.now().toString(36);
+    const randomPart = this.secureRandomBytes(8).toString('hex');
+    return `${timestamp}-${randomPart}`;
+  }
 }
 
 module.exports = {

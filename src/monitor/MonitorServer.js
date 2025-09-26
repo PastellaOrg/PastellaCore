@@ -93,8 +93,7 @@ class MonitorServer {
     // Load blocked nodes on startup
     this.loadBlockedNodes();
 
-    logger.info('MONITOR_SERVER', '🖥️  Pastella Monitoring Server initialized');
-    logger.info('MONITOR_SERVER', `📊 100+ monitoring features available`);
+    logger.info('MONITOR_SERVER', 'Pastella Monitoring Server initialized');
   }
 
   /**
@@ -776,8 +775,8 @@ class MonitorServer {
 
       this.isRunning = true;
 
-      logger.info('MONITOR_SERVER', '🚀 Pastella Monitoring Server started successfully');
-      logger.info('MONITOR_SERVER', `🌐 Web Interface: http://${this.config.host}:${this.config.port}`);
+      logger.info('MONITOR_SERVER', 'Pastella Monitoring Server started successfully');
+      logger.info('MONITOR_SERVER', `Web Interface: http://${this.config.host}:${this.config.port}`);
 
       console.log('\n╔══════════════════════════════════════════════════════════════╗');
       console.log('║              🖥️  MONITORING SERVER ACTIVE                   ║');

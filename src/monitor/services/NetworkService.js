@@ -1,4 +1,5 @@
 const logger = require('../../utils/logger');
+const { CryptoUtils } = require('../../utils/crypto');
 
 /**
  * NETWORK SERVICE
@@ -492,10 +493,10 @@ class NetworkService {
 
   simulateTrafficUpdate() {
     // Simulate traffic for demonstration
-    this.trafficStats.messagesSent += Math.floor(Math.random() * 10);
-    this.trafficStats.messagesReceived += Math.floor(Math.random() * 15);
-    this.trafficStats.bytesSent += Math.floor(Math.random() * 1000);
-    this.trafficStats.bytesReceived += Math.floor(Math.random() * 1500);
+    this.trafficStats.messagesSent += Math.floor(CryptoUtils.secureRandomInt(1, 11));
+    this.trafficStats.messagesReceived += Math.floor(CryptoUtils.secureRandomInt(1, 16));
+    this.trafficStats.bytesSent += Math.floor(CryptoUtils.secureRandomInt(1, 1001));
+    this.trafficStats.bytesReceived += Math.floor(CryptoUtils.secureRandomInt(1, 1501));
   }
 
   updateBandwidthStats() {
@@ -504,8 +505,8 @@ class NetworkService {
     const timeDiff = now - (this.lastBandwidthUpdate || now);
 
     if (timeDiff > 0) {
-      const inboundRate = Math.random() * 1000; // Simulated
-      const outboundRate = Math.random() * 800; // Simulated
+      const inboundRate = CryptoUtils.secureRandomFloat() * 1000; // Simulated
+      const outboundRate = CryptoUtils.secureRandomFloat() * 800; // Simulated
 
       this.bandwidthStats.inbound.current = inboundRate;
       this.bandwidthStats.outbound.current = outboundRate;
@@ -553,10 +554,10 @@ class NetworkService {
   getPeerTraffic(address) {
     // This would track actual traffic per peer
     return {
-      messagesSent: Math.floor(Math.random() * 100),
-      messagesReceived: Math.floor(Math.random() * 120),
-      bytesSent: Math.floor(Math.random() * 10000),
-      bytesReceived: Math.floor(Math.random() * 12000)
+      messagesSent: Math.floor(CryptoUtils.secureRandomInt(1, 101)),
+      messagesReceived: Math.floor(CryptoUtils.secureRandomInt(1, 121)),
+      bytesSent: Math.floor(CryptoUtils.secureRandomInt(1, 10001)),
+      bytesReceived: Math.floor(CryptoUtils.secureRandomInt(1, 12001))
     };
   }
 

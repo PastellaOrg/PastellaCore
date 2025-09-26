@@ -353,6 +353,311 @@
                 </div>
             </div>
 
+            <!-- Transactions Section -->
+            <div id="transactions-section" class="dashboard-section">
+                <h2><i class="fas fa-exchange-alt"></i> Transaction History</h2>
+
+                <!-- Search and Filter Controls -->
+                <div class="transactions-controls">
+                    <div class="search-filter-row">
+                        <div class="search-bar">
+                            <input type="text" id="transactionSearch" placeholder="Search by hash, address, or amount...">
+                            <button class="btn" onclick="searchTransactions()">
+                                <i class="fas fa-search"></i> Search
+                            </button>
+                        </div>
+                        <div class="filter-controls">
+                            <select id="transactionTypeFilter">
+                                <option value="">All Types</option>
+                                <option value="TRANSACTION">Regular</option>
+                                <option value="COINBASE">Coinbase</option>
+                                <option value="PREMINE">Premine</option>
+                                <option value="STAKING">Staking</option>
+                                <option value="GOVERNANCE">Governance</option>
+                            </select>
+                            <input type="date" id="fromDate" title="From Date">
+                            <input type="date" id="toDate" title="To Date">
+                            <select id="amountFilter">
+                                <option value="">Any Amount</option>
+                                <option value="0-1">0-1 PAST</option>
+                                <option value="1-10">1-10 PAST</option>
+                                <option value="10-100">10-100 PAST</option>
+                                <option value="100+">100+ PAST</option>
+                            </select>
+                            <button class="btn btn-small" onclick="clearTransactionFilters()">
+                                <i class="fas fa-times"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Transaction Stats -->
+                    <div class="transaction-stats">
+                        <div class="stat-card">
+                            <span class="stat-label">Total Transactions</span>
+                            <span class="stat-value" id="totalTransactions">-</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">24h Volume</span>
+                            <span class="stat-value" id="dailyVolume">- PAST</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Average Fee</span>
+                            <span class="stat-value" id="averageFee">- PAST</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Pending</span>
+                            <span class="stat-value" id="pendingCount">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transaction Table -->
+                <div class="transactions-container">
+                    <div class="transactions-table-wrapper">
+                        <table class="transactions-table">
+                            <thead>
+                                <tr>
+                                    <th>Hash</th>
+                                    <th>Type</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th>Amount</th>
+                                    <th>Fee</th>
+                                    <th>Status</th>
+                                    <th>Time</th>
+                                    <th>Block</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactionsTableBody">
+                                <tr class="loading-row">
+                                    <td colspan="10">
+                                        <div class="loading-indicator">
+                                            <i class="fas fa-spinner fa-spin"></i>
+                                            Loading transactions...
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div class="pagination-controls">
+                        <div class="pagination-info">
+                            <span>Showing <span id="transactionStart">0</span> to <span id="transactionEnd">0</span> of <span id="transactionTotal">0</span> transactions</span>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button class="btn btn-small" id="prevPage" onclick="previousTransactionPage()">
+                                <i class="fas fa-chevron-left"></i> Previous
+                            </button>
+                            <span class="page-info">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
+                            <button class="btn btn-small" id="nextPage" onclick="nextTransactionPage()">
+                                Next <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transaction Details Modal -->
+                <div class="modal" id="transactionModal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Transaction Details</h3>
+                            <button class="modal-close" onclick="closeTransactionModal()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="modal-body" id="transactionModalBody">
+                            <!-- Transaction details will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Memory Pool Section -->
+            <div id="mempool-section" class="dashboard-section">
+                <h2><i class="fas fa-hourglass-half"></i> Memory Pool Monitor</h2>
+
+                <!-- Memory Pool Statistics -->
+                <div class="mempool-stats">
+                    <div class="stat-card">
+                        <span class="stat-label">Pending Transactions</span>
+                        <span class="stat-value" id="mempoolTxCount">-</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Total Value</span>
+                        <span class="stat-value" id="mempoolTotalValue">- PAST</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Total Fees</span>
+                        <span class="stat-value" id="mempoolTotalFees">- PAST</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Memory Usage</span>
+                        <span class="stat-value" id="mempoolMemoryUsage">- KB</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Queue Time</span>
+                        <span class="stat-value" id="mempoolQueueTime">- min</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Status</span>
+                        <span class="stat-value" id="mempoolStatus">-</span>
+                    </div>
+                </div>
+
+                <!-- Memory Pool Analysis -->
+                <div class="mempool-analysis">
+                    <div class="analysis-panel">
+                        <h3><i class="fas fa-chart-bar"></i> Transaction Analysis</h3>
+                        <div class="analysis-content">
+                            <div class="fee-analysis">
+                                <h4>Fee Distribution</h4>
+                                <div class="fee-chart-container">
+                                    <canvas id="mempoolFeeChart"></canvas>
+                                </div>
+                                <div class="fee-recommendations" id="feeRecommendations">
+                                    <div class="fee-tier">
+                                        <span class="tier-label">Low Priority:</span>
+                                        <span class="tier-fee" id="lowFee">- PAST</span>
+                                    </div>
+                                    <div class="fee-tier">
+                                        <span class="tier-label">Medium Priority:</span>
+                                        <span class="tier-fee" id="mediumFee">- PAST</span>
+                                    </div>
+                                    <div class="fee-tier">
+                                        <span class="tier-label">High Priority:</span>
+                                        <span class="tier-fee" id="highFee">- PAST</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="type-distribution">
+                                <h4>Transaction Types</h4>
+                                <div class="type-chart-container">
+                                    <canvas id="mempoolTypeChart"></canvas>
+                                </div>
+                                <div class="type-breakdown" id="typeBreakdown">
+                                    <!-- Will be populated by JavaScript -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analysis-panel">
+                        <h3><i class="fas fa-clock"></i> Queue Analysis</h3>
+                        <div class="analysis-content">
+                            <div class="queue-metrics">
+                                <div class="metric-item">
+                                    <span class="metric-label">Oldest Transaction:</span>
+                                    <span class="metric-value" id="oldestTxAge">-</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Average Wait Time:</span>
+                                    <span class="metric-value" id="avgWaitTime">-</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Processing Rate:</span>
+                                    <span class="metric-value" id="processingRate">- tx/min</span>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-label">Estimated Clear Time:</span>
+                                    <span class="metric-value" id="estimatedClearTime">-</span>
+                                </div>
+                            </div>
+                            <div class="congestion-meter">
+                                <h4>Network Congestion</h4>
+                                <div class="congestion-bar">
+                                    <div class="congestion-fill" id="congestionFill"></div>
+                                </div>
+                                <div class="congestion-labels">
+                                    <span>Low</span>
+                                    <span>Medium</span>
+                                    <span>High</span>
+                                </div>
+                                <div class="congestion-status" id="congestionStatus">Normal</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pending Transactions List -->
+                <div class="mempool-transactions">
+                    <div class="transactions-header">
+                        <h3><i class="fas fa-list"></i> Pending Transactions</h3>
+                        <div class="transactions-controls">
+                            <select id="mempoolSortBy">
+                                <option value="fee">Sort by Fee (High to Low)</option>
+                                <option value="time">Sort by Time (Newest First)</option>
+                                <option value="size">Sort by Size</option>
+                                <option value="type">Sort by Type</option>
+                            </select>
+                            <select id="mempoolFilterType">
+                                <option value="">All Types</option>
+                                <option value="TRANSACTION">Regular</option>
+                                <option value="COINBASE">Coinbase</option>
+                                <option value="PREMINE">Premine</option>
+                                <option value="STAKING">Staking</option>
+                                <option value="GOVERNANCE">Governance</option>
+                            </select>
+                            <button class="btn btn-small" onclick="refreshMempool()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mempool-table-container">
+                        <table class="mempool-table">
+                            <thead>
+                                <tr>
+                                    <th>Hash</th>
+                                    <th>Type</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th>Amount</th>
+                                    <th>Fee</th>
+                                    <th>Fee Rate</th>
+                                    <th>Size</th>
+                                    <th>Age</th>
+                                    <th>Priority</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mempoolTableBody">
+                                <tr class="loading-row">
+                                    <td colspan="11">
+                                        <div class="loading-indicator">
+                                            <i class="fas fa-spinner fa-spin"></i>
+                                            Loading pending transactions...
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mempool-pagination">
+                        <div class="pagination-info">
+                            <span>Showing <span id="mempoolStart">0</span> to <span id="mempoolEnd">0</span> of <span id="mempoolTotal">0</span> transactions</span>
+                        </div>
+                        <div class="pagination-buttons">
+                            <button class="btn btn-small" id="mempoolPrevPage" onclick="previousMempoolPage()">
+                                <i class="fas fa-chevron-left"></i> Previous
+                            </button>
+                            <span class="page-info">Page <span id="mempoolCurrentPage">1</span> of <span id="mempoolTotalPages">1</span></span>
+                            <button class="btn btn-small" id="mempoolNextPage" onclick="nextMempoolPage()">
+                                Next <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Memory Pool Alerts -->
+                <div class="mempool-alerts" id="mempoolAlerts">
+                    <!-- Alerts will be populated by JavaScript -->
+                </div>
+            </div>
+
             <!-- Network Analysis Section -->
             <div id="network-analysis-section" class="dashboard-section">
                 <h2><i class="fas fa-project-diagram"></i> Network Analysis</h2>
@@ -398,15 +703,67 @@
 
             <!-- Security Monitor Section -->
             <div id="security-monitor-section" class="dashboard-section">
-                <h2><i class="fas fa-shield-alt"></i> Security Monitor</h2>
-                <div class="security-grid">
-                    <div class="security-alerts">
-                        <h3><i class="fas fa-exclamation-triangle"></i> Security Alerts</h3>
-                        <div id="securityAlertsList"></div>
+                <h2><i class="fas fa-shield-alt"></i> Advanced Security Monitor</h2>
+
+                <!-- Security Overview -->
+                <div class="security-overview">
+                    <div id="securityOverview">
+                        <!-- Dynamic security overview will be populated here -->
                     </div>
-                    <div class="threat-detection">
-                        <h3><i class="fas fa-radar"></i> Threat Detection</h3>
-                        <div id="threatDetectionStatus"></div>
+                </div>
+
+                <div class="security-tabs">
+                    <div class="tabs-row">
+                        <div class="tab active" data-tab="alerts">
+                            <i class="fas fa-exclamation-triangle"></i> Security Alerts
+                        </div>
+                        <div class="tab" data-tab="threats">
+                            <i class="fas fa-radar"></i> Threat Analysis
+                        </div>
+                        <div class="tab" data-tab="metrics">
+                            <i class="fas fa-chart-line"></i> Security Metrics
+                        </div>
+                    </div>
+                </div>
+
+                <div class="security-content">
+                    <!-- Security Alerts Tab -->
+                    <div id="alerts-tab" class="security-tab-content active">
+                        <div class="security-alerts">
+                            <h3><i class="fas fa-bell"></i> Real-time Security Alerts</h3>
+                            <div id="securityAlertsList">
+                                <div class="loading-spinner">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                    Loading security alerts...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Threat Analysis Tab -->
+                    <div id="threats-tab" class="security-tab-content">
+                        <div class="threat-detection">
+                            <h3><i class="fas fa-search"></i> Threat Detection & Analysis</h3>
+                            <div id="threatDetectionStatus">
+                                <div class="loading-spinner">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                    Analyzing threats...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Security Metrics Tab -->
+                    <div id="metrics-tab" class="security-tab-content">
+                        <div class="security-metrics">
+                            <h3><i class="fas fa-tachometer-alt"></i> Security Performance Metrics</h3>
+                            <div id="securityMetrics">
+                                <div class="loading-spinner">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                    Loading security metrics...
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
