@@ -1909,7 +1909,7 @@ class APIServer {
               submittedPrev: blockObj.previousHash,
               latestHash: latest.hash,
             });
-            logger.error(
+            logger.debug(
               'API',
               `Previous hash mismatch: submittedPrev=${blockObj.previousHash.substring(0, 16)}..., latest=${latest.hash.substring(0, 16)}...`
             );
@@ -1922,7 +1922,7 @@ class APIServer {
               submitted: blockObj.difficulty,
               expected: this.blockchain.difficulty,
             });
-            logger.error(
+            logger.debug(
               'API',
               `Difficulty mismatch: submitted=${blockObj.difficulty}, expected=${this.blockchain.difficulty}`
             );
@@ -1992,7 +1992,7 @@ class APIServer {
 
           // Attach reasons to request log for traceability
           if (mismatchReasons.length > 0) {
-            logger.error('API', `Block diagnostics: ${JSON.stringify(mismatchReasons).substring(0, 500)}`);
+            logger.debug('API', `Block diagnostics: ${JSON.stringify(mismatchReasons).substring(0, 500)}`);
           }
         } catch (diagErr) {
           logger.warn('API', `Diagnostics error: ${diagErr.message}`);

@@ -381,9 +381,9 @@ class Blockchain {
       if (block.index === 0 || !latestBlock) {
         // Skip linking validation for genesis block or empty chain
       } else if (block.previousHash !== latestBlock.hash) {
-        logger.error('BLOCKCHAIN', `Block ${block.index} does not link to latest block`);
-        logger.error('BLOCKCHAIN', `  Block previousHash: ${block.previousHash}`);
-        logger.error('BLOCKCHAIN', `  Latest block hash: ${latestBlock.hash}`);
+        logger.debug('BLOCKCHAIN', `Block ${block.index} does not link to latest block`);
+        logger.debug('BLOCKCHAIN', `  Block previousHash: ${block.previousHash}`);
+        logger.debug('BLOCKCHAIN', `  Latest block hash: ${latestBlock.hash}`);
         return false;
       }
 
