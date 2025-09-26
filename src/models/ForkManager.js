@@ -266,7 +266,6 @@ class ForkManager {
       };
     }
 
-    logger.info('FORK_MANAGER', '✅ Network participation approved');
     return {
       canParticipate: true,
       currentFork: validation.currentFork

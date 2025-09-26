@@ -8,6 +8,7 @@ const APIServer = require('./api/APIServer');
 const Blockchain = require('./models/Blockchain');
 const P2PNetwork = require('./network/P2PNetwork');
 const ForkManager = require('./models/ForkManager');
+const MonitorServer = require('./monitor/MonitorServer');
 const logger = require('./utils/logger');
 const { fromAtomicUnits } = require('./utils/atomicUnits');
 
@@ -31,6 +32,7 @@ class PastellaDaemon {
     this.forkManager = new ForkManager(config);
     this.p2pNetwork = null;
     this.apiServer = null;
+    this.monitorServer = null;
     this.isRunning = false;
     this.rl = null; // readline interface
   }
@@ -211,6 +213,19 @@ class PastellaDaemon {
       // The API server will log its own binding information with the correct host
     }
 
+    // Start monitoring server if enabled
+    if (config.monitor && config.monitor.enabled) {
+      try {
+        logger.info('MONITOR', 'Starting monitoring dashboard...');
+        this.monitorServer = new MonitorServer(this, config.monitor);
+        await this.monitorServer.start();
+        logger.info('MONITOR', `Monitoring Dashboard: http://localhost:${config.monitor.port}`);
+      } catch (error) {
+        logger.error('MONITOR', `Failed to start monitoring server: ${error.message}`);
+        // Don't throw - monitoring is optional
+      }
+    }
+
     // Log block submission service status
     logger.info('BLOCKS', 'Block Submission Service: Enabled');
 
@@ -257,6 +272,12 @@ class PastellaDaemon {
     if (this.apiServer) {
       this.apiServer.stop();
       console.log(chalk.yellow('🔌 API Server: Stopped'));
+    }
+
+    // Stop monitoring server
+    if (this.monitorServer) {
+      await this.monitorServer.stop();
+      console.log(chalk.yellow('🖥️  Monitoring Server: Stopped'));
     }
 
     // Save blockchain state
@@ -986,6 +1007,8 @@ async function main() {
     console.log(chalk.cyan('  --fast-download-sync '), chalk.white('Download blockchain from seed nodes before startup'));
     console.log(chalk.cyan('  --download-host <url>'), chalk.white('Custom host for blockchain download (e.g., https://localhost:22000)'));
     console.log(chalk.cyan('  --generate-genesis   '), chalk.white('Generate new genesis block configuration'));
+    console.log(chalk.cyan('  --monitor            '), chalk.white('Enable web monitoring dashboard (default: disabled)'));
+    console.log(chalk.cyan('  --monitor-port <port>'), chalk.white('Monitoring dashboard port (default: 24000)'));
     console.log('');
     console.log(chalk.yellow.bold('💡 EXAMPLES:'));
     console.log(
@@ -1028,6 +1051,14 @@ async function main() {
     console.log(
       chalk.cyan('  node src/index.js --download-host https://node.example.com:22000'),
       chalk.white('Download from custom host')
+    );
+    console.log(
+      chalk.cyan('  node src/index.js --monitor                            '),
+      chalk.white('Enable monitoring dashboard on port 24000')
+    );
+    console.log(
+      chalk.cyan('  node src/index.js --monitor --monitor-port 25000       '),
+      chalk.white('Enable monitoring on custom port')
     );
     console.log('');
     console.log(chalk.yellow.bold('🔗 SERVICES:'));
@@ -1517,6 +1548,32 @@ async function main() {
       logger.error('SYSTEM', 'Example: https://localhost:22000 or http://192.168.1.100:22000');
       process.exit(1);
     }
+  }
+
+  // Parse monitoring parameters
+  const monitorEnabled = args.includes('--monitor');
+  const monitorPortArg = parseArgValue('--monitor-port');
+  let monitorPort = 24000; // default port
+
+  if (monitorPortArg) {
+    const port = parseInt(monitorPortArg);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      logger.error('SYSTEM', `Invalid monitor port: ${monitorPortArg}. Must be between 1-65535.`);
+      process.exit(1);
+    }
+    monitorPort = port;
+  }
+
+  // Configure monitoring in the config object
+  config.monitor = {
+    enabled: monitorEnabled,
+    port: monitorPort,
+    host: '0.0.0.0',
+    updateInterval: 1000 // 1 second updates
+  };
+
+  if (monitorEnabled) {
+    logger.info('SYSTEM', `🖥️  Monitoring dashboard enabled on port ${monitorPort}`);
   }
 
   // Parse fast download sync flag

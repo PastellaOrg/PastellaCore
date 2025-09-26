@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pastella Monitoring Dashboard</title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-cube"></i>
+                    <h1>Pastella Monitoring</h1>
+                </div>
+                <div class="header-status">
+                    <button class="theme-toggle" id="themeToggle" title="Toggle Dark Mode">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <span class="status-indicator" id="connectionStatus">
+                        <i class="fas fa-circle"></i>
+                        <span>Connected</span>
+                    </span>
+                    <span class="timestamp" id="lastUpdate">Loading...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Menu -->
+        <nav class="dashboard-nav">
+            <div class="nav-sections">
+                <div class="nav-section">
+                    <h4><i class="fas fa-tachometer-alt"></i> Dashboard</h4>
+                    <ul>
+                        <li><a href="#overview" class="nav-link active" data-section="overview"><i class="fas fa-chart-line"></i> Overview</a></li>
+                        <li><a href="#analytics" class="nav-link" data-section="analytics"><i class="fas fa-chart-area"></i> Live Analytics</a></li>
+                    </ul>
+                </div>
+                <div class="nav-section">
+                    <h4><i class="fas fa-cubes"></i> Blockchain</h4>
+                    <ul>
+                        <li><a href="#blocks" class="nav-link" data-section="blocks"><i class="fas fa-cube"></i> Block Explorer</a></li>
+                        <li><a href="#transactions" class="nav-link" data-section="transactions"><i class="fas fa-exchange-alt"></i> Transactions</a></li>
+                        <li><a href="#mempool" class="nav-link" data-section="mempool"><i class="fas fa-hourglass-half"></i> Memory Pool</a></li>
+                    </ul>
+                </div>
+                <div class="nav-section">
+                    <h4><i class="fas fa-network-wired"></i> Network</h4>
+                    <ul>
+                        <li><a href="#peers" class="nav-link" data-section="peers"><i class="fas fa-users"></i> Peer Management</a></li>
+                        <li><a href="#network-analysis" class="nav-link" data-section="network-analysis"><i class="fas fa-project-diagram"></i> Network Analysis</a></li>
+                        <li><a href="#bandwidth" class="nav-link" data-section="bandwidth"><i class="fas fa-wifi"></i> Bandwidth Monitor</a></li>
+                        <li><a href="#topology" class="nav-link" data-section="topology"><i class="fas fa-sitemap"></i> Network Topology</a></li>
+                    </ul>
+                </div>
+                <div class="nav-section">
+                    <h4><i class="fas fa-shield-alt"></i> Security</h4>
+                    <ul>
+                        <li><a href="#security-monitor" class="nav-link" data-section="security-monitor"><i class="fas fa-eye"></i> Security Monitor</a></li>
+                        <li><a href="#attack-detection" class="nav-link" data-section="attack-detection"><i class="fas fa-exclamation-triangle"></i> Attack Detection</a></li>
+                        <li><a href="#consensus-monitor" class="nav-link" data-section="consensus-monitor"><i class="fas fa-balance-scale"></i> Consensus Monitor</a></li>
+                        <li><a href="#node-blocking" class="nav-link" data-section="node-blocking"><i class="fas fa-ban"></i> Node Blocking</a></li>
+                    </ul>
+                </div>
+                <div class="nav-section">
+                    <h4><i class="fas fa-cogs"></i> Control</h4>
+                    <ul>
+                        <li><a href="#node-control" class="nav-link" data-section="node-control"><i class="fas fa-power-off"></i> Node Control</a></li>
+                        <li><a href="#logs" class="nav-link" data-section="logs"><i class="fas fa-file-alt"></i> Activity Logs</a></li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Dashboard -->
+        <main class="dashboard-main">
+            <!-- Overview Section -->
+            <div id="overview-section" class="dashboard-section active">
+                <!-- Overview Cards -->
+            <section class="overview-cards">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-server"></i>
+                        <h3>Node Status</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="stat">
+                            <span class="label">Status:</span>
+                            <span class="value" id="nodeStatus">Running</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Uptime:</span>
+                            <span class="value" id="nodeUptime">0s</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Version:</span>
+                            <span class="value" id="nodeVersion">v1.0.0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-link"></i>
+                        <h3>Blockchain</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="stat">
+                            <span class="label">Height:</span>
+                            <span class="value" id="blockHeight">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Difficulty:</span>
+                            <span class="value" id="difficulty">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Hash Rate:</span>
+                            <span class="value" id="hashRate">0 H/s</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-network-wired"></i>
+                        <h3>Network</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="stat">
+                            <span class="label">Peers:</span>
+                            <span class="value" id="peerCount">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Connections:</span>
+                            <span class="value" id="connectionCount">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Network ID:</span>
+                            <span class="value" id="networkId">pastella-14082025</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-microchip"></i>
+                        <h3>System</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="stat">
+                            <span class="label">CPU Usage:</span>
+                            <span class="value" id="cpuUsage">0%</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Memory:</span>
+                            <span class="value" id="memoryUsage">0 MB</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Disk:</span>
+                            <span class="value" id="diskUsage">0 MB</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Detailed Information Tabs -->
+            <section class="dashboard-tabs">
+                <div class="tab-buttons">
+                    <button class="tab-btn active" data-tab="blocks">
+                        <i class="fas fa-cubes"></i> Recent Blocks
+                    </button>
+                    <button class="tab-btn" data-tab="peers">
+                        <i class="fas fa-users"></i> Connected Peers
+                    </button>
+                    <button class="tab-btn" data-tab="system">
+                        <i class="fas fa-chart-area"></i> System Info
+                    </button>
+                    <button class="tab-btn" data-tab="logs">
+                        <i class="fas fa-file-alt"></i> Activity Log
+                    </button>
+                </div>
+
+                <div class="tab-content">
+                    <!-- Recent Blocks Tab -->
+                    <div class="tab-pane active" id="blocks-tab">
+                        <div class="table-container">
+                            <h4><i class="fas fa-cubes"></i> Recent Blocks</h4>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Height</th>
+                                        <th>Hash</th>
+                                        <th>Timestamp</th>
+                                        <th>Transactions</th>
+                                        <th>Size</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="blocksTableBody">
+                                    <tr>
+                                        <td colspan="5" class="loading">Loading blocks...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Connected Peers Tab -->
+                    <div class="tab-pane" id="peers-tab">
+                        <div class="table-container">
+                            <h4><i class="fas fa-users"></i> Connected Peers</h4>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Address</th>
+                                        <th>Status</th>
+                                        <th>Uptime</th>
+                                        <th>Reputation</th>
+                                        <th>Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="peersTableBody">
+                                    <tr>
+                                        <td colspan="5" class="loading">Loading peers...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- System Info Tab -->
+                    <div class="tab-pane" id="system-tab">
+                        <div class="system-info">
+                            <h4><i class="fas fa-info-circle"></i> System Information</h4>
+                            <div class="info-grid">
+                                <div class="info-section">
+                                    <h5>Node Details</h5>
+                                    <div class="info-item">
+                                        <span class="label">Process ID:</span>
+                                        <span class="value" id="processId">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="label">Platform:</span>
+                                        <span class="value" id="platform">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="label">Architecture:</span>
+                                        <span class="value" id="architecture">-</span>
+                                    </div>
+                                </div>
+                                <div class="info-section">
+                                    <h5>Hardware</h5>
+                                    <div class="info-item">
+                                        <span class="label">CPU Cores:</span>
+                                        <span class="value" id="cpuCores">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="label">Total Memory:</span>
+                                        <span class="value" id="totalMemory">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="label">Free Memory:</span>
+                                        <span class="value" id="freeMemory">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Activity Log Tab -->
+                    <div class="tab-pane" id="logs-tab">
+                        <div class="logs-container">
+                            <h4><i class="fas fa-file-alt"></i> Activity Log</h4>
+                            <div class="log-controls">
+                                <button class="btn btn-small" id="clearLogs">
+                                    <i class="fas fa-trash"></i> Clear
+                                </button>
+                                <button class="btn btn-small" id="pauseLogs">
+                                    <i class="fas fa-pause"></i> Pause
+                                </button>
+                            </div>
+                            <div class="log-output" id="logOutput">
+                                <div class="log-entry">
+                                    <span class="log-time">Loading...</span>
+                                    <span class="log-message">Initializing activity log...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            </div>
+
+            <!-- Live Analytics Section -->
+            <div id="analytics-section" class="dashboard-section">
+                <h2><i class="fas fa-chart-area"></i> Live Analytics & Charts</h2>
+                <div class="analytics-grid">
+                    <div class="chart-container">
+                        <h3>Live Block Time Chart</h3>
+                        <canvas id="blockTimeChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Network Hash Rate History</h3>
+                        <canvas id="hashRateChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Transaction Volume Graph</h3>
+                        <canvas id="transactionVolumeChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Memory Pool Size Chart</h3>
+                        <canvas id="mempoolChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Difficulty Adjustment Graph</h3>
+                        <canvas id="difficultyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Network Latency Heatmap</h3>
+                        <canvas id="latencyChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Transaction Fee Analysis</h3>
+                        <canvas id="feeAnalysisChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Peer Connection Map</h3>
+                        <div id="peerMap" style="height: 400px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Block Explorer Section -->
+            <div id="blocks-section" class="dashboard-section">
+                <h2><i class="fas fa-cube"></i> Advanced Block Explorer</h2>
+                <div class="explorer-tools">
+                    <div class="search-bar">
+                        <input type="text" id="blockSearch" placeholder="Search by block hash, height, or transaction...">
+                        <button class="btn" onclick="searchBlocks()"><i class="fas fa-search"></i></button>
+                    </div>
+                </div>
+                <div class="blocks-grid">
+                    <div class="block-list">
+                        <h3>Recent Blocks</h3>
+                        <div id="detailedBlocksList"></div>
+                    </div>
+                    <div class="block-details" id="blockDetailsPanel">
+                        <h3>Block Details</h3>
+                        <div id="selectedBlockDetails">Select a block to view details</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Network Analysis Section -->
+            <div id="network-analysis-section" class="dashboard-section">
+                <h2><i class="fas fa-project-diagram"></i> Network Analysis</h2>
+                <div class="network-grid">
+                    <div class="panel">
+                        <h3><i class="fas fa-star"></i> Peer Reputation System</h3>
+                        <div id="peerReputationList"></div>
+                    </div>
+                    <div class="panel">
+                        <h3><i class="fas fa-sitemap"></i> Network Topology</h3>
+                        <div id="networkTopology"></div>
+                    </div>
+                    <div class="panel">
+                        <h3><i class="fas fa-globe"></i> Geographic Distribution</h3>
+                        <div id="geographicDistribution"></div>
+                    </div>
+                    <div class="panel">
+                        <h3><i class="fas fa-code-branch"></i> Peer Versions</h3>
+                        <div id="peerVersions"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bandwidth Monitor Section -->
+            <div id="bandwidth-section" class="dashboard-section">
+                <h2><i class="fas fa-wifi"></i> Bandwidth Monitor</h2>
+                <div class="bandwidth-grid">
+                    <div class="bandwidth-chart">
+                        <canvas id="bandwidthChart"></canvas>
+                    </div>
+                    <div class="bandwidth-stats">
+                        <div class="stat-card">
+                            <h4>Inbound Traffic</h4>
+                            <span id="inboundTraffic">0 B/s</span>
+                        </div>
+                        <div class="stat-card">
+                            <h4>Outbound Traffic</h4>
+                            <span id="outboundTraffic">0 B/s</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Monitor Section -->
+            <div id="security-monitor-section" class="dashboard-section">
+                <h2><i class="fas fa-shield-alt"></i> Security Monitor</h2>
+                <div class="security-grid">
+                    <div class="security-alerts">
+                        <h3><i class="fas fa-exclamation-triangle"></i> Security Alerts</h3>
+                        <div id="securityAlertsList"></div>
+                    </div>
+                    <div class="threat-detection">
+                        <h3><i class="fas fa-radar"></i> Threat Detection</h3>
+                        <div id="threatDetectionStatus"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attack Detection Section -->
+            <div id="attack-detection-section" class="dashboard-section">
+                <h2><i class="fas fa-exclamation-triangle"></i> Attack Detection</h2>
+                <div class="attack-grid">
+                    <div class="attack-monitor">
+                        <h3>51% Attack Monitor</h3>
+                        <div id="attackMonitor"></div>
+                    </div>
+                    <div class="anomaly-detection">
+                        <h3>Network Anomalies</h3>
+                        <div id="anomaliesList"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Node Blocking Section -->
+            <div id="node-blocking-section" class="dashboard-section">
+                <h2><i class="fas fa-ban"></i> Node Connection Management</h2>
+                <div class="blocking-grid">
+                    <div class="blocking-controls">
+                        <h3>Block Node</h3>
+                        <div class="block-form">
+                            <input type="text" id="blockNodeInput" placeholder="Enter IP address or node ID">
+                            <button class="btn btn-danger" onclick="blockNode()"><i class="fas fa-ban"></i> Block</button>
+                        </div>
+                    </div>
+                    <div class="blocked-list">
+                        <h3>Blocked Nodes</h3>
+                        <div id="blockedNodesList"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Node Control Section -->
+            <div id="node-control-section" class="dashboard-section">
+                <h2><i class="fas fa-power-off"></i> Node Control</h2>
+                <div class="control-grid">
+                    <div class="control-panel">
+                        <h3>Node Operations</h3>
+                        <div class="control-buttons">
+                            <button class="btn btn-warning" onclick="restartNode()">
+                                <i class="fas fa-redo"></i> Restart Node
+                            </button>
+                            <button class="btn btn-danger" onclick="shutdownNode()">
+                                <i class="fas fa-power-off"></i> Shutdown Node
+                            </button>
+                        </div>
+                    </div>
+                    <div class="node-status-panel">
+                        <h3>Node Status</h3>
+                        <div id="detailedNodeStatus"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Logs Section -->
+            <div id="logs-section" class="dashboard-section">
+                <h2><i class="fas fa-file-alt"></i> Activity Logs</h2>
+                <div class="logs-container">
+                    <div class="log-controls">
+                        <button class="btn btn-small" id="clearLogs">
+                            <i class="fas fa-trash"></i> Clear
+                        </button>
+                        <button class="btn btn-small" id="pauseLogs">
+                            <i class="fas fa-pause"></i> Pause
+                        </button>
+                        <select id="logLevel" class="log-filter">
+                            <option value="all">All Levels</option>
+                            <option value="error">Errors</option>
+                            <option value="warning">Warnings</option>
+                            <option value="info">Info</option>
+                            <option value="success">Success</option>
+                        </select>
+                    </div>
+                    <div class="log-output" id="logOutput">
+                        <div class="log-entry">
+                            <span class="log-time">Loading...</span>
+                            <span class="log-message">Initializing activity log...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Connecting to Pastella daemon...</p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>
