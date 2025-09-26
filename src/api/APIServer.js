@@ -1820,33 +1820,19 @@ class APIServer {
           logger.info('API', `Starting merkle root validation for block ${blockObj.index}...`);
           const recomputedMerkle = blockObj.calculateMerkleRoot();
 
-          // ALWAYS log merkle root information for debugging
-          logger.info('API', `=== MERKLE ROOT VALIDATION DEBUG ===`);
-          logger.info('API', `Block Index: ${blockObj.index}`);
-          logger.info('API', `Submitted Merkle Root: ${blockObj.merkleRoot}`);
-          logger.info('API', `Recomputed Merkle Root: ${recomputedMerkle}`);
-          logger.info('API', `Merkle Root Match: ${blockObj.merkleRoot === recomputedMerkle ? '✅ YES' : '❌ NO'}`);
-
           // ALWAYS log transaction information for debugging
           const submittedTransactions = blockObj.transactions || [];
-          logger.info('API', `Number of Transactions: ${submittedTransactions.length}`);
-
+          
           if (submittedTransactions.length > 0) {
-            logger.info('API', `First 3 Transaction Types:`);
             submittedTransactions.slice(0, 3).forEach((tx, index) => {
               const txType = tx.isCoinbase ? 'COINBASE' : 'REGULAR';
               const txId = tx.id || 'NO_ID';
-              logger.info('API', `  TX[${index}]: ${txType} - ID: ${txId.substring(0, 16)}...`);
             });
 
             // Log transaction summary
             const coinbaseCount = submittedTransactions.filter(tx => tx.isCoinbase).length;
             const regularCount = submittedTransactions.length - coinbaseCount;
-            logger.info('API', `Transaction Summary: ${coinbaseCount} coinbase, ${regularCount} regular`);
-          } else {
-            logger.info('API', `No transactions in block`);
           }
-
           if (blockObj.merkleRoot !== recomputedMerkle) {
             // Detailed merkle root mismatch analysis
             const submittedTxHashes = submittedTransactions.map(tx => {
