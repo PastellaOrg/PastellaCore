@@ -850,6 +850,21 @@ class Transaction {
 
     if (this.isCoinbase) {
       logger.debug('TRANSACTION', `Validating coinbase transaction...`);
+
+      // CRITICAL: Validate coinbase recipient address format
+      const InputValidator = require('../utils/validation');
+      if (this.outputs.length > 0) {
+        const coinbaseAddress = this.outputs[0].address;
+        const validatedAddress = InputValidator.validateCryptocurrencyAddress(coinbaseAddress);
+
+        if (!validatedAddress) {
+          logger.debug('TRANSACTION', `Coinbase validation failed: invalid recipient address format`);
+          logger.debug('TRANSACTION', `  Address: ${coinbaseAddress}`);
+          return false;
+        }
+        logger.debug('TRANSACTION', `Coinbase address validation passed: ${validatedAddress}`);
+      }
+
       // CRITICAL: Validate coinbase transaction amount
       if (outputAmount <= 0) {
         logger.debug('TRANSACTION', `Transaction validation failed: invalid coinbase amount`);
@@ -936,9 +951,17 @@ class Transaction {
     isGenesisBlock = false,
     paymentId = null
   ) {
+    // CRITICAL: Validate coinbase recipient address before creating transaction
+    const InputValidator = require('../utils/validation');
+    const validatedAddress = InputValidator.validateCryptocurrencyAddress(address);
+
+    if (!validatedAddress) {
+      throw new Error(`Invalid coinbase recipient address: ${address}. Must be a valid cryptocurrency address format.`);
+    }
+
     const transaction = new Transaction(
       [],
-      [new TransactionOutput(address, amount)],
+      [new TransactionOutput(validatedAddress, amount)],
       0,
       isGenesisBlock ? TRANSACTION_TAGS.PREMINE : TRANSACTION_TAGS.COINBASE,
       timestamp,

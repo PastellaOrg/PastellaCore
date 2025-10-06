@@ -2173,6 +2173,7 @@ class APIServer {
    */
   verifyCoinbaseTransaction(block) {
     const { calculateHalvedReward } = require('../utils/atomicUnits');
+    const InputValidator = require('../utils/validation');
 
     // Find coinbase transaction
     const coinbase = block.transactions.find(tx => tx.isCoinbase);
@@ -2191,6 +2192,19 @@ class APIServer {
         reason: `Coinbase transaction must have exactly 1 output, found ${coinbase.outputs.length}`,
         expected: 1,
         actual: coinbase.outputs.length,
+      };
+    }
+
+    // CRITICAL: Validate coinbase recipient address format
+    const coinbaseAddress = coinbase.outputs[0].address;
+    const validatedAddress = InputValidator.validateCryptocurrencyAddress(coinbaseAddress);
+
+    if (!validatedAddress) {
+      return {
+        valid: false,
+        reason: 'Coinbase recipient address is invalid or improperly formatted',
+        expected: 'Valid cryptocurrency address (format: ^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$)',
+        actual: coinbaseAddress,
       };
     }
 
