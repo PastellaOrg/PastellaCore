@@ -84,9 +84,7 @@
   },
   "pkg": {
     "assets": [
-      "config.json",
-      "src/**/*",
-      "data/**/*"
+      "config.json"
     ],
     "scripts": [
       "src/**/*.js"

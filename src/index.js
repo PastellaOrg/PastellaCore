@@ -14,12 +14,13 @@ const { fromAtomicUnits } = require('./utils/atomicUnits');
 const InputValidator = require('./utils/validation');
 
 // Import core modules
+const { loadConfig, loadPackageJson } = require('./utils/configLoader');
 
 // Load configuration
-const config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
+const config = loadConfig();
 
 // Load package.json for version info
-const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+const packageJson = loadPackageJson();
 
 /**
  *
@@ -1556,7 +1557,7 @@ async function main() {
   const configPath = parseArgValue('--config');
   if (configPath) {
     try {
-      const customConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const customConfig = loadConfig(configPath);
       // Merge custom config with defaults
       config = { ...config, ...customConfig };
       logger.info('SYSTEM', `Loaded custom config from: ${configPath}`);

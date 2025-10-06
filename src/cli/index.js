@@ -6,7 +6,8 @@ const inquirer = require('inquirer');
 process.stdout.setMaxListeners(20);
 process.stderr.setMaxListeners(20);
 
-const config = require('../../config.json');
+const { loadConfig } = require('../utils/configLoader');
+const config = loadConfig();
 const Block = require('../models/Block.js');
 const Blockchain = require('../models/Blockchain.js');
 const { Transaction } = require('../models/Transaction.js');

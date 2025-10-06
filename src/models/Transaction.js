@@ -626,7 +626,8 @@ class Transaction {
     // Get network ID from config for cross-chain replay protection
     let networkId = 'pastella-mainnet'; // Default fallback
     try {
-      const config = require('../../config.json');
+      const { loadConfig } = require('../utils/configLoader');
+      const config = loadConfig();
       networkId = config.networkId || networkId;
     } catch (error) {
       // Use default if config unavailable

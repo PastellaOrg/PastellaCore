@@ -12,8 +12,8 @@ const path = require('path');
  */
 function getConfigDecimals() {
   try {
-    const configPath = path.join(process.cwd(), 'config.json');
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const { loadConfig } = require('./configLoader');
+    const config = loadConfig();
     return config.decimals || 8;
   } catch (error) {
     console.warn('Warning: Could not read config.json, using default 8 decimals');
