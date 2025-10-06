@@ -24,7 +24,6 @@ function loadConfig(customPath = null) {
     } else {
       // Fall back to bundled config.json inside executable
       configPath = path.join(__dirname, '../../config.json');
-      console.log('Using bundled config.json from executable');
     }
   } else {
     // Running with Node.js - read from project root
