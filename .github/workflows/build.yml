@@ -1,0 +1,323 @@
+name: Build Pastella Executables
+
+on:
+  push:
+    branches: [ main, dev ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create draft release'
+        required: true
+        type: boolean
+        default: false
+      release_tag:
+        description: 'Release tag (e.g., v1.0.0)'
+        required: false
+        type: string
+        default: ''
+      release_notes:
+        description: 'Custom release notes'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js 22.17.1
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.17.1'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build Windows executables
+      run: npm run build:win
+
+    - name: Build Wallet API executable
+      run: |
+        npx pkg src/wallet-api.js --targets node22-win-x64 --output dist/pastella-wallet-api-win.exe
+
+    - name: Test executables exist
+      run: |
+        if (Test-Path "dist\pastella-daemon-win.exe") {
+          Write-Host "Daemon build successful - pastella-daemon-win.exe found"
+          Get-Item "dist\pastella-daemon-win.exe" | Select-Object Name, Length, LastWriteTime
+        } else {
+          Write-Host "Daemon build failed"
+          exit 1
+        }
+        if (Test-Path "dist\pastella-cli-win.exe") {
+          Write-Host "CLI build successful - pastella-cli-win.exe found"
+          Get-Item "dist\pastella-cli-win.exe" | Select-Object Name, Length, LastWriteTime
+        } else {
+          Write-Host "CLI build failed"
+          exit 1
+        }
+        if (Test-Path "dist\pastella-wallet-api-win.exe") {
+          Write-Host "Wallet API build successful - pastella-wallet-api-win.exe found"
+          Get-Item "dist\pastella-wallet-api-win.exe" | Select-Object Name, Length, LastWriteTime
+        } else {
+          Write-Host "Wallet API build failed"
+          exit 1
+        }
+
+    - name: Upload Windows artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: pastella-windows-x64
+        path: |
+          dist/pastella-daemon-win.exe
+          dist/pastella-cli-win.exe
+          dist/pastella-wallet-api-win.exe
+        retention-days: 30
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js 22.17.1
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.17.1'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build Linux executables
+      run: npm run build:linux
+
+    - name: Build Wallet API executable
+      run: |
+        npx pkg src/wallet-api.js --targets node22-linux-x64 --output dist/pastella-wallet-api-linux
+
+    - name: Test executables exist
+      run: |
+        if [ -f "dist/pastella-daemon-linux" ]; then
+          echo "Daemon build successful - pastella-daemon-linux found"
+          ls -lh dist/pastella-daemon-linux
+        else
+          echo "Daemon build failed"
+          exit 1
+        fi
+        if [ -f "dist/pastella-cli-linux" ]; then
+          echo "CLI build successful - pastella-cli-linux found"
+          ls -lh dist/pastella-cli-linux
+        else
+          echo "CLI build failed"
+          exit 1
+        fi
+        if [ -f "dist/pastella-wallet-api-linux" ]; then
+          echo "Wallet API build successful - pastella-wallet-api-linux found"
+          ls -lh dist/pastella-wallet-api-linux
+        else
+          echo "Wallet API build failed"
+          exit 1
+        fi
+
+    - name: Upload Linux artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: pastella-linux-x64
+        path: |
+          dist/pastella-daemon-linux
+          dist/pastella-cli-linux
+          dist/pastella-wallet-api-linux
+        retention-days: 30
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js 22.17.1
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.17.1'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build macOS executables
+      run: npm run build:mac
+
+    - name: Build Wallet API executable
+      run: |
+        npx pkg src/wallet-api.js --targets node22-macos-x64 --output dist/pastella-wallet-api-mac
+
+    - name: Test executables exist
+      run: |
+        if [ -f "dist/pastella-daemon-mac" ]; then
+          echo "Daemon build successful - pastella-daemon-mac found"
+          ls -lh dist/pastella-daemon-mac
+        else
+          echo "Daemon build failed"
+          exit 1
+        fi
+        if [ -f "dist/pastella-cli-mac" ]; then
+          echo "CLI build successful - pastella-cli-mac found"
+          ls -lh dist/pastella-cli-mac
+        else
+          echo "CLI build failed"
+          exit 1
+        fi
+        if [ -f "dist/pastella-wallet-api-mac" ]; then
+          echo "Wallet API build successful - pastella-wallet-api-mac found"
+          ls -lh dist/pastella-wallet-api-mac
+        else
+          echo "Wallet API build failed"
+          exit 1
+        fi
+
+    - name: Upload macOS artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: pastella-macos-x64
+        path: |
+          dist/pastella-daemon-mac
+          dist/pastella-cli-mac
+          dist/pastella-wallet-api-mac
+        retention-days: 30
+
+  create-release:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download Windows artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: pastella-windows-x64
+        path: ./release/windows
+
+    - name: Download Linux artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: pastella-linux-x64
+        path: ./release/linux
+
+    - name: Download macOS artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: pastella-macos-x64
+        path: ./release/macos
+
+    - name: Create release archives
+      run: |
+        # Windows archive
+        cd release/windows
+        zip ../../pastella-windows-x64.zip pastella-daemon-win.exe pastella-cli-win.exe pastella-wallet-api-win.exe
+        cd ../..
+
+        # Linux archive
+        cd release/linux
+        chmod +x pastella-daemon-linux pastella-cli-linux pastella-wallet-api-linux
+        tar -czf ../../pastella-linux-x64.tar.gz pastella-daemon-linux pastella-cli-linux pastella-wallet-api-linux
+        cd ../..
+
+        # macOS archive
+        cd release/macos
+        chmod +x pastella-daemon-mac pastella-cli-mac pastella-wallet-api-mac
+        tar -czf ../../pastella-macos-x64.tar.gz pastella-daemon-mac pastella-cli-mac pastella-wallet-api-mac
+        cd ../..
+
+        echo "Release archives created:"
+        ls -lh pastella-*
+
+    - name: Determine release tag
+      id: release_tag
+      run: |
+        if [ -n "${{ github.event.inputs.release_tag }}" ]; then
+          echo "tag=${{ github.event.inputs.release_tag }}" >> $GITHUB_OUTPUT
+        else
+          echo "tag=v$(date +'%Y.%m.%d')-build${{ github.run_number }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Read version from package.json
+      id: get_version
+      run: |
+        VERSION=$(grep -oP '"version"\s*:\s*"\K[^"]+' package.json || echo "unknown")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        if [ -n "${{ github.event.inputs.release_notes }}" ]; then
+          # Use custom release notes from workflow input
+          cat << 'EOF' > release_notes.md
+        ${{ github.event.inputs.release_notes }}
+        EOF
+        else
+          # Generate default release notes
+          cat << EOF > release_notes.md
+        **Version**: ${{ steps.get_version.outputs.version }}
+        **Build Date**: $(date +'%Y-%m-%d %H:%M:%S UTC')
+        **Commit**: ${{ github.sha }}
+        **Branch**: ${{ github.ref_name }}
+
+        ## Downloads
+
+        - **Windows**: \`pastella-windows-x64.zip\`
+          - \`pastella-daemon-win.exe\`
+          - \`pastella-cli-win.exe\`
+          - \`pastella-wallet-api-win.exe\`
+
+        - **Linux**: \`pastella-linux-x64.tar.gz\`
+          - \`pastella-daemon-linux\`
+          - \`pastella-cli-linux\`
+          - \`pastella-wallet-api-linux\`
+
+        - **macOS**: \`pastella-macos-x64.tar.gz\`
+          - \`pastella-daemon-mac\`
+          - \`pastella-cli-mac\`
+          - \`pastella-wallet-api-mac\`
+
+        ## Changelog
+
+        <!-- Add your changelog here -->
+
+        EOF
+        fi
+        cat release_notes.md
+
+    - name: Create draft release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.release_tag.outputs.tag }}
+        name: Pastella ${{ steps.release_tag.outputs.tag }}
+        body_path: release_notes.md
+        draft: true
+        prerelease: false
+        files: |
+          pastella-windows-x64.zip
+          pastella-linux-x64.tar.gz
+          pastella-macos-x64.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
