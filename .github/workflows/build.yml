@@ -54,7 +54,7 @@ jobs:
 
     - name: Build Wallet API executable
       run: |
-        npx pkg src/wallet-api.js --targets node20-win-x64 --output dist/pastella-wallet-api-win.exe
+        npx pkg src/wallet-api.js --targets node18-win-x64 --output dist/pastella-wallet-api-win.exe
 
     - name: Test executables exist
       run: |
@@ -110,7 +110,7 @@ jobs:
 
     - name: Build Wallet API executable
       run: |
-        npx pkg src/wallet-api.js --targets node20-linux-x64 --output dist/pastella-wallet-api-linux
+        npx pkg src/wallet-api.js --targets node18-linux-x64 --output dist/pastella-wallet-api-linux
 
     - name: Test executables exist
       run: |
@@ -166,7 +166,7 @@ jobs:
 
     - name: Build Wallet API executable
       run: |
-        npx pkg src/wallet-api.js --targets node20-macos-x64 --output dist/pastella-wallet-api-mac
+        npx pkg src/wallet-api.js --targets node18-macos-x64 --output dist/pastella-wallet-api-mac
 
     - name: Test executables exist
       run: |
