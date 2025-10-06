@@ -550,7 +550,7 @@ class PeerDiscovery {
       peerInfo.reputation = Math.min(1000, peerInfo.reputation + 10);
       logger.debug('PEER_DISCOVERY', `Updated existing peer: ${address}`);
     } else {
-      // CRITICAL: Auto-add unknown peers when they connect
+      
       logger.info('PEER_DISCOVERY', `Auto-adding unknown peer: ${address}`);
 
       // Check if this is a seed node (either by hostname or IP)

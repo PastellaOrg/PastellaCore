@@ -190,7 +190,7 @@ class NetworkSync {
    * @param count
    */
   selectRandomPeers(peers, count) {
-    // CRITICAL: Use cryptographically secure randomness for peer selection
+    
     const crypto = require('crypto');
     const shuffled = [...peers].sort(() => {
       const randomBytes = crypto.randomBytes(1);

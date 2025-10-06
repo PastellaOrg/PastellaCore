@@ -232,7 +232,7 @@ class P2PNetwork {
     // Connection callback for PeerDiscovery
     const connectionCallback = async (address, port = 23000) => {
       try {
-        // CRITICAL: Handle address that might already contain port
+        
         let hostname = address;
         let actualPort = port;
 
@@ -325,7 +325,7 @@ class P2PNetwork {
         logger.debug('P2P_NETWORK', `HTTP server bound successfully to port ${this.port}`);
       });
 
-      // CRITICAL: Load seed nodes with DNS resolution BEFORE accepting connections
+      
       logger.debug('P2P_NETWORK', `Loading seed nodes from config...`);
       await this.loadSeedNodes();
 
@@ -523,12 +523,12 @@ class P2PNetwork {
       logger.debug('P2P_NETWORK', `Not saving peer ${addressForTracking} to persistent storage (no real address extracted)`);
     }
 
-    // CRITICAL: Immediately share peers with new connection
+    
     setTimeout(() => {
       this.shareKnownPeersWithNewConnection(ws, addressForTracking);
     }, 2000); // 2 second delay to ensure handshake is complete
 
-    // CRITICAL: For outgoing connections, WE initiate the handshake
+    
     logger.debug('P2P_NETWORK', `Outgoing connection established with ${addressForTracking}, initiating handshake`);
     this.initiateHandshake(ws, addressForTracking);
 
@@ -610,12 +610,12 @@ class P2PNetwork {
       logger.debug('P2P_NETWORK', `Not saving peer ${addressForTracking} to persistent storage (no real address extracted)`);
     }
 
-    // CRITICAL: Immediately share peers with new connection
+    
     setTimeout(() => {
       this.shareKnownPeersWithNewConnection(ws, addressForTracking);
     }, 2000); // 2 second delay to ensure handshake is complete
 
-    // CRITICAL FIX: Don't initiate handshake from receiving node
+    
     // The connecting node (initiator) will send the handshake
     // We just wait for it to arrive
     logger.debug('P2P_NETWORK', `Connection established with ${addressForTracking}, waiting for handshake from peer`);
@@ -820,7 +820,7 @@ class P2PNetwork {
         ws.on('open', () => {
           clearTimeout(timeout);
 
-          // CRITICAL FIX: For outgoing connections, we need to handle them differently
+          
           // than incoming connections. Outgoing connections should send handshakes.
           // Use resolved IP for consistent peer tracking
           const trackingAddress = `${actualHost}:${port}`;

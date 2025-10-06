@@ -342,7 +342,7 @@ class InputValidator {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#x27;')
         .replace(/\//g, '&#x2F;')
-        // CRITICAL: Additional XSS protection
+        
         .replace(/javascript:/gi, '')
         .replace(/on\w+\s*=/gi, '')
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
@@ -372,7 +372,7 @@ class InputValidator {
         .replace(/delete\s+from/gi, '')
         .replace(/insert\s+into/gi, '')
         .replace(/update\s+set/gi, '')
-        // CRITICAL: Additional SQL injection protection
+        
         .replace(/exec\s*\(/gi, '')
         .replace(/xp_cmdshell/gi, '')
         .replace(/sp_executesql/gi, '')
@@ -394,7 +394,7 @@ class InputValidator {
     const sanitized = this.validateString(input, { minLength, maxLength, required });
     if (!sanitized) return null;
 
-    // CRITICAL: Enhanced address pattern validation
+    
     const mainnetPattern = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
     const testnetPattern = /^[2mn][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
 
@@ -406,7 +406,7 @@ class InputValidator {
       return null;
     }
 
-    // CRITICAL: Check for common attack patterns
+    
     const attackPatterns = [
       /^0x[a-fA-F0-9]{40}$/, // Ethereum address (potential confusion)
       /^[LM3][a-km-zA-HJ-NP-Z1-9]{26,33}$/, // Litecoin address (potential confusion)

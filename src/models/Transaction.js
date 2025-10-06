@@ -166,7 +166,7 @@ class Transaction {
     this.expiresAt = this.timestamp + 24 * 60 * 60 * 1000; // 24 hour expiration
     this.sequence = 0; // Sequence number for input ordering
 
-    // CRITICAL: RACE ATTACK PROTECTION
+    
     this._lockId = null; // Transaction lock identifier
     this._isLocked = false; // Lock status
     this._lockTimestamp = null; // When lock was acquired
@@ -288,7 +288,7 @@ class Transaction {
       throw new Error('Invalid atomic sequence format - potential race attack');
     }
 
-    // CRITICAL: Enhanced validation for historical vs new transactions
+    
     const timestamp = parseInt(parts[0]);
     if (!isHistoricalValidation) {
       // Validate timestamp is recent (within 5 minutes) - only for new transactions
@@ -296,7 +296,7 @@ class Transaction {
         throw new Error('Atomic sequence timestamp too old - potential race attack');
       }
     } else {
-      // CRITICAL: For historical blocks, validate timestamp is reasonable (not in future, not ancient)
+      
       const currentTime = Date.now();
       const yearInMs = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
 
@@ -309,7 +309,7 @@ class Transaction {
         throw new Error('Historical atomic sequence timestamp is too ancient - potential manipulation');
       }
 
-      // CRITICAL: Validate random component strength even for historical blocks
+      
       // Skip randomness validation for genesis transactions
       if (!isGenesisTransaction) {
         const randomPart = parts[1];
@@ -382,13 +382,13 @@ class Transaction {
    * @param {boolean} isHistoricalValidation - Skip time-based checks for historical blocks
    */
   calculateId(isHistoricalValidation = false) {
-    // CRITICAL: Validate atomic sequence before ID calculation
+    
     this.validateAtomicSequence(isHistoricalValidation);
 
     // Set debug flag for canonicalJSONStringify
     this._isHistoricalValidation = isHistoricalValidation;
 
-    // CRITICAL: Use immutable data structure to prevent malleability
+    
     const mappedOutputs = this.outputs.map(output => ({
       address: output.address,
       amount: output.amount,
@@ -426,7 +426,7 @@ class Transaction {
       nonce: this.nonce, // Include nonce for replay protection
       expiresAt: this.expiresAt, // Include expiration for replay protection
       sequence: this.sequence, // Include sequence for input ordering
-      atomicSequence: this._atomicSequence, // CRITICAL: Include atomic sequence for race protection
+      atomicSequence: this._atomicSequence, 
     };
 
     // DEBUG: Log key fields for historical validation
@@ -438,10 +438,10 @@ class Transaction {
       logger.debug('TRANSACTION', `calculateId DEBUG - fee: ${this.fee}`);
     }
 
-    // CRITICAL: Freeze the data to prevent modification
+    
     Object.freeze(immutableData);
 
-    // CRITICAL: Use canonical JSON serialization to prevent collision attacks
+    
     const dataString = this.canonicalJSONStringify(immutableData);
     
     // DEBUG: Log the data being hashed for integrity validation
@@ -515,10 +515,10 @@ class Transaction {
       }
     }
 
-    // CRITICAL: Double hash for additional security
+    
     this.id = CryptoUtils.doubleHash(dataString);
 
-    // CRITICAL: Mark transaction as immutable after ID calculation
+    
     this._isImmutable = true;
 
     // Reset debug flag
@@ -634,7 +634,7 @@ class Transaction {
     }
 
     return JSON.stringify({
-      networkId: networkId, // CRITICAL: Include network ID to prevent cross-chain replay attacks
+      networkId: networkId, 
       inputs: this.inputs.map(input => ({
         txId: input.txId,
         outputIndex: input.outputIndex,
@@ -851,7 +851,7 @@ class Transaction {
     if (this.isCoinbase) {
       logger.debug('TRANSACTION', `Validating coinbase transaction...`);
 
-      // CRITICAL: Validate coinbase recipient address format
+      
       const InputValidator = require('../utils/validation');
       if (this.outputs.length > 0) {
         const coinbaseAddress = this.outputs[0].address;
@@ -865,7 +865,7 @@ class Transaction {
         logger.debug('TRANSACTION', `Coinbase address validation passed: ${validatedAddress}`);
       }
 
-      // CRITICAL: Validate coinbase transaction amount
+      
       if (outputAmount <= 0) {
         logger.debug('TRANSACTION', `Transaction validation failed: invalid coinbase amount`);
         logger.debug('TRANSACTION', `  outputAmount: ${outputAmount}`);
@@ -951,7 +951,7 @@ class Transaction {
     isGenesisBlock = false,
     paymentId = null
   ) {
-    // CRITICAL: Validate coinbase recipient address before creating transaction
+    
     const InputValidator = require('../utils/validation');
     const validatedAddress = InputValidator.validateCryptocurrencyAddress(address);
 
@@ -1117,7 +1117,7 @@ class Transaction {
       if (data.sequence !== undefined) {
         transaction.sequence = data.sequence;
       }
-      // CRITICAL: Preserve atomicSequence for transaction integrity validation
+      
       if (data.atomicSequence) {
         transaction._atomicSequence = data.atomicSequence;
       }

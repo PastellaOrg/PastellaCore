@@ -187,7 +187,7 @@ class BlockchainValidation {
     // Initialize CPU protection with config
     this.cpuProtection = new CPUProtection(config);
 
-    // CRITICAL: Consensus protection state
+    
     this.strictMode = false;
 
     logger.debug('BLOCKCHAIN_VALIDATION', `Initialized with config: ${config ? 'present' : 'null'}`);
@@ -314,7 +314,7 @@ class BlockchainValidation {
         );
         logger.error('BLOCKCHAIN_VALIDATION', `This could be a blockchain manipulation attempt or double-spend attack`);
 
-        // CRITICAL SECURITY: Immediately shutdown daemon to prevent blockchain corruption
+        
         logger.error('BLOCKCHAIN_VALIDATION', '🚨 CRITICAL BLOCKCHAIN SECURITY VIOLATION DETECTED');
         logger.error('BLOCKCHAIN_VALIDATION', '🛑 SHUTTING DOWN DAEMON TO PREVENT FURTHER CORRUPTION');
         logger.error('BLOCKCHAIN_VALIDATION', '⚠️  Manual intervention required - check blockchain integrity');
@@ -410,7 +410,7 @@ class BlockchainValidation {
           return false;
         }
 
-        // CRITICAL: Validate genesis block transaction integrity
+        
         try {
           if (typeof block.validateTransactionIntegrity === 'function') {
             const isIntegrityValid = block.validateTransactionIntegrity();
@@ -492,7 +492,7 @@ class BlockchainValidation {
 
       logger.info('BLOCKCHAIN_VALIDATION', `Validating blockchain with ${chain.length} blocks...`);
 
-      // CRITICAL SECURITY: Create temporary UTXO manager for validation
+      
       const UTXOManager = require('./UTXOManager');
       const tempUtxoManager = new UTXOManager();
       
@@ -531,7 +531,7 @@ class BlockchainValidation {
           return false;
         }
 
-        // CRITICAL: Validate transaction integrity (catches address/amount tampering)
+        
         try {
           if (typeof currentBlock.validateTransactionIntegrity === 'function') {
             const isIntegrityValid = currentBlock.validateTransactionIntegrity();
@@ -547,7 +547,7 @@ class BlockchainValidation {
           return false;
         }
 
-        // CRITICAL: Validate Merkle root for consistency (catches transaction tampering)
+        
         try {
           const storedMerkleRoot = currentBlock.merkleRoot;
           
@@ -577,7 +577,7 @@ class BlockchainValidation {
           return false;
         }
 
-        // CRITICAL SECURITY: Validate block structure and transactions with UTXO validation
+        
         if (!this.isValidBlock(currentBlock, config, tempUtxoManager)) {
           logger.error('BLOCKCHAIN_VALIDATION', `Block ${i} validation failed - could be manipulation attempt`);
           return false;
@@ -755,7 +755,7 @@ class BlockchainValidation {
           return false;
         }
 
-        // CRITICAL: Validate block transactions for tampering detection
+        
         try {
           const transactionValidation = this.validateBlockTransactions(currentBlock, config, null);
           if (!transactionValidation.valid) {
@@ -767,10 +767,10 @@ class BlockchainValidation {
           return false;
         }
 
-        // CRITICAL: Transaction ID validation temporarily disabled due to complexity with historical data
+        
         // Relying on Merkle root validation below to catch transaction content tampering
 
-        // CRITICAL: Validate transaction integrity (catches address/amount tampering)
+        
         try {
           if (typeof currentBlock.validateTransactionIntegrity === 'function') {
             const isIntegrityValid = currentBlock.validateTransactionIntegrity();

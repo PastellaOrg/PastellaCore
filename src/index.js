@@ -1537,7 +1537,7 @@ async function main() {
     config.api = config.api || {};
     config.api.host = host;
 
-    // CRITICAL: Require API key for non-localhost binding
+    
     if (host !== '127.0.0.1' && host !== 'localhost') {
       if (!apiKey) {
         console.error(chalk.red('🚨 SECURITY ERROR: API key is REQUIRED when binding to external interfaces!'));

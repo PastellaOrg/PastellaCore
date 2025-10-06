@@ -237,10 +237,10 @@ class MemoryPoolManager {
     this.pendingTransactions = [];
     this.config = config;
 
-    // CRITICAL: Initialize memory protection
+    
     this.memoryProtection = new MemoryProtection(config);
 
-    // CRITICAL: Processing state for consensus protection
+    
     this.processingPaused = false;
     this.pauseReason = null;
 
@@ -388,7 +388,7 @@ class MemoryPoolManager {
    */
   addTransaction(transaction) {
     try {
-      // CRITICAL: Check if processing is paused for consensus protection
+      
       if (this.processingPaused) {
         logger.warn('MEMORY_POOL', `Transaction rejected - processing paused: ${this.pauseReason}`);
         throw new Error(`Memory pool processing paused: ${this.pauseReason}`);

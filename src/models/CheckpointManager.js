@@ -161,7 +161,7 @@ class CheckpointManager {
         this.addValidationError('hash_mismatch', error, details);
         invalidCheckpoints++;
 
-        // CRITICAL: Stop daemon immediately for invalid checkpoints
+        
         this.handleInvalidCheckpoint(error, details, checkpoint, block);
         return false; // This will stop the validation process
       }

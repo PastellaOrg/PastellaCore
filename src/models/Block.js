@@ -40,7 +40,7 @@ class Block {
     this.merkleRoot = null;
     this.config = config;
 
-    // CRITICAL: Timestamp validation
+    
     this.validateTimestamp(validationContext);
 
     // Calculate Merkle root (skip when loading from JSON for validation purposes)
@@ -380,7 +380,7 @@ class Block {
         logger.debug('BLOCK', `Block Difficulty: ${this.difficulty}`);
         logger.debug('BLOCK', `=== END VELORA HASH VALIDATION DEBUG ===`);
 
-        // CRITICAL: DO NOT pre-generate the scratchpad here!
+        
         // The veloraHash function will handle scratchpad generation and caching internally
         // Pre-generating it causes double-mixing and corrupts the data
 
@@ -446,7 +446,7 @@ class Block {
       return true; // Genesis block has no transactions
     }
 
-    // CRITICAL: First transaction must be coinbase
+    
     if (this.transactions.length > 0) {
       const firstTx = this.transactions[0];
       logger.debug(
@@ -747,7 +747,7 @@ class Block {
     );
 
     block.hash = data.hash;
-    // CRITICAL: Preserve original merkle root from JSON for validation
+    
     block.merkleRoot = data.merkleRoot; // Use original from file for validation
     block.algorithm = data.algorithm || 'velora'; // Default to Velora for new blocks
 

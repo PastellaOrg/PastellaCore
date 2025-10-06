@@ -425,7 +425,7 @@ class MessageHandler {
    * @param peerAddress
    */
   async handleResponseBlockchain(ws, message, peerAddress) {
-    // CRITICAL: Block blockchain sync until version validation completes
+    
     if (!this.isPeerVersionValidated(peerAddress, 'RESPONSE_BLOCKCHAIN')) {
       return; // Block operation until version validation completes
     }
@@ -473,7 +473,7 @@ class MessageHandler {
         if (isValidChain) {
           logger.info('MESSAGE_HANDLER', 'Received chain is valid, verifying consistency with local chain');
 
-          // CRITICAL: Verify that the received chain is consistent with our local chain
+          
           const localHeight = this.blockchain.chain.length;
           const chainConsistencyCheck = this.verifyChainConsistency(convertedChain, this.blockchain.chain);
 
@@ -671,7 +671,7 @@ class MessageHandler {
 
       // FIXED: Network blocks should always use block's embedded difficulty
       if (this.blockchain.addBlock(newBlock, false, true, false)) { // skipValidation=false, useBlockDifficulty=true, fastSyncMode=false
-        // CRITICAL: Invalidate mempool transactions that are now in the block (Bitcoin-style)
+        
         this.invalidateMempoolTransactions(newBlock);
 
         // Save blockchain immediately
@@ -1054,7 +1054,7 @@ class MessageHandler {
         },
       });
 
-      // CRITICAL FIX: Mark the peer as authenticated immediately after sending handshake response
+      
       if (this.p2pNetwork) {
         this.p2pNetwork.authenticatedPeers.set(peerAddress, {
           nodeId: message.data.nodeId || 'unknown',
@@ -1124,7 +1124,7 @@ class MessageHandler {
         }
       }
 
-      // CRITICAL: Initiate version check after successful handshake
+      
       if (this.forkManager) {
         setTimeout(() => {
           this.initiateVersionCheck(ws, peerAddress);
@@ -1985,7 +1985,7 @@ class MessageHandler {
    * @param {Object} peerVersionInfo - Peer version information
    */
   validatePeerVersion(ws, peerAddress, peerVersionInfo) {
-    // CRITICAL: Prevent duplicate validation for already validated peers
+    
     if (this.versionValidatedPeers.has(peerAddress)) {
       logger.debug('MESSAGE_HANDLER', `⏭️  SKIPPED: Peer ${peerAddress} already validated - no duplicate processing needed`);
       return;
@@ -2018,7 +2018,7 @@ class MessageHandler {
       logger.debug('MESSAGE_HANDLER', `   Peer Fork Details: ${validation.peerFork.name} - ${validation.peerFork.description}`);
     }
 
-    // CRITICAL: Add peer to validated set to allow blockchain operations
+    
     this.versionValidatedPeers.add(peerAddress);
     logger.info('MESSAGE_HANDLER', `Peer ${peerAddress} added to validated peers - blockchain operations now ALLOWED`);
     logger.debug('MESSAGE_HANDLER', `Total validated peers: ${this.versionValidatedPeers.size}`);
@@ -2107,7 +2107,7 @@ class MessageHandler {
       return;
     }
 
-    // CRITICAL: Prevent duplicate version checks
+    
     if (this.versionValidatedPeers.has(peerAddress)) {
       logger.debug('MESSAGE_HANDLER', `  SKIPPED: Version check for ${peerAddress} - peer already validated`);
       return;

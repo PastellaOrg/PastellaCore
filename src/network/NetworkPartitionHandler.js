@@ -31,7 +31,7 @@ class NetworkPartitionHandler {
       maxRecoveryAttempts: 5,
       heartbeatInterval: 15000, // 15 seconds
       connectionTimeout: 10000, // 10 seconds
-      // CRITICAL: Consensus protection parameters
+      
       minPeersForConsensus: 2, // Minimum peers required for consensus operations (lowered for small networks)
       consensusThreshold: 0.67, // 67% agreement required for consensus
       maxBlockHeightDifference: 5, // Max height difference to consider valid chain
@@ -46,7 +46,7 @@ class NetworkPartitionHandler {
       partitionGroups: new Map(), // Map<partitionId, Set<peerAddress>>
       recoveryInProgress: false,
       lastHealthCheck: Date.now(),
-      // CRITICAL: Consensus protection state
+      
       transactionProcessingPaused: false,
       lastValidConsensusTime: Date.now(),
       consensusGroups: new Map(), // Track different chain views
@@ -111,7 +111,7 @@ class NetworkPartitionHandler {
 
     this.partitionState.lastHealthCheck = now;
 
-    // CRITICAL: Calculate comprehensive partition metrics
+    
     const partitionMetrics = this.calculatePartitionMetrics(connectedPeers, totalPeers);
 
     // Check for partition conditions with enhanced detection
@@ -124,7 +124,7 @@ class NetworkPartitionHandler {
       }
     }
 
-    // CRITICAL: Continuously monitor consensus health
+    
     await this.monitorConsensusHealth(partitionMetrics);
 
     // Update partition duration if currently partitioned
@@ -292,7 +292,7 @@ class NetworkPartitionHandler {
    * @param {Object} partitionMetrics
    */
   async monitorConsensusHealth(partitionMetrics) {
-    // CRITICAL: Pause transaction processing if consensus is unsafe
+    
     const consensusLow = partitionMetrics.consensusStrength < this.config.consensusThreshold;
     const peerCountLow = partitionMetrics.connectedPeers < this.config.minPeersForConsensus;
 
@@ -637,7 +637,7 @@ class NetworkPartitionHandler {
     this.partitionStats.totalPartitions++;
     this.partitionStats.currentPartitions++;
 
-    // CRITICAL: Immediately pause transaction processing during partition
+    
     await this.pauseTransactionProcessing();
 
     // Identify disconnected peers
@@ -650,7 +650,7 @@ class NetworkPartitionHandler {
     logger.warn('P2P', `Partition risk score: ${Math.round(partitionMetrics.partitionRisk * 100)}%`);
     logger.warn('P2P', `Disconnected peers: ${this.partitionState.disconnectedPeers.size}`);
 
-    // CRITICAL: Activate consensus protection measures
+    
     await this.activateConsensusProtection(partitionMetrics);
 
     // Start recovery process

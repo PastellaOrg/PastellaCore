@@ -66,23 +66,23 @@ class Blockchain {
     this.transactionManager = new TransactionManager(this.utxoManager, this.spamProtection, this.memoryPool);
     this.blockchainValidation = new BlockchainValidation(config); // Pass config for validation limits
 
-    // CRITICAL: Initialize checkpoint manager for blockchain validation
+    
     this.checkpointManager = new CheckpointManager(dataDir);
 
     // Initialize contract engine for smart contract support
     this.contractEngine = new ContractEngine(this);
 
-    // CRITICAL: Historical transaction database for replay attack protection
+    
     this.historicalTransactions = new Map(); // Key: "nonce:senderAddress", Value: {txId, blockHeight, timestamp}
     this.historicalTransactionIds = new Set(); // Track all transaction IDs ever processed
 
-    // CRITICAL: Temporary transaction buffer for unsaved blocks (prevents replay attack gaps)
+    
     this.unsavedTransactions = new Map(); // Key: "nonce:senderAddress", Value: {txId, blockHeight, timestamp}
     this.unsavedTransactionIds = new Set(); // Track transaction IDs in unsaved blocks
     this.unsavedGlobalNonceUsage = new Map(); // Track nonce usage for unsaved blocks
     this.lastSavedBlockHeight = -1; // Track last saved block height
 
-    // CRITICAL: Nonce collision detection and tracking
+    
 
     // SYNC PROGRESS TRACKING
     this.syncStatus = {
@@ -95,13 +95,13 @@ class Blockchain {
       recentBlockTimes: [], // Track recent block addition times for speed calculation
     };
 
-    // CRITICAL: Consensus protection state
+    
     this.blockAcceptancePaused = false;
     this.conservativeMode = false;
     this.globalNonceUsage = new Map(); // nonce -> count of how many times used globally
     this.nonceCollisionThreshold = 100; // Maximum times a nonce can be used globally before considering it an attack
 
-    // CRITICAL: 51% Attack Protection System
+    
     this.consensusManager = {
       // Track mining power distribution
       miningPowerDistribution: new Map(), // address -> hashRate
@@ -390,7 +390,7 @@ class Blockchain {
       // Add block to chain
       this.chain.push(block);
 
-      // CRITICAL: Update UTXO set BEFORE historical database to prevent race condition double-spend attacks
+      
       this.utxoManager.updateUTXOSet(block);
 
       // Process contract transactions in the block (CRITICAL for security)
@@ -423,7 +423,7 @@ class Blockchain {
         `Block data: index=${block.index}, hash=${block.hash}, previousHash=${block.previousHash}`
       );
 
-      // CRITICAL: Re-throw transaction ID collision errors to trigger blockchain resync
+      
       if (error.message && error.message.includes('Transaction ID collision detected')) {
         logger.error('BLOCKCHAIN', 'Re-throwing Transaction ID collision error for blockchain resync handling');
         throw error; // Re-throw to allow MessageHandler to detect and handle resync
@@ -521,14 +521,14 @@ class Blockchain {
             senderAddress,
           };
 
-          // CRITICAL: Only process NEW transactions to avoid false collision alerts during sync
+          
           const isNewTransaction = !this.historicalTransactionIds.has(transaction.id) && !this.unsavedTransactionIds.has(transaction.id);
 
           if (isNewTransaction) {
             // Add to permanent historical database
             this.historicalTransactions.set(key, transactionInfo);
 
-            // CRITICAL: Add to temporary unsaved buffer for blocks not yet saved to disk
+            
             if (block.index > this.lastSavedBlockHeight) {
               this.unsavedTransactions.set(key, transactionInfo);
               this.unsavedTransactionIds.add(transaction.id);
@@ -538,7 +538,7 @@ class Blockchain {
               this.unsavedGlobalNonceUsage.set(transaction.nonce, unsavedUsage + 1);
             }
 
-            // CRITICAL: Track nonce usage for collision detection
+            
             const currentUsage = this.globalNonceUsage.get(transaction.nonce) || 0;
             this.globalNonceUsage.set(transaction.nonce, currentUsage + 1);
 
@@ -601,7 +601,7 @@ class Blockchain {
     }
 
     try {
-      // CRITICAL: Properly derive address from public key using the same method as wallet generation
+      
       const { CryptoUtils } = require('../utils/crypto');
       
       // Validate public key format (should be 130 hex chars for uncompressed secp256k1)
@@ -640,7 +640,7 @@ class Blockchain {
       return true; // Reject transactions without nonce
     }
 
-    // CRITICAL: Check if transaction ID already exists in historical database OR unsaved buffer
+    
     if (this.historicalTransactionIds.has(transaction.id) || this.unsavedTransactionIds.has(transaction.id)) {
       logger.warn('BLOCKCHAIN', `Replay attack detected: Transaction ${transaction.id} already exists in blockchain (saved or unsaved)`);
       return true;
@@ -649,13 +649,13 @@ class Blockchain {
     // Check if nonce from same sender already exists
     const senderAddress = this.getTransactionSenderAddress(transaction);
     if (!senderAddress) {
-      // CRITICAL SECURITY: If we can't extract sender address, fail safely by rejecting transaction
+      
       logger.error('BLOCKCHAIN', `SECURITY FAILURE: Cannot extract sender address for transaction ${transaction.id} - rejecting as potential attack`);
       return true; // Treat as replay attack to fail safely
     }
 
     const key = `${transaction.nonce}:${senderAddress}`;
-    // CRITICAL: Check both saved historical transactions AND unsaved buffer
+    
     const existing = this.historicalTransactions.get(key) || this.unsavedTransactions.get(key);
 
     if (existing) {
@@ -666,7 +666,7 @@ class Blockchain {
       return true;
     }
 
-    // CRITICAL: Check for nonce collision attacks (same nonce used by too many different senders)
+    
     // Include both saved and unsaved nonce usage
     const globalUsage = this.globalNonceUsage.get(transaction.nonce) || 0;
     const unsavedUsage = this.unsavedGlobalNonceUsage.get(transaction.nonce) || 0;
@@ -1173,7 +1173,7 @@ class Blockchain {
    * @param transaction
    */
   addPendingTransaction(transaction) {
-    // CRITICAL: Check for replay attacks against historical blockchain BEFORE adding to pool
+    
     if (this.isReplayAttack(transaction)) {
       logger.error(
         'BLOCKCHAIN',
@@ -1298,18 +1298,18 @@ class Blockchain {
         miningReward: this.miningReward,
         blockTime: this.blockTime,
         pendingTransactions: this.memoryPool.getPendingTransactions(),
-        // CRITICAL: Save historical transaction database for replay attack protection
+        
         historicalTransactions: Array.from(this.historicalTransactions.entries()),
         historicalTransactionIds: Array.from(this.historicalTransactionIds),
         // Save contract engine state
         contracts: this.contractEngine.serialize(),
-        // CRITICAL: Save nonce collision tracking data
+        
         globalNonceUsage: Array.from(this.globalNonceUsage.entries()),
       };
 
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 
-      // CRITICAL: After successful save, clear unsaved buffer and update last saved block height
+      
       this.lastSavedBlockHeight = this.chain.length - 1;
       this.clearUnsavedBuffer();
       
@@ -1491,7 +1491,7 @@ class Blockchain {
             const blockData = data.chain[index];
             
             try {
-              // CRITICAL: Enhanced historical sync validation for security
+              
               const previousBlockTimestamp = index > 0 ? data.chain[index - 1].timestamp : undefined;
 
               // Validate block timestamp sequence for historical blocks
@@ -1501,7 +1501,7 @@ class Blockchain {
 
               const blockInstance = Block.fromJSON(blockData, previousBlockTimestamp);
 
-              // CRITICAL: Additional validation for historical blocks during sync
+              
               if (!this.validateHistoricalBlock(blockInstance, index)) {
                 throw new Error(`Historical block ${index} failed enhanced validation - potential manipulation`);
               }
@@ -1537,7 +1537,7 @@ class Blockchain {
         this.miningReward = this.config.blockchain.coinbaseReward;
         this.blockTime = data.blockTime || 60000;
 
-        // CRITICAL: Load historical transaction database for replay attack protection
+        
         if (data.historicalTransactions && Array.isArray(data.historicalTransactions)) {
           logger.debug('BLOCKCHAIN', `Loading ${data.historicalTransactions.length} historical transactions from file`);
           this.historicalTransactions = new Map(data.historicalTransactions);
@@ -1575,7 +1575,7 @@ class Blockchain {
           logger.debug('BLOCKCHAIN', `No contract data found in file`);
         }
 
-        // CRITICAL: Load nonce collision tracking data
+        
         if (data.globalNonceUsage && Array.isArray(data.globalNonceUsage)) {
           logger.debug('BLOCKCHAIN', `Loading ${data.globalNonceUsage.length} nonce usage entries from file`);
           this.globalNonceUsage = new Map(data.globalNonceUsage);
@@ -1590,14 +1590,14 @@ class Blockchain {
           this.rebuildHistoricalTransactionDatabase();
         }
 
-        // CRITICAL: Load and validate checkpoints before blockchain validation
+        
         logger.debug('BLOCKCHAIN', `Loading and validating checkpoints...`);
         if (!this.checkpointManager.loadCheckpoints()) {
           logger.error('BLOCKCHAIN', `Failed to load checkpoints`);
           return false;
         }
 
-        // CRITICAL: Validate genesis block against config.json specifications
+        
         logger.debug('BLOCKCHAIN', `Validating genesis block against config.json...`);
         if (!this.validateGenesisBlockAgainstConfig()) {
           logger.error('BLOCKCHAIN', `Genesis block validation against config.json FAILED`);
@@ -1611,7 +1611,7 @@ class Blockchain {
           process.exit(1);
         }
 
-        // CRITICAL: Validate checkpoints against loaded blockchain
+        
         logger.debug('BLOCKCHAIN', `Validating checkpoints against loaded blockchain...`);
         if (!this.checkpointManager.validateCheckpoints(this)) {
           logger.error('BLOCKCHAIN', `Checkpoint validation failed - daemon will stop`);
@@ -1621,7 +1621,7 @@ class Blockchain {
 
         logger.debug('BLOCKCHAIN', `Checkpoint validation passed`);
 
-        // CRITICAL SECURITY: Medium validation during startup (includes transaction verification)
+        
         logger.debug('BLOCKCHAIN', `Running medium blockchain validation during startup (includes transaction verification)...`);
         const validationResult = this.blockchainValidation.isValidChainMedium(this.chain, this.config);
         
@@ -1655,7 +1655,7 @@ class Blockchain {
         logger.debug('BLOCKCHAIN', `Rebuilding UTXO set from ${this.chain.length} validated blocks`);
         this.utxoManager.rebuildUTXOSet(this.chain);
 
-        // CRITICAL: Set last saved block height to current chain length since we just loaded from file
+        
         this.lastSavedBlockHeight = this.chain.length - 1;
         this.clearUnsavedBuffer(); // Ensure unsaved buffer is clean
 

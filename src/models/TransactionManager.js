@@ -58,11 +58,11 @@ class TransactionManager {
     this.spamProtection = spamProtection;
     this.memoryPool = memoryPool;
 
-    // CRITICAL: Mutex to prevent double-spend race conditions
+    
     this.transactionMutex = new SimpleMutex();
     this.reservedUTXOs = new Set(); // Track temporarily reserved UTXOs
 
-    // CRITICAL: Processing state for consensus protection
+    
     this.processingPaused = false;
     this.pauseReason = null;
   }
@@ -73,7 +73,7 @@ class TransactionManager {
    * @returns {Promise<boolean>} - false if rejected, true if accepted
    */
   async addPendingTransaction(transaction) {
-    // CRITICAL: Check if processing is paused for consensus protection
+    
     if (this.processingPaused) {
       logger.warn('TRANSACTION_MANAGER', `Transaction rejected - processing paused: ${this.pauseReason}`);
       return false;
@@ -412,7 +412,7 @@ class TransactionManager {
         );
         logger.error('TRANSACTION_MANAGER', `This could be a blockchain manipulation attempt or double-spend attack`);
 
-        // CRITICAL SECURITY: Immediately shutdown daemon to prevent blockchain corruption
+        
         logger.error('TRANSACTION_MANAGER', '🚨 CRITICAL BLOCKCHAIN SECURITY VIOLATION DETECTED');
         logger.error('TRANSACTION_MANAGER', '🛑 SHUTTING DOWN DAEMON TO PREVENT FURTHER CORRUPTION');
         logger.error('TRANSACTION_MANAGER', '⚠️  Manual intervention required - check blockchain integrity');
@@ -490,7 +490,7 @@ class TransactionManager {
         );
         logger.error('TRANSACTION_MANAGER', `This could be a blockchain manipulation attempt or double-spend attack`);
 
-        // CRITICAL SECURITY: Immediately shutdown daemon to prevent blockchain corruption
+        
         logger.error('TRANSACTION_MANAGER', '🚨 CRITICAL BLOCKCHAIN SECURITY VIOLATION DETECTED');
         logger.error('TRANSACTION_MANAGER', '🛑 SHUTTING DOWN DAEMON TO PREVENT FURTHER CORRUPTION');
         logger.error('TRANSACTION_MANAGER', '⚠️  Manual intervention required - check blockchain integrity');
