@@ -19,7 +19,7 @@ class VeloraUtils {
     this.MEMORY_READS = 65536;
     this.MIXING_ROUNDS = 2;
     this.MIXING_CONSTANT = 0x5bd1e995;
-    this.EPOCH_LENGTH = 2016; // Change pattern every 10000 blocks
+    this.EPOCH_LENGTH = 2016; // Change pattern every 2016 blocks
 
     // GPU.js configuration
     this.GPU_CONFIG = {
