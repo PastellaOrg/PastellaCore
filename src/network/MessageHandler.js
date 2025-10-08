@@ -410,10 +410,23 @@ class MessageHandler {
       return; // Block operation until version validation completes
     }
 
-    logger.debug('MESSAGE_HANDLER', `All blocks queried by ${peerAddress}`);
+    // Support batch block requests (max 100 blocks per message)
+    const startIndex = message.startIndex || 0;
+    const maxBlocks = Math.min(message.maxBlocks || 100, 100); // Cap at 100 blocks
+    const endIndex = Math.min(startIndex + maxBlocks, this.blockchain.chain.length);
+
+    const blocksToSend = this.blockchain.chain.slice(startIndex, endIndex);
+    const hasMore = endIndex < this.blockchain.chain.length;
+
+    logger.debug('MESSAGE_HANDLER', `Blocks ${startIndex}-${endIndex - 1} (${blocksToSend.length} blocks) queried by ${peerAddress}, hasMore: ${hasMore}`);
+
     const response = {
       type: 'RESPONSE_BLOCKCHAIN',
-      data: this.blockchain.chain,
+      data: blocksToSend,
+      startIndex: startIndex,
+      endIndex: endIndex - 1,
+      totalBlocks: this.blockchain.chain.length,
+      hasMore: hasMore,
     };
     this.sendMessage(ws, response);
   }
@@ -425,14 +438,20 @@ class MessageHandler {
    * @param peerAddress
    */
   async handleResponseBlockchain(ws, message, peerAddress) {
-    
+
     if (!this.isPeerVersionValidated(peerAddress, 'RESPONSE_BLOCKCHAIN')) {
       return; // Block operation until version validation completes
     }
 
+    // Handle batch response metadata
+    const hasMore = message.hasMore || false;
+    const startIndex = message.startIndex || 0;
+    const endIndex = message.endIndex;
+    const totalBlocks = message.totalBlocks;
+
     logger.debug(
       'MESSAGE_HANDLER',
-      `Blockchain response received from ${peerAddress} with ${message.data.length} blocks`
+      `Blockchain response received from ${peerAddress} with ${message.data.length} blocks (batch: ${startIndex}-${endIndex}/${totalBlocks}, hasMore: ${hasMore})`
     );
 
     const receivedChain = message.data;
@@ -447,14 +466,14 @@ class MessageHandler {
     if (latestBlockReceived.index > latestBlockHeld.index) {
       logger.info(
         'MESSAGE_HANDLER',
-        `Received longer blockchain from ${peerAddress}. New length: ${receivedChain.length}`
+        `Received longer blockchain from ${peerAddress}. Batch: ${startIndex}-${endIndex}/${totalBlocks}`
       );
 
       // Check if we received a complete chain or just partial data
-      if (receivedChain.length === 1 && latestBlockReceived.index > 0) {
+      if (receivedChain.length === 1 && latestBlockReceived.index > 0 && !hasMore) {
         // We received only one block with high index, need to request full chain
         logger.info('MESSAGE_HANDLER', `Received single block ${latestBlockReceived.index}, requesting full chain`);
-        this.sendMessage(ws, { type: 'QUERY_ALL' });
+        this.sendMessage(ws, { type: 'QUERY_ALL', startIndex: 0, maxBlocks: 100 });
         return;
       }
 
@@ -467,24 +486,49 @@ class MessageHandler {
           return Block.fromJSON(blockData); // Convert JSON to Block instance
         });
 
-        // Check if the converted chain is valid
-        const isValidChain = this.blockchain.isValidChain(convertedChain);
+        // For batch responses, validate internal chain consistency
+        const localHeight = this.blockchain.chain.length;
+        let isValidChain = true;
 
-        if (isValidChain) {
-          logger.info('MESSAGE_HANDLER', 'Received chain is valid, verifying consistency with local chain');
-
-          
-          const localHeight = this.blockchain.chain.length;
-          const chainConsistencyCheck = this.verifyChainConsistency(convertedChain, this.blockchain.chain);
-
-          if (!chainConsistencyCheck.consistent) {
-            logger.error('MESSAGE_HANDLER', `Chain consistency check failed: ${chainConsistencyCheck.reason}`);
-            logger.error('MESSAGE_HANDLER', `Mismatch at block ${chainConsistencyCheck.blockIndex}: ${chainConsistencyCheck.details}`);
-            logger.warn('MESSAGE_HANDLER', 'Rejecting inconsistent chain - potential fork or corrupted data');
-            return;
+        // If this is a batch starting from genesis, validate the full chain
+        if (startIndex === 0) {
+          isValidChain = this.blockchain.isValidChain(convertedChain);
+        } else {
+          // For batches, validate internal consistency (each block connects to previous)
+          for (let i = 1; i < convertedChain.length; i++) {
+            if (convertedChain[i].previousHash !== convertedChain[i - 1].hash) {
+              isValidChain = false;
+              logger.warn('MESSAGE_HANDLER', `Batch internal validation failed at block ${convertedChain[i].index}`);
+              break;
+            }
           }
 
-          logger.info('MESSAGE_HANDLER', `Chain consistency verified up to block ${localHeight - 1}`);
+          // Also validate that first block in batch connects to our local chain
+          if (isValidChain && convertedChain[0].index === localHeight) {
+            const lastLocalBlock = this.blockchain.getLatestBlock();
+            if (convertedChain[0].previousHash !== lastLocalBlock.hash) {
+              isValidChain = false;
+              logger.warn('MESSAGE_HANDLER', `Batch does not connect to local chain at block ${convertedChain[0].index}`);
+            }
+          }
+        }
+
+        if (isValidChain) {
+          logger.info('MESSAGE_HANDLER', 'Received batch is valid, verifying consistency with local chain');
+
+          // For batches starting from genesis, do full consistency check
+          if (startIndex === 0) {
+            const chainConsistencyCheck = this.verifyChainConsistency(convertedChain, this.blockchain.chain);
+
+            if (!chainConsistencyCheck.consistent) {
+              logger.error('MESSAGE_HANDLER', `Chain consistency check failed: ${chainConsistencyCheck.reason}`);
+              logger.error('MESSAGE_HANDLER', `Mismatch at block ${chainConsistencyCheck.blockIndex}: ${chainConsistencyCheck.details}`);
+              logger.warn('MESSAGE_HANDLER', 'Rejecting inconsistent chain - potential fork or corrupted data');
+              return;
+            }
+
+            logger.info('MESSAGE_HANDLER', `Chain consistency verified up to block ${localHeight - 1}`);
+          }
 
           const blocksToAdd = convertedChain.slice(localHeight); // Only get the new blocks
 
@@ -595,17 +639,32 @@ class MessageHandler {
           } catch (error) {
             logger.warn('MESSAGE_HANDLER', `Failed to save blockchain after sync: ${error.message}`);
           }
+
+          // If there are more blocks available, request the next batch
+          if (hasMore && addedCount === blocksToAdd.length) {
+            const nextStartIndex = endIndex + 1;
+            logger.info('MESSAGE_HANDLER', `Requesting next batch of blocks starting at index ${nextStartIndex}`);
+            this.sendMessage(ws, {
+              type: 'QUERY_ALL',
+              startIndex: nextStartIndex,
+              maxBlocks: 100
+            });
+          } else if (hasMore) {
+            logger.warn('MESSAGE_HANDLER', 'More blocks available but sync incomplete due to errors');
+          } else {
+            logger.info('MESSAGE_HANDLER', 'Blockchain sync completed - no more blocks to fetch');
+          }
         } else {
           logger.warn('MESSAGE_HANDLER', 'Received chain is invalid, rejecting sync');
           // If chain is invalid, request full chain to get correct data
           logger.info('MESSAGE_HANDLER', 'Requesting full chain due to validation failure');
-          this.sendMessage(ws, { type: 'QUERY_ALL' });
+          this.sendMessage(ws, { type: 'QUERY_ALL', startIndex: 0, maxBlocks: 100 });
         }
       } catch (error) {
         logger.error('MESSAGE_HANDLER', `Error validating received chain: ${error.message}`);
         // If validation throws error, request full chain
         logger.info('MESSAGE_HANDLER', 'Requesting full chain due to validation error');
-        this.sendMessage(ws, { type: 'QUERY_ALL' });
+        this.sendMessage(ws, { type: 'QUERY_ALL', startIndex: 0, maxBlocks: 100 });
       }
     } else {
       logger.debug('MESSAGE_HANDLER', 'Received blockchain is not longer than current blockchain');
@@ -1870,9 +1929,11 @@ class MessageHandler {
       logger.info('MESSAGE_HANDLER', 'Step 3: Requesting complete blockchain from peer...');
       logger.info('MESSAGE_HANDLER', `Requesting full chain from ${peerAddress} for complete resync`);
 
-      // Send QUERY_ALL to get the complete blockchain
+      // Send QUERY_ALL to get the complete blockchain (in batches of 100)
       const queryMessage = {
         type: 'QUERY_ALL',
+        startIndex: 0,
+        maxBlocks: 100,
         timestamp: Date.now(),
         reason: 'full_blockchain_resync_after_corruption'
       };
