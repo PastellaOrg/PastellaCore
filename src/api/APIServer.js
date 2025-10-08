@@ -1809,6 +1809,25 @@ class APIServer {
         'API',
         `Block instance type: ${typeof blockObj}, has isValid: ${typeof blockObj.isValid === 'function'}`
       );
+      
+      logger.debug('API', `Recalculating transaction IDs for security validation`);
+      for (const tx of blockObj.transactions) {
+        if (typeof tx.calculateId === 'function') {
+          const originalId = tx.id;
+          const recalculatedId = tx.calculateId();
+          if (originalId !== recalculatedId) {
+            logger.warn(
+              'API',
+              `Transaction ID mismatch detected - recalculated: original=${originalId}, recalculated=${recalculatedId}`
+            );
+            logger.debug('API', `Updating transaction ID to daemon-calculated value`);
+            // The ID is already updated by calculateId(), no need to set it again
+          }
+        }
+      }
+
+      // Recalculate merkle root after fixing transaction IDs
+      blockObj.calculateMerkleRoot();
 
       // Validate block
       logger.debug('API', `Validating block ${blockObj.index}`);

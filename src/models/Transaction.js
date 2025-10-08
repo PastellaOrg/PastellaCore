@@ -108,6 +108,16 @@ class TransactionOutput {
         throw new Error('Invalid transaction output data: amount is not a number');
       }
 
+      const allowedFields = ['address', 'amount'];
+      const extraFields = Object.keys(data).filter(key => !allowedFields.includes(key));
+      if (extraFields.length > 0) {
+        const logger = require('../utils/logger');
+        logger.warn(
+          'TRANSACTION_OUTPUT',
+          `Stripping ${extraFields.length} unauthorized field(s) from transaction output: ${extraFields.join(', ')}`
+        );
+      }
+
       return new TransactionOutput(data.address, data.amount);
     } catch (error) {
       throw new Error(`Failed to create transaction output from JSON: ${error.message}`);
