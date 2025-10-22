@@ -1134,6 +1134,7 @@ class APIServer {
         merkleRoot: tempBlock.merkleRoot,
         transactions: transactions.map(tx => tx.toJSON()),
         coinbase: coinbase.toJSON(),
+        version: this.blockchain.config?.blockchain?.forkHeights?.currentVersion || 0,
         // Diagnostics to verify difficulty behavior
         diagnostics: {
           height,

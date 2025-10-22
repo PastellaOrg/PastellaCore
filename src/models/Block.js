@@ -28,7 +28,8 @@ class Block {
     difficulty = 4,
     config = null,
     validationContext = null,
-    skipMerkleCalculation = false
+    skipMerkleCalculation = false,
+    version = null
   ) {
     this.index = index;
     this.timestamp = timestamp;
@@ -39,6 +40,8 @@ class Block {
     this.hash = null;
     this.merkleRoot = null;
     this.config = config;
+    // Set version based on fork configuration or default to current version
+    this.version = version !== null && version !== undefined ? version : (config?.blockchain?.forkHeights?.currentVersion || 0);
 
     
     this.validateTimestamp(validationContext);
@@ -525,7 +528,7 @@ class Block {
   isValid() {
     logger.debug(
       'BLOCK',
-      `Validating block ${this.index}: timestamp=${this.timestamp}, previousHash=${this.previousHash?.substring(0, 16)}..., hash=${this.hash?.substring(0, 16)}...`
+      `Validating block ${this.index}: timestamp=${this.timestamp}, previousHash=${this.previousHash?.substring(0, 16)}..., hash=${this.hash?.substring(0, 16)}..., version=${this.version}`
     );
 
     // Check if block has required properties
@@ -535,13 +538,22 @@ class Block {
       this.timestamp === null ||
       this.timestamp === undefined ||
       !this.previousHash ||
-      !this.hash
+      !this.hash ||
+      this.version === null ||
+      this.version === undefined
     ) {
       logger.debug('BLOCK', `Block ${this.index} validation failed: missing required properties`);
       logger.debug('BLOCK', `  index: ${this.index} (${typeof this.index})`);
       logger.debug('BLOCK', `  timestamp: ${this.timestamp} (${typeof this.timestamp})`);
       logger.debug('BLOCK', `  previousHash: ${this.previousHash} (${typeof this.previousHash})`);
       logger.debug('BLOCK', `  hash: ${this.hash} (${typeof this.hash})`);
+      logger.debug('BLOCK', `  version: ${this.version} (${typeof this.version})`);
+      return false;
+    }
+
+    // Check if version is valid (non-negative integer)
+    if (!Number.isInteger(this.version) || this.version < 0) {
+      logger.debug('BLOCK', `Block ${this.index} validation failed: invalid version ${this.version}`);
       return false;
     }
 
@@ -618,7 +630,9 @@ class Block {
       genesisTransactions = [coinbaseTransaction];
     }
 
-    const genesisBlock = new Block(0, genesisTimestamp, genesisTransactions, '0', 0, difficulty, genesisConfig);
+    // Get version from config fork heights or default to 0
+    const version = config?.blockchain?.forkHeights?.currentVersion || 0;
+    const genesisBlock = new Block(0, genesisTimestamp, genesisTransactions, '0', 0, difficulty, genesisConfig, null, false, version);
 
     // Use genesis config if available
     if (genesisConfig && genesisConfig.nonce !== undefined && genesisConfig.hash) {
@@ -645,7 +659,9 @@ class Block {
    * @param config
    */
   static createBlock(index, transactions, previousHash, difficulty = 4, config = null) {
-    const block = new Block(index, Date.now(), transactions, previousHash, 0, difficulty, config);
+    // Get version from config fork heights or default to 0
+    const version = config?.blockchain?.forkHeights?.currentVersion || 0;
+    const block = new Block(index, Date.now(), transactions, previousHash, 0, difficulty, config, null, false, version);
     block.calculateMerkleRoot();
 
     // For Velora mining, we need to set a temporary hash and ensure algorithm is set
@@ -670,6 +686,7 @@ class Block {
       hash: this.hash,
       merkleRoot: this.merkleRoot,
       algorithm: this.algorithm,
+      version: this.version,
     };
   }
 
@@ -750,6 +767,7 @@ class Block {
     
     block.merkleRoot = data.merkleRoot; // Use original from file for validation
     block.algorithm = data.algorithm || 'velora'; // Default to Velora for new blocks
+    block.version = data.version !== undefined ? data.version : (data.config?.blockchain?.forkHeights?.currentVersion || 0); // Set version from data or config
 
     logger.debug(
       'BLOCK',

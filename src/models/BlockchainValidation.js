@@ -406,7 +406,7 @@ class BlockchainValidation {
           return false;
         }
 
-        if (!block.merkleRoot || !block.nonce || !block.difficulty || !block.algorithm) {
+        if (!block.merkleRoot || !block.nonce || !block.difficulty || !block.algorithm || block.version === undefined) {
           return false;
         }
 
@@ -436,6 +436,12 @@ class BlockchainValidation {
           logger.error('BLOCKCHAIN_VALIDATION', `Genesis block integrity verification failed: ${error.message}`);
           return false;
         }
+      } else {
+        // For non-genesis blocks, ensure version is present
+        if (block.version === undefined || block.version === null) {
+          logger.error('BLOCKCHAIN_VALIDATION', `Block ${block.index} missing version field`);
+          return false;
+        }
       }
 
       // For genesis blocks, return true after Merkle root validation
@@ -448,6 +454,12 @@ class BlockchainValidation {
         if (!block.isValid()) {
           return false;
         }
+      }
+      
+      // Validate version field for all blocks (additional check beyond what's in block.isValid())
+      if (block.version === undefined || block.version === null || !Number.isInteger(block.version) || block.version < 0) {
+        logger.error('BLOCKCHAIN_VALIDATION', `Block ${block.index} has invalid version: ${block.version}`);
+        return false;
       }
 
       // Validate block transactions (except genesis)
