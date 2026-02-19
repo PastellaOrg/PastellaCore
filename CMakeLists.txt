@@ -202,6 +202,12 @@ if (NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 ${STATICASSERTCPP_FLAG} ${WARNINGS} ${CXX_WARNINGS} ${ARCH_FLAG} ${MAES_FLAG}")
 
     if (APPLE)
+        # Enable SSE4.2 for CRC32 intrinsics on macOS x86_64 only
+        if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|i386")
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse4.2")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.2")
+        endif ()
+
         if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
             # Need to build against libc++ instead of libstc++ on apple
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -I/usr/local/opt/llvm/include/c++/v1 -nodefaultlibs -lc++ -lc++abi -lm -lc -lgcc -lgcc_eh")
