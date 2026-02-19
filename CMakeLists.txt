@@ -331,7 +331,22 @@ if (NOT MSVC)
         )
         set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${PROJECT_BINARY_DIR}/leveldb/libleveldb.a")
     else ()
-        # Configure RocksDB - enable ARM64 CRC on macOS ARM64, SSE4.2 on x86_64
+        # Configure RocksDB
+        #
+        # NOTE: There is a difference between Linux ARM64 and macOS ARM64.
+        # - On Linux/aarch64, RocksDB's own CMake probes for CRC32 support and
+        #   adds `-march=armv8-a+crc` when supported.
+        # - On macOS/arm64, `-march=armv8-a+crc` is not a valid flag; Clang uses
+        #   `-arch arm64` and feature detection via predefined macros.
+        #
+        # Also, some toolchains (notably certain GCC/cc wrappers used in CI cross
+        # builds) can mis-parse `CMAKE_C_FLAGS` such that a following `-D...`
+        # define is treated as part of the `-march` argument, producing errors
+        # like:
+        #   invalid feature modifier 'crc -dhave_arm64_crc'
+        #
+        # For these reasons, do not force `-march=armv8-a+crc` from the parent
+        # project; let RocksDB decide.
         if (IS_ARM64)
             execute_process(
                 COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb
@@ -342,8 +357,6 @@ if (NOT MSVC)
                     -DWITH_TESTS=OFF
                     -DWITH_TOOLS=OFF
                     -DPORTABLE=ON
-                    -DCMAKE_C_FLAGS="-march=armv8-a+crc"
-                    -DCMAKE_CXX_FLAGS="-march=armv8-a+crc"
                     -B${PROJECT_BINARY_DIR}/rocksdb
                 RESULT_VARIABLE ROCKSDB_CONFIG_RESULT
             )
