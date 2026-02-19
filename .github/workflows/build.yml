@@ -61,7 +61,7 @@ jobs:
 
     - name: Install vcpkg dependencies
       run: |
-        vcpkg install boost-system:x64-windows boost-thread:x64-windows boost-date-time:x64-windows boost-chrono:x64-windows boost-serialization:x64-windows openssl:x64-windows
+        vcpkg install boost-uuid:x64-windows boost-system:x64-windows boost-thread:x64-windows boost-date-time:x64-windows boost-chrono:x64-windows boost-serialization:x64-windows openssl:x64-windows
 
     - name: Configure CMake
       run: |
