@@ -111,11 +111,18 @@ public:
 } // namespace port
 } // namespace rocksdb
 
-namespace std {
-  inline
-  void swap(rocksdb::port::WindowsThread& th1, 
-    rocksdb::port::WindowsThread& th2) {
-    th1.swap(th2);
-  }
-} // namespace std
+// Do NOT add overloads to namespace std.
+// MSVC's <algorithm> may attempt to use std::swap in contexts where the
+// deduced type is not WindowsThread (e.g. integral types), and the presence of
+// this overload can break overload resolution.
+//
+// Provide a non-member swap in the same namespace as WindowsThread so ADL can
+// find it when swapping WindowsThread objects.
+namespace rocksdb {
+namespace port {
+inline void swap(WindowsThread& th1, WindowsThread& th2) noexcept {
+  th1.swap(th2);
+}
+}  // namespace port
+}  // namespace rocksdb
 
