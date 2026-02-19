@@ -334,7 +334,7 @@ if (NOT MSVC)
         # Configure RocksDB - enable ARM64 CRC on macOS ARM64, SSE4.2 on x86_64
         if (IS_ARM64)
             execute_process(
-                COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb -DARCH=${ARCH} -DWITH_ZSTD=${WITH_ZSTD} -DWITH_GFLAGS=0 -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DPORTABLE=ON -DCMAKE_C_FLAGS="-march=armv8-a+crc" -DCMAKE_CXX_FLAGS="-march=armv8-a+crc" -B${PROJECT_BINARY_DIR}/rocksdb
+                COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb -DARCH=${ARCH} -DWITH_ZSTD=${WITH_ZSTD} -DWITH_GFLAGS=0 -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DPORTABLE=ON -DCMAKE_C_FLAGS="-march=armv8-a+crc -DHAVE_ARM64_CRC" -DCMAKE_CXX_FLAGS="-march=armv8-a+crc -DHAVE_ARM64_CRC" -B${PROJECT_BINARY_DIR}/rocksdb
             )
         else ()
             execute_process(
