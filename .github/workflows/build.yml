@@ -113,7 +113,7 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
     - name: Build
       run: |
