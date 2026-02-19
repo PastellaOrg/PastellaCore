@@ -331,10 +331,10 @@ if (NOT MSVC)
         )
         set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${PROJECT_BINARY_DIR}/leveldb/libleveldb.a")
     else ()
-        # Disable SSE4.2 on ARM64 for RocksDB
+        # Configure RocksDB - enable ARM64 CRC on macOS ARM64, SSE4.2 on x86_64
         if (IS_ARM64)
             execute_process(
-                COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb -DARCH=${ARCH} -DWITH_ZSTD=${WITH_ZSTD} -DWITH_GFLAGS=0 -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DPORTABLE=ON -DWITH_SSE42=OFF -DHAVE_SSE42=OFF -B${PROJECT_BINARY_DIR}/rocksdb
+                COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb -DARCH=${ARCH} -DWITH_ZSTD=${WITH_ZSTD} -DWITH_GFLAGS=0 -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DPORTABLE=ON -DCMAKE_C_FLAGS="-march=armv8-a+crc" -DCMAKE_CXX_FLAGS="-march=armv8-a+crc" -B${PROJECT_BINARY_DIR}/rocksdb
             )
         else ()
             execute_process(
