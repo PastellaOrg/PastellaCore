@@ -1,0 +1,176 @@
+name: Build PastellaCore
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dep ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [Release, Debug]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libboost-all-dev \
+          libssl-dev \
+          libpthread-stubs0-dev
+
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+    - name: Build
+      run: |
+        cd build
+        make -j$(nproc)
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-${{ matrix.build_type }}-binaries
+        path: |
+          build/src/Pastellad
+          build/src/Pastella-Wallet
+          build/src/Pastella-Wallet-API
+
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        build_type: [Release, Debug]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Install vcpkg dependencies
+      run: |
+        vcpkg install boost-system:x64-windows boost-thread:x64-windows boost-date-time:x64-windows boost-chrono:x64-windows boost-serialization:x64-windows openssl:x64-windows
+
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+
+    - name: Build
+      run: |
+        cd build
+        cmake --build . --config ${{ matrix.build_type }} -j
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-${{ matrix.build_type }}-binaries
+        path: |
+          build/src/${{ matrix.build_type }}/Pastellad.exe
+          build/src/${{ matrix.build_type }}/Pastella-Wallet.exe
+          build/src/${{ matrix.build_type }}/Pastella-Wallet-API.dll
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        build_type: [Release, Debug]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        brew update
+        brew install \
+          cmake \
+          boost \
+          openssl@3 \
+          llvm
+
+    - name: Setup OpenSSL
+      run: |
+        echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR"
+
+    - name: Build
+      run: |
+        cd build
+        make -j$(sysctl -n hw.ncpu)
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-${{ matrix.build_type }}-binaries
+        path: |
+          build/src/Pastellad
+          build/src/Pastella-Wallet
+          build/src/Pastella-Wallet-API
+
+  build-arm64:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [Release, Debug]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build in ARM64 container
+      run: |
+        docker run --rm -v $PWD:/project -w /project \
+          --platform linux/arm64 \
+          ghcr.io/catthehacker/ubuntu:act-latest \
+          bash -c "
+            apt-get update &&
+            apt-get install -y build-essential cmake libboost-all-dev libssl-dev libpthread-stubs0-dev git &&
+            mkdir build &&
+            cd build &&
+            cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DNO_AES=ON &&
+            make -j\$(nproc)
+          "
+
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: arm64-${{ matrix.build_type }}-binaries
+        path: |
+          build/src/Pastellad
+          build/src/Pastella-Wallet
+          build/src/Pastella-Wallet-API

@@ -1,0 +1,643 @@
+// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
+// Copyright (c) 2018-2019, The TurtleCoin Developers
+//
+// Please see the included LICENSE file for more information.
+
+#include "PastellaSerialization.h"
+
+#include "common/StringOutputStream.h"
+#include "crypto/crypto.h"
+#include "serialization/BinaryInputStreamSerializer.h"
+#include "serialization/BinaryOutputStreamSerializer.h"
+#include "serialization/ISerializer.h"
+#include "serialization/SerializationOverloads.h"
+
+#include <algorithm>
+#include <boost/variant/apply_visitor.hpp>
+#include <boost/variant/static_visitor.hpp>
+#include <common/PastellaTools.h>
+#include <common/TransactionExtra.h>
+#include <config/PastellaConfig.h>
+#include <sstream>
+#include <stdexcept>
+
+using namespace Common;
+
+namespace
+{
+    using namespace Pastella;
+    using namespace Common;
+
+    uint64_t getSignaturesCount(const TransactionInput &input)
+    {
+        struct txin_signature_size_visitor : public boost::static_visitor<uint64_t>
+        {
+            uint64_t operator()(const BaseInput &txin) const
+            {
+                return 0;
+            }
+
+            uint64_t operator()(const KeyInput &txin) const
+            {
+                return txin.outputIndexes.size();
+            }
+        };
+
+        return boost::apply_visitor(txin_signature_size_visitor(), input);
+    }
+
+    struct BinaryVariantTagGetter : boost::static_visitor<uint8_t>
+    {
+        uint8_t operator()(const Pastella::BaseInput)
+        {
+            return 0xff;
+        }
+
+        uint8_t operator()(const Pastella::KeyInput)
+        {
+            return 0x2;
+        }
+
+        uint8_t operator()(const Pastella::KeyOutput)
+        {
+            return 0x2;
+        }
+
+        uint8_t operator()(const Pastella::Transaction)
+        {
+            return 0xcc;
+        }
+
+        uint8_t operator()(const Pastella::BlockTemplate)
+        {
+            return 0xbb;
+        }
+    };
+
+    struct VariantSerializer : boost::static_visitor<>
+    {
+        VariantSerializer(Pastella::ISerializer &serializer, const std::string &name): s(serializer), name(name) {}
+
+        template<typename T> void operator()(T &param)
+        {
+            s(param, name);
+        }
+
+        Pastella::ISerializer &s;
+
+        std::string name;
+    };
+
+    void getVariantValue(Pastella::ISerializer &serializer, uint8_t tag, Pastella::TransactionInput &in)
+    {
+        switch (tag)
+        {
+            case 0xff:
+            {
+                Pastella::BaseInput v;
+                serializer(v, "value");
+                in = v;
+                break;
+            }
+            case 0x2:
+            {
+                Pastella::KeyInput v;
+                serializer(v, "value");
+                in = v;
+                break;
+            }
+            default:
+                throw std::runtime_error("Unknown variant tag");
+        }
+    }
+
+    void getVariantValue(Pastella::ISerializer &serializer, uint8_t tag, Pastella::TransactionOutputTarget &out)
+    {
+        switch (tag)
+        {
+            case 0x2:
+            {
+                Pastella::KeyOutput v;
+                serializer(v, "data");
+                out = v;
+                break;
+            }
+            default:
+                throw std::runtime_error("Unknown variant tag");
+        }
+    }
+
+    template<typename T> bool serializePod(T &v, Common::StringView name, Pastella::ISerializer &serializer)
+    {
+        return serializer.binary(&v, sizeof(v), name);
+    }
+
+    bool serializeVarintVector(
+        std::vector<uint32_t> &vector,
+        Pastella::ISerializer &serializer,
+        Common::StringView name)
+    {
+        uint64_t size = vector.size();
+
+        if (!serializer.beginArray(size, name))
+        {
+            vector.clear();
+            return false;
+        }
+
+        vector.resize(size);
+
+        for (uint64_t i = 0; i < size; ++i)
+        {
+            serializer(vector[i], "");
+        }
+
+        serializer.endArray();
+        return true;
+    }
+
+} // namespace
+
+namespace Crypto
+{
+    bool serialize(PublicKey &pubKey, Common::StringView name, Pastella::ISerializer &serializer)
+    {
+        return serializePod(pubKey, name, serializer);
+    }
+
+    bool serialize(SecretKey &secKey, Common::StringView name, Pastella::ISerializer &serializer)
+    {
+        return serializePod(secKey, name, serializer);
+    }
+
+    bool serialize(Hash &h, Common::StringView name, Pastella::ISerializer &serializer)
+    {
+        return serializePod(h, name, serializer);
+    }
+
+    /* STEALTH ADDRESS REMOVAL: KeyImage serialize implementation removed */
+
+    bool serialize(chacha8_iv &chacha, Common::StringView name, Pastella::ISerializer &serializer)
+    {
+        return serializePod(chacha, name, serializer);
+    }
+
+    bool serialize(Signature &sig, Common::StringView name, Pastella::ISerializer &serializer)
+    {
+        return serializePod(sig, name, serializer);
+    }
+
+    bool serialize(EllipticCurveScalar &ecScalar, Common::StringView name, Pastella::ISerializer &serializer)
+    {
+        return serializePod(ecScalar, name, serializer);
+    }
+
+    bool serialize(EllipticCurvePoint &ecPoint, Common::StringView name, Pastella::ISerializer &serializer)
+    {
+        return serializePod(ecPoint, name, serializer);
+    }
+
+} // namespace Crypto
+
+namespace Pastella
+{
+    void serialize(TransactionPrefix &txP, ISerializer &serializer)
+    {
+        serializer(txP.version, "version");
+
+        if (CURRENT_TRANSACTION_VERSION < txP.version && serializer.type() == ISerializer::INPUT)
+        {
+            throw std::runtime_error("Wrong transaction version");
+        }
+
+        serializer(txP.unlockTime, "unlock_time");
+        serializer(txP.inputs, "vin");
+        serializer(txP.outputs, "vout");
+        serializeAsBinary(txP.extra, "extra", serializer);
+    }
+
+    void serialize(BaseTransaction &tx, ISerializer &serializer)
+    {
+        serializer(tx.version, "version");
+        serializer(tx.unlockTime, "unlock_time");
+        serializer(tx.inputs, "vin");
+        serializer(tx.outputs, "vout");
+        serializeAsBinary(tx.extra, "extra", serializer);
+
+        if (tx.version >= TRANSACTION_VERSION_2)
+        {
+            uint64_t ignored = 0;
+            serializer(ignored, "ignored");
+        }
+    }
+
+    void serialize(Transaction &tx, ISerializer &serializer)
+    {
+        serialize(static_cast<TransactionPrefix &>(tx), serializer);
+
+        uint64_t sigSize = tx.inputs.size();
+        // TODO: make arrays without sizes
+        //  serializer.beginArray(sigSize, "signatures");
+
+        // ignore base transaction
+        if (serializer.type() == ISerializer::INPUT && !(sigSize == 1 && tx.inputs[0].type() == typeid(BaseInput)))
+        {
+            tx.signatures.resize(sigSize);
+        }
+
+        bool signaturesNotExpected = tx.signatures.empty();
+        if (!signaturesNotExpected && tx.inputs.size() != tx.signatures.size())
+        {
+            throw std::runtime_error("Serialization error: unexpected signatures size");
+        }
+
+        for (uint64_t i = 0; i < tx.inputs.size(); ++i)
+        {
+            uint64_t signatureSize = getSignaturesCount(tx.inputs[i]);
+            if (signaturesNotExpected)
+            {
+                /* TRANSPARENT SYSTEM: In transparent mode, outputIndexes.size() == 1 (no mixins)
+                 * This means signatureSize == 1, but we don't expect ring signatures.
+                 * We treat this as a transparent transaction with no signatures needed. */
+                if (signatureSize == 0 || (signatureSize == 1 && tx.inputs[i].type() == typeid(KeyInput)))
+                {
+                    continue;
+                }
+                else
+                {
+                    throw std::runtime_error("Serialization error: signatures are not expected");
+                }
+            }
+
+            if (serializer.type() == ISerializer::OUTPUT)
+            {
+                /* TRANSPARENT SYSTEM: In transparent mode with no mixins (signatureSize == 1),
+                 * we DO serialize the ONE Ed25519 signature if present */
+                if (signatureSize == 1 && tx.signatures[i].size() == 0 && tx.inputs[i].type() == typeid(KeyInput))
+                {
+                    /* Transparent mode - no signatures to serialize (legacy transactions) */
+                    continue;
+                }
+
+                if (signatureSize != tx.signatures[i].size())
+                {
+                    throw std::runtime_error("Serialization error: unexpected signatures size");
+                }
+
+                for (Crypto::Signature &sig : tx.signatures[i])
+                {
+                    serializePod(sig, "", serializer);
+                }
+            }
+            else
+            {
+                /* TRANSPARENT SYSTEM: In transparent mode with no mixins (signatureSize == 1),
+                 * we DO expect to read ONE signature from the data (Ed25519 signature) */
+                if (signatureSize == 1 && tx.inputs[i].type() == typeid(KeyInput))
+                {
+                    /* Transparent mode - read one Ed25519 signature */
+                    std::vector<Crypto::Signature> signatures(1);
+                    serializePod(signatures[0], "", serializer);
+                    tx.signatures[i] = std::move(signatures);
+                    continue;
+                }
+
+                std::vector<Crypto::Signature> signatures(signatureSize);
+                for (Crypto::Signature &sig : signatures)
+                {
+                    serializePod(sig, "", serializer);
+                }
+
+                tx.signatures[i] = std::move(signatures);
+            }
+        }
+        //  serializer.endArray();
+    }
+
+    void serialize(TransactionInput &in, ISerializer &serializer)
+    {
+        if (serializer.type() == ISerializer::OUTPUT)
+        {
+            BinaryVariantTagGetter tagGetter;
+            uint8_t tag = boost::apply_visitor(tagGetter, in);
+            serializer.binary(&tag, sizeof(tag), "type");
+
+            VariantSerializer visitor(serializer, "value");
+            boost::apply_visitor(visitor, in);
+        }
+        else
+        {
+            uint8_t tag;
+            serializer.binary(&tag, sizeof(tag), "type");
+
+            getVariantValue(serializer, tag, in);
+        }
+    }
+
+    void serialize(BaseInput &gen, ISerializer &serializer)
+    {
+        serializer(gen.blockIndex, "height");
+    }
+
+    void serialize(KeyInput &key, ISerializer &serializer)
+    {
+        serializer(key.amount, "amount");
+        serializeVarintVector(key.outputIndexes, serializer, "key_offsets");
+
+        /* BACKWARDS COMPATIBILITY: transactionHash and outputIndex are optional fields
+         *
+         * Old transactions (created before UTXO ref fields were added) don't have these fields
+         * in their binary format. When reading old transactions, if we try to read these fields,
+         * we'll either read garbage or corrupt the stream position.
+         *
+         * Solution: Only write these fields for new transactions; for reading, detect if they exist
+         * by catching read exceptions and leaving fields as zeros (indicating "not available").
+         */
+        if (serializer.type() == ISerializer::INPUT)
+        {
+            /* INPUT: Reading from binary - fields may not exist in old transactions
+             * Initialize to zeros first, then try to read. If read fails, we keep the zeros. */
+            std::memset(key.transactionHash.data, 0, sizeof(key.transactionHash.data));
+            key.outputIndex = 0;
+
+            /* Attempt to read transactionHash (32 bytes) - may fail for old transactions */
+            try {
+                serializer(key.transactionHash, "transaction_hash");
+            } catch (...) {
+                /* Old transaction format - field doesn't exist, keep zeros */
+            }
+
+            /* Attempt to read outputIndex (4 bytes) - may fail for old transactions */
+            try {
+                serializer(key.outputIndex, "output_index");
+            } catch (...) {
+                /* Old transaction format - field doesn't exist, keep zero */
+            }
+        }
+        else
+        {
+            /* OUTPUT: Writing to binary - always write the fields (new transaction format) */
+            serializer(key.transactionHash, "transaction_hash");
+            serializer(key.outputIndex, "output_index");
+        }
+
+        /* STEALTH ADDRESS REMOVAL: keyImage serialization removed - field no longer exists in KeyInput */
+    }
+
+    void serialize(TransactionOutput &output, ISerializer &serializer)
+    {
+        serializer(output.amount, "amount");
+        serializer(output.target, "target");
+    }
+
+    void serialize(TransactionOutputTarget &output, ISerializer &serializer)
+    {
+        if (serializer.type() == ISerializer::OUTPUT)
+        {
+            BinaryVariantTagGetter tagGetter;
+            uint8_t tag = boost::apply_visitor(tagGetter, output);
+            serializer.binary(&tag, sizeof(tag), "type");
+
+            VariantSerializer visitor(serializer, "data");
+            boost::apply_visitor(visitor, output);
+        }
+        else
+        {
+            uint8_t tag;
+            serializer.binary(&tag, sizeof(tag), "type");
+
+            getVariantValue(serializer, tag, output);
+        }
+    }
+
+    void serialize(KeyOutput &key, ISerializer &serializer)
+    {
+        serializer(key.key, "key");
+    }
+
+    void serialize(ParentBlockSerializer &pbs, ISerializer &serializer)
+    {
+        serializer(pbs.m_parentBlock.majorVersion, "majorVersion");
+
+        serializer(pbs.m_parentBlock.minorVersion, "minorVersion");
+        serializer(pbs.m_timestamp, "timestamp");
+        serializer(pbs.m_parentBlock.previousBlockHash, "prevId");
+        serializer.binary(&pbs.m_nonce, sizeof(pbs.m_nonce), "nonce");
+
+        if (pbs.m_hashingSerialization)
+        {
+            Crypto::Hash minerTxHash;
+            if (!getBaseTransactionHash(pbs.m_parentBlock.baseTransaction, minerTxHash))
+            {
+                throw std::runtime_error("Get transaction hash error");
+            }
+
+            Crypto::Hash merkleRoot;
+            Crypto::tree_hash_from_branch(
+                pbs.m_parentBlock.baseTransactionBranch.data(),
+                pbs.m_parentBlock.baseTransactionBranch.size(),
+                minerTxHash,
+                0,
+                merkleRoot);
+
+            serializer(merkleRoot, "merkleRoot");
+        }
+
+        uint64_t txNum = static_cast<uint64_t>(pbs.m_parentBlock.transactionCount);
+        serializer(txNum, "numberOfTransactions");
+        pbs.m_parentBlock.transactionCount = static_cast<uint16_t>(txNum);
+        if (pbs.m_parentBlock.transactionCount < 1)
+        {
+            throw std::runtime_error("Wrong transactions number");
+        }
+
+        if (pbs.m_headerOnly)
+        {
+            return;
+        }
+
+        uint64_t branchSize = Crypto::tree_depth(pbs.m_parentBlock.transactionCount);
+        if (serializer.type() == ISerializer::OUTPUT)
+        {
+            if (pbs.m_parentBlock.baseTransactionBranch.size() != branchSize)
+            {
+                throw std::runtime_error("Wrong miner transaction branch size");
+            }
+        }
+        else
+        {
+            pbs.m_parentBlock.baseTransactionBranch.resize(branchSize);
+        }
+
+        //  serializer(m_parentBlock.baseTransactionBranch, "baseTransactionBranch");
+        // TODO: Make arrays with computable size! This code won't work with json serialization!
+        for (Crypto::Hash &hash : pbs.m_parentBlock.baseTransactionBranch)
+        {
+            serializer(hash, "");
+        }
+
+        serializer(pbs.m_parentBlock.baseTransaction, "minerTx");
+
+        TransactionExtraMergeMiningTag mmTag;
+        if (!getMergeMiningTagFromExtra(pbs.m_parentBlock.baseTransaction.extra, mmTag))
+        {
+            throw std::runtime_error("Can't get extra merge mining tag");
+        }
+
+        if (mmTag.depth > 8 * sizeof(Crypto::Hash))
+        {
+            throw std::runtime_error("Wrong merge mining tag depth");
+        }
+
+        if (serializer.type() == ISerializer::OUTPUT)
+        {
+            if (mmTag.depth != pbs.m_parentBlock.blockchainBranch.size())
+            {
+                throw std::runtime_error("Blockchain branch size must be equal to merge mining tag depth");
+            }
+        }
+        else
+        {
+            pbs.m_parentBlock.blockchainBranch.resize(mmTag.depth);
+        }
+
+        //  serializer(m_parentBlock.blockchainBranch, "blockchainBranch");
+        // TODO: Make arrays with computable size! This code won't work with json serialization!
+        for (Crypto::Hash &hash : pbs.m_parentBlock.blockchainBranch)
+        {
+            serializer(hash, "");
+        }
+    }
+
+    void serializeBlockHeader(BlockHeader &header, ISerializer &serializer)
+    {
+        serializer(header.majorVersion, "major_version");
+        if (header.majorVersion > BLOCK_MAJOR_VERSION_6)
+        {
+            throw std::runtime_error("Wrong major version");
+        }
+
+        serializer(header.minorVersion, "minor_version");
+        serializer(header.timestamp, "timestamp");
+        serializer(header.previousBlockHash, "prev_id");
+        serializer.binary(&header.nonce, sizeof(header.nonce), "nonce");
+    }
+
+    void serialize(BlockHeader &header, ISerializer &serializer)
+    {
+        serializeBlockHeader(header, serializer);
+    }
+
+    void serialize(BlockTemplate &block, ISerializer &serializer)
+    {
+        serializeBlockHeader(block, serializer);
+
+        serializer(block.baseTransaction, "miner_tx");
+        serializer(block.transactionHashes, "tx_hashes");
+    }
+
+    void serialize(AccountPublicAddress &address, ISerializer &serializer)
+    {
+        serializer.binary(&address.publicKey, sizeof(address.publicKey), "");
+
+    }
+
+    void serialize(AccountKeys &keys, ISerializer &s)
+    {
+        s(keys.address, "accountAddress");
+        s(keys.secretKey, "secretKey");
+
+    }
+
+    void doSerialize(TransactionExtraMergeMiningTag &tag, ISerializer &serializer)
+    {
+        uint64_t depth = static_cast<uint64_t>(tag.depth);
+        serializer(depth, "depth");
+        tag.depth = static_cast<uint64_t>(depth);
+        serializer(tag.merkleRoot, "merkle_root");
+    }
+
+    void serialize(TransactionExtraMergeMiningTag &tag, ISerializer &serializer)
+    {
+        if (serializer.type() == ISerializer::OUTPUT)
+        {
+            std::string field;
+            StringOutputStream os(field);
+            BinaryOutputStreamSerializer output(os);
+            doSerialize(tag, output);
+            serializer(field, "");
+        }
+        else
+        {
+            std::string field;
+            serializer(field, "mm_tag");
+            MemoryInputStream stream(field.data(), field.size());
+            BinaryInputStreamSerializer input(stream);
+            doSerialize(tag, input);
+        }
+    }
+
+    void serialize(KeyPair &keyPair, ISerializer &serializer)
+    {
+        serializer(keyPair.secretKey, "secret_key");
+        serializer(keyPair.publicKey, "public_key");
+    }
+
+    // unpack to strings to maintain protocol compatibility with older versions
+    void serialize(RawBlock &rawBlock, ISerializer &serializer)
+    {
+        if (serializer.type() == ISerializer::INPUT)
+        {
+            uint64_t blockSize;
+            serializer(blockSize, "block_size");
+            rawBlock.block.resize(static_cast<uint64_t>(blockSize));
+        }
+        else
+        {
+            uint64_t blockSize = rawBlock.block.size();
+            serializer(blockSize, "block_size");
+        }
+
+        serializer.binary(rawBlock.block.data(), rawBlock.block.size(), "block");
+
+        if (serializer.type() == ISerializer::INPUT)
+        {
+            uint64_t txCount;
+            serializer(txCount, "tx_count");
+            rawBlock.transactions.resize(static_cast<uint64_t>(txCount));
+
+            serializer.beginArray(txCount, "transactions");
+
+            for (auto &txBlob : rawBlock.transactions)
+            {
+                serializer.beginObject("transaction");
+                uint64_t txSize;
+                serializer(txSize, "tx_size");
+                txBlob.resize(txSize);
+                serializer.binary(txBlob.data(), txBlob.size(), "transaction");
+                serializer.endObject();
+            }
+
+            serializer.endArray();
+        }
+        else
+        {
+            uint64_t txCount = rawBlock.transactions.size();
+            serializer(txCount, "tx_count");
+
+            serializer.beginArray(txCount, "transactions");
+
+            for (auto &txBlob : rawBlock.transactions)
+            {
+                serializer.beginObject("transaction");
+                uint64_t txSize = txBlob.size();
+                serializer(txSize, "tx_size");
+                serializer.binary(txBlob.data(), txBlob.size(), "transaction");
+                serializer.endObject();
+            }
+
+            serializer.endArray();
+        }
+    }
+
+} // namespace Pastella
