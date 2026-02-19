@@ -496,7 +496,7 @@ std::string IsFastCrc32Supported() {
     has_fast_crc = false;
     arch = "Arm64";
   }
-#elif defined(__APPLE__) && defined(__aarch64__)
+#elif defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
   // Apple Silicon (arm64): no SSE4.2. If we don't have an ARM CRC32
   // implementation enabled, fall back to the slow path.
   has_fast_crc = false;
@@ -1231,7 +1231,7 @@ static inline Function Choose_Extend() {
   } else {
     return ExtendImpl<Slow_CRC32>;
   }
-#elif defined(__APPLE__) && defined(__aarch64__)
+#elif defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
   // Apple Silicon (arm64): no SSE4.2. If we don't have an ARM CRC32
   // implementation enabled, fall back to the slow path.
   return ExtendImpl<Slow_CRC32>;
