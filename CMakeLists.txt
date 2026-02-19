@@ -227,7 +227,7 @@ if (NOT MSVC)
     endif ()
 
     ## Setting up RELEASE flags
-    set(RELEASE_FLAGS "-Ofast -DNDEBUG -Wno-unused-variable")
+    set(RELEASE_FLAGS "-O3 -DNDEBUG -Wno-unused-variable")
 
     if (NOT APPLE)
         # There is a clang bug that does not allow to compile code that uses AES-NI intrinsics if -flto is enabled
