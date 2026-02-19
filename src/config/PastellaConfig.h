@@ -75,7 +75,7 @@ namespace Pastella
 
       /* Static assertions for consistency */
       static_assert(MIN_LOCK_PERIOD_DAYS_COUNT == ANNUAL_REWARD_RATES_COUNT, "Lock periods and reward rates must match");
-      static_assert(MIN_LOCK_PERIOD_DAYS_COUNT == 5, "Must have exactly 4 staking tiers");
+      static_assert(MIN_LOCK_PERIOD_DAYS_COUNT == 4, "Must have exactly 4 staking tiers");
     }
 
     /* Governance Configuration */
