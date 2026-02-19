@@ -190,7 +190,10 @@ if (NOT MSVC)
     set(C_WARNINGS "-Waggregate-return -Wnested-externs -Wold-style-definition -Wstrict-prototypes -Wno-implicit-fallthrough")
     set(CXX_WARNINGS "-Wno-reorder -Wno-missing-field-initializers")
 
+    # Detect ARM64 architecture
+    set(IS_ARM64 OFF)
     if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64|arm64" OR "${LABEL}" STREQUAL "aarch64" OR (APPLE AND "${CMAKE_HOST_SYSTEM_PROCESSOR}" MATCHES "arm64"))
+        set(IS_ARM64 ON)
         set(MAES_FLAG "")
         set(CRYPTOPP_AARCH64 ON CACHE BOOL FORCE "Tell CryptoPP that we are building for aarch64")
         add_definitions(-DCRYPTOPP_DISABLE_SSE4 -DCRYPTOPP_DISABLE_ASM)
@@ -329,7 +332,7 @@ if (NOT MSVC)
         set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${PROJECT_BINARY_DIR}/leveldb/libleveldb.a")
     else ()
         # Disable SSE4.2 on ARM64 for RocksDB
-        if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64|arm64" OR "${LABEL}" STREQUAL "aarch64" OR (APPLE AND "${CMAKE_HOST_SYSTEM_PROCESSOR}" MATCHES "arm64"))
+        if (IS_ARM64)
             execute_process(
                 COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb -DARCH=${ARCH} -DWITH_ZSTD=${WITH_ZSTD} -DWITH_GFLAGS=0 -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DPORTABLE=ON -DWITH_SSE42=OFF -DHAVE_SSE42=OFF -B${PROJECT_BINARY_DIR}/rocksdb
             )
