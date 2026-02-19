@@ -97,9 +97,13 @@ jobs:
         brew update
         brew install \
           cmake \
-          boost \
+          boost@1.85 \
           openssl@3 \
           llvm
+
+    - name: Setup Boost environment
+      run: |
+        echo "CMAKE_PREFIX_PATH=$(brew --prefix boost@1.85)" >> $GITHUB_ENV
 
     - name: Setup OpenSSL
       run: |
@@ -109,7 +113,7 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR"
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"
 
     - name: Build
       run: |
