@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cassert>
+#include <cstdint>
 #include <string>
 
 namespace Common
