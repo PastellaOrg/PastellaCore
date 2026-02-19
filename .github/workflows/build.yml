@@ -10,9 +10,6 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        build_type: [Release, Debug]
 
     steps:
     - name: Checkout code
@@ -34,7 +31,7 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        cmake .. -DCMAKE_BUILD_TYPE=Release
 
     - name: Build
       run: |
@@ -44,7 +41,7 @@ jobs:
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: linux-${{ matrix.build_type }}-binaries
+        name: linux-release-binaries
         path: |
           build/src/Pastellad
           build/src/Pastella-Wallet
@@ -52,9 +49,6 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        build_type: [Release, Debug]
 
     steps:
     - name: Checkout code
@@ -73,27 +67,24 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
     - name: Build
       run: |
         cd build
-        cmake --build . --config ${{ matrix.build_type }} -j
+        cmake --build . --config Release -j
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: windows-${{ matrix.build_type }}-binaries
+        name: windows-release-binaries
         path: |
-          build/src/${{ matrix.build_type }}/Pastellad.exe
-          build/src/${{ matrix.build_type }}/Pastella-Wallet.exe
-          build/src/${{ matrix.build_type }}/Pastella-Wallet-API.dll
+          build/src/Release/Pastellad.exe
+          build/src/Release/Pastella-Wallet.exe
+          build/src/Release/Pastella-Wallet-API.dll
 
   build-macos:
     runs-on: macos-latest
-    strategy:
-      matrix:
-        build_type: [Release, Debug]
 
     steps:
     - name: Checkout code
@@ -118,7 +109,7 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR"
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR"
 
     - name: Build
       run: |
@@ -128,7 +119,7 @@ jobs:
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: macos-${{ matrix.build_type }}-binaries
+        name: macos-release-binaries
         path: |
           build/src/Pastellad
           build/src/Pastella-Wallet
@@ -136,9 +127,6 @@ jobs:
 
   build-arm64:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        build_type: [Release, Debug]
 
     steps:
     - name: Checkout code
@@ -162,14 +150,14 @@ jobs:
             apt-get install -y build-essential cmake libboost-all-dev libssl-dev libpthread-stubs0-dev git &&
             mkdir build &&
             cd build &&
-            cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DNO_AES=ON &&
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DNO_AES=ON &&
             make -j\$(nproc)
           "
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: arm64-${{ matrix.build_type }}-binaries
+        name: arm64-release-binaries
         path: |
           build/src/Pastellad
           build/src/Pastella-Wallet
