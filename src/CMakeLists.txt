@@ -133,7 +133,15 @@ add_library(__filesystem INTERFACE)
 
 # Windows works out of the box
 if (APPLE)
-    target_link_libraries(__filesystem INTERFACE /usr/local/opt/llvm/lib/libc++fs.a)
+    # Detect Homebrew path (Intel: /usr/local, ARM64: /opt/homebrew)
+    if (EXISTS "/opt/homebrew/opt/llvm/lib/libc++fs.a")
+        target_link_libraries(__filesystem INTERFACE /opt/homebrew/opt/llvm/lib/libc++fs.a)
+    elseif (EXISTS "/usr/local/opt/llvm/lib/libc++fs.a")
+        target_link_libraries(__filesystem INTERFACE /usr/local/opt/llvm/lib/libc++fs.a)
+    else ()
+        # Fallback to system stdc++fs if Homebrew LLVM not found
+        target_link_libraries(__filesystem INTERFACE c++fs)
+    endif ()
 elseif (UNIX)
     target_link_libraries(__filesystem INTERFACE stdc++fs)
 endif ()

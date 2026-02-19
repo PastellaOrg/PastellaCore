@@ -334,12 +334,38 @@ if (NOT MSVC)
         # Configure RocksDB - enable ARM64 CRC on macOS ARM64, SSE4.2 on x86_64
         if (IS_ARM64)
             execute_process(
-                COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb -DARCH=${ARCH} -DWITH_ZSTD=${WITH_ZSTD} -DWITH_GFLAGS=0 -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DPORTABLE=ON -DCMAKE_C_FLAGS="-march=armv8-a+crc -DHAVE_ARM64_CRC" -DCMAKE_CXX_FLAGS="-march=armv8-a+crc -DHAVE_ARM64_CRC" -B${PROJECT_BINARY_DIR}/rocksdb
+                COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb
+                    -DARCH=${ARCH}
+                    -DWITH_ZSTD=${WITH_ZSTD}
+                    -DWITH_GFLAGS=0
+                    -DCMAKE_BUILD_TYPE=MinSizeRel
+                    -DWITH_TESTS=OFF
+                    -DWITH_TOOLS=OFF
+                    -DPORTABLE=ON
+                    -DCMAKE_C_FLAGS="-march=armv8-a+crc"
+                    -DCMAKE_CXX_FLAGS="-march=armv8-a+crc"
+                    -B${PROJECT_BINARY_DIR}/rocksdb
+                RESULT_VARIABLE ROCKSDB_CONFIG_RESULT
             )
+            if(NOT ROCKSDB_CONFIG_RESULT EQUAL 0)
+                message(FATAL_ERROR "RocksDB ARM64 configuration failed with code ${ROCKSDB_CONFIG_RESULT}")
+            endif()
         else ()
             execute_process(
-                COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb -DARCH=${ARCH} -DWITH_ZSTD=${WITH_ZSTD} -DWITH_GFLAGS=0 -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_TESTS=OFF -DWITH_TOOLS=OFF -DPORTABLE=ON -B${PROJECT_BINARY_DIR}/rocksdb
+                COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb
+                    -DARCH=${ARCH}
+                    -DWITH_ZSTD=${WITH_ZSTD}
+                    -DWITH_GFLAGS=0
+                    -DCMAKE_BUILD_TYPE=MinSizeRel
+                    -DWITH_TESTS=OFF
+                    -DWITH_TOOLS=OFF
+                    -DPORTABLE=ON
+                    -B${PROJECT_BINARY_DIR}/rocksdb
+                RESULT_VARIABLE ROCKSDB_CONFIG_RESULT
             )
+            if(NOT ROCKSDB_CONFIG_RESULT EQUAL 0)
+                message(FATAL_ERROR "RocksDB configuration failed with code ${ROCKSDB_CONFIG_RESULT}")
+            endif()
         endif ()
         set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${PROJECT_BINARY_DIR}/rocksdb/librocksdb.a")
     endif ()
