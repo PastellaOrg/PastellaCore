@@ -496,6 +496,11 @@ std::string IsFastCrc32Supported() {
     has_fast_crc = false;
     arch = "Arm64";
   }
+#elif defined(__APPLE__) && defined(__aarch64__)
+  // Apple Silicon (arm64): no SSE4.2. If we don't have an ARM CRC32
+  // implementation enabled, fall back to the slow path.
+  has_fast_crc = false;
+  arch = "Arm64";
 #else
   has_fast_crc = isSSE42();
   arch = "x86";
@@ -1221,24 +1226,27 @@ static inline Function Choose_Extend() {
 #ifdef HAVE_POWER8
   return isAltiVec() ? ExtendPPCImpl : ExtendImpl<Slow_CRC32>;
 #elif defined(__linux__) && defined(HAVE_ARM64_CRC)
-  if(crc32c_runtime_check()) {
+  if (crc32c_runtime_check()) {
     return ExtendARMImpl;
   } else {
     return ExtendImpl<Slow_CRC32>;
   }
+#elif defined(__APPLE__) && defined(__aarch64__)
+  // Apple Silicon (arm64): no SSE4.2. If we don't have an ARM CRC32
+  // implementation enabled, fall back to the slow path.
+  return ExtendImpl<Slow_CRC32>;
 #else
   if (isSSE42()) {
     if (isPCLMULQDQ()) {
-#if defined HAVE_SSE42  && defined HAVE_PCLMUL && !defined NO_THREEWAY_CRC32C
+#if defined HAVE_SSE42 && defined HAVE_PCLMUL && !defined NO_THREEWAY_CRC32C
       return crc32c_3way;
 #else
-    return ExtendImpl<Fast_CRC32>; // Fast_CRC32 will check HAVE_SSE42 itself
+      return ExtendImpl<Fast_CRC32>;  // Fast_CRC32 will check HAVE_SSE42 itself
 #endif
-    }
-    else {  // no runtime PCLMULQDQ support but has SSE42 support
+    } else {  // no runtime PCLMULQDQ support but has SSE42 support
       return ExtendImpl<Fast_CRC32>;
     }
-  } // end of isSSE42()
+  }  // end of isSSE42()
   else {
     return ExtendImpl<Slow_CRC32>;
   }
