@@ -21,10 +21,12 @@
 
 #include <chrono>
 #include <cstring>
+#ifndef _WIN32
 #include <poll.h>
 #include <termios.h>
 #include <unistd.h>
 #include <fcntl.h>
+#endif
 
 /* Base58 alphabet: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz */
 /* Notice: No '0' (zero), 'O' (capital o), 'I' (capital i), 'l' (lowercase L) */
