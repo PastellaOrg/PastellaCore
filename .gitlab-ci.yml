@@ -1,5 +1,5 @@
 # GitLab CI for PastellaCore
-# Builds for Linux x86_64 and Windows x86_64
+# Builds for Linux x86_64, Linux ARM64, and Windows x86_64
 
 stages:
   - build
@@ -12,7 +12,7 @@ variables:
 # ============================================
 # Linux x86_64 Build
 # ============================================
-build-linux:
+build-linux-x64:
   stage: build
   image: ubuntu:22.04
   script:
@@ -38,14 +38,50 @@ build-linux:
       - build/src/Pastella-Wallet-API
     expire_in: 1 week
   cache:
-    key: linux-$CI_COMMIT_REF_SLUG
+    key: linux-x64-$CI_COMMIT_REF_SLUG
     paths:
       - build/
 
 # ============================================
+# Linux ARM64 Build (Cross-compile with QEMU)
+# ============================================
+build-linux-arm64:
+  stage: build
+  image: ubuntu:22.04
+  script:
+    - echo "Building Linux ARM64..."
+    # Install dependencies including QEMU for ARM64 emulation
+    - apt-get update -qq
+    - apt-get install -y -qq
+        build-essential
+        cmake
+        git
+        libboost-all-dev
+        libssl-dev
+        libpthread-stubs0-dev
+        qemu-user-static
+        binfmt-support
+    # Configure and build for ARM64
+    - mkdir -p build && cd build
+    - cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DNO_AES=ON
+    - make -j$(nproc)
+  artifacts:
+    name: "linux-arm64-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build/src/Pastellad
+      - build/src/Pastella-Wallet
+      - build/src/Pastella-Wallet-API
+    expire_in: 1 week
+  cache:
+    key: linux-arm64-$CI_COMMIT_REF_SLUG
+    paths:
+      - build/
+  allow_failure: true  # ARM64 build is optional
+
+# ============================================
 # Windows x86_64 Build (Native Windows Runner)
 # ============================================
-build-windows:
+build-windows-x64:
   stage: build
   tags:
     - windows  # Uses your Windows Server runner with shell executor
@@ -71,26 +107,26 @@ build-windows:
       - build/src/Release/*.exe
     expire_in: 1 week
   cache:
-    key: windows-$CI_COMMIT_REF_SLUG
+    key: windows-x64-$CI_COMMIT_REF_SLUG
     paths:
       - build/
       - vcpkg/
 
 # ============================================
-# Release Package (Linux)
+# Release Package (Linux x64)
 # ============================================
-package-linux:
+package-linux-x64:
   stage: package
   image: ubuntu:22.04
   dependencies:
-    - build-linux
+    - build-linux-x64
   script:
-    - echo "Packaging Linux binaries..."
-    - mkdir -p release/linux
-    - cp build/src/Pastellad build/src/Pastella-Wallet build/src/Pastella-Wallet-API release/linux/
-    - cd release && tar -czf pastellacore-linux-x64-$CI_COMMIT_TAG.tar.gz linux/
+    - echo "Packaging Linux x64 binaries..."
+    - mkdir -p release/linux-x64
+    - cp build/src/Pastellad build/src/Pastella-Wallet build/src/Pastella-Wallet-API release/linux-x64/
+    - cd release && tar -czf pastellacore-linux-x64-$CI_COMMIT_TAG.tar.gz linux-x64/
   artifacts:
-    name: "pastellacore-linux-package"
+    name: "pastellacore-linux-x64-package"
     paths:
       - release/*.tar.gz
     expire_in: 1 month
@@ -99,22 +135,44 @@ package-linux:
     - main
 
 # ============================================
-# Release Package (Windows)
+# Release Package (Linux ARM64)
 # ============================================
-package-windows:
+package-linux-arm64:
+  stage: package
+  image: ubuntu:22.04
+  dependencies:
+    - build-linux-arm64
+  script:
+    - echo "Packaging Linux ARM64 binaries..."
+    - mkdir -p release/linux-arm64
+    - cp build/src/Pastellad build/src/Pastella-Wallet build/src/Pastella-Wallet-API release/linux-arm64/
+    - cd release && tar -czf pastellacore-linux-arm64-$CI_COMMIT_TAG.tar.gz linux-arm64/
+  artifacts:
+    name: "pastellacore-linux-arm64-package"
+    paths:
+      - release/*.tar.gz
+    expire_in: 1 month
+  only:
+    - tags
+    - main
+
+# ============================================
+# Release Package (Windows x64)
+# ============================================
+package-windows-x64:
   stage: package
   tags:
     - windows
   dependencies:
-    - build-windows
+    - build-windows-x64
   script:
-    - echo "Packaging Windows binaries..."
-    - New-Item -ItemType Directory -Force -Path release/windows
-    - Copy-Item build/src/Release/*.exe release/windows/
-    - Copy-Item build/src/Release/*.dll release/windows/
-    - Compress-Archive -Path release/windows/* -DestinationPath pastellacore-windows-x64-$CI_COMMIT_TAG.zip
+    - echo "Packaging Windows x64 binaries..."
+    - New-Item -ItemType Directory -Force -Path release/windows-x64
+    - Copy-Item build/src/Release/*.exe release/windows-x64/
+    - Copy-Item build/src/Release/*.dll release/windows-x64/
+    - Compress-Archive -Path release/windows-x64/* -DestinationPath pastellacore-windows-x64-$CI_COMMIT_TAG.zip
   artifacts:
-    name: "pastellacore-windows-package"
+    name: "pastellacore-windows-x64-package"
     paths:
       - "*.zip"
     expire_in: 1 month
