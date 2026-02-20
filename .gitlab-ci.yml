@@ -14,6 +14,7 @@ variables:
 # ============================================
 build-linux-x64:
   stage: build
+  when: manual  # Manually triggered - Windows build is priority for testing
   image: ubuntu:22.04
   script:
     - echo "Building Linux x86_64..."
@@ -47,6 +48,7 @@ build-linux-x64:
 # ============================================
 build-linux-arm64:
   stage: build
+  when: manual  # Manually triggered - Windows build is priority for testing
   image: ubuntu:22.04
   script:
     - echo "Building Linux ARM64..."
