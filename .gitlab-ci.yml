@@ -41,8 +41,6 @@ build-linux:
     key: linux-$CI_COMMIT_REF_SLUG
     paths:
       - build/
-  tags:
-    - docker
 
 # ============================================
 # Windows x86_64 Build (Cross-compile)
@@ -94,8 +92,6 @@ build-windows:
     paths:
       - build/
   allow_failure: true  # Windows cross-compile can be tricky
-  tags:
-    - docker
 
 # ============================================
 # Release Package (Linux)
@@ -118,8 +114,6 @@ package-linux:
   only:
     - tags
     - main
-  tags:
-    - docker
 
 # ============================================
 # Release Package (Windows)
@@ -142,5 +136,3 @@ package-windows:
   only:
     - tags
     - main
-  tags:
-    - docker
