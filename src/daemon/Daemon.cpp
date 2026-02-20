@@ -491,32 +491,29 @@ int main(int argc, char *argv[])
 
         loggerStartup(INFO) << "RandomX initialization complete, creating protocol handler";
 
-        loggerStartup(INFO) << "Entering main initialization try block...";
+        loggerStartup(INFO) << "About to create PastellaProtocolHandler...";
 
-        try {
-            loggerStartup(INFO) << "About to create PastellaProtocolHandler...";
+        const auto cprotocol = std::make_shared<Pastella::PastellaProtocolHandler>(
+            currency,
+            dispatcher,
+            *ccore,
+            nullptr,
+            logManager
+        );
 
-            const auto cprotocol = std::make_shared<Pastella::PastellaProtocolHandler>(
-                currency,
-                dispatcher,
-                *ccore,
-                nullptr,
-                logManager
-            );
+        loggerStartup(INFO) << "Protocol handler created successfully";
 
-            loggerStartup(INFO) << "Protocol handler created successfully";
+        loggerStartup(INFO) << "Creating NodeServer (P2P)...";
 
-            loggerStartup(INFO) << "Creating NodeServer (P2P)...";
+        const auto p2psrv = std::make_shared<Pastella::NodeServer>(
+            dispatcher,
+            *cprotocol,
+            logManager
+        );
 
-            const auto p2psrv = std::make_shared<Pastella::NodeServer>(
-                dispatcher,
-                *cprotocol,
-                logManager
-            );
+        loggerStartup(INFO) << "NodeServer created successfully";
 
-            loggerStartup(INFO) << "NodeServer created successfully";
-
-            std::string corsDomain;
+        std::string corsDomain;
 
         /* TODO: enable cors should not be a vector */
         if (!config.enableCors.empty()) {
