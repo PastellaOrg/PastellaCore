@@ -92,7 +92,7 @@ build-windows-x64:
     # Install dependencies via vcpkg if not cached
     - if (-not (Test-Path "vcpkg")) { git clone https://github.com/Microsoft/vcpkg.git; .\vcpkg\bootstrap-vcpkg.bat }
     # Install required packages via vcpkg (static, x64-windows)
-    - .\vcpkg\vcpkg install boost-system:x64-windows-static boost-thread:x64-windows-static boost-date-time:x64-windows-static boost-chrono:x64-windows-static boost-serialization:x64-windows-static boost-uuid:x64-windows-static openssl:x64-windows-static
+    - .\vcpkg\vcpkg install boost-variant:x64-windows-static boost-optional:x64-windows-static boost-algorithm:x64-windows-static boost-format:x64-windows-static boost-scope-exit:x64-windows-static boost-range:x64-windows-static boost-iterator:x64-windows-static boost-integer:x64-windows-static boost-functional:x64-windows-static boost-utility:x64-windows-static boost-foreach:x64-windows-static boost-multi-index:x64-windows-static boost-uuid:x64-windows-static boost-date-time:x64-windows-static boost-system:x64-windows-static boost-thread:x64-windows-static boost-chrono:x64-windows-static boost-serialization:x64-windows-static openssl:x64-windows-static
     # Create build directory
     - New-Item -ItemType Directory -Force -Path build
     - cd build
