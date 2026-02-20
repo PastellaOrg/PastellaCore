@@ -1,0 +1,146 @@
+# GitLab CI for PastellaCore
+# Builds for Linux x86_64 and Windows x86_64
+
+stages:
+  - build
+  - package
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_DEPTH: 3
+
+# ============================================
+# Linux x86_64 Build
+# ============================================
+build-linux:
+  stage: build
+  image: ubuntu:22.04
+  script:
+    - echo "Building Linux x86_64..."
+    # Install dependencies
+    - apt-get update -qq
+    - apt-get install -y -qq
+        build-essential
+        cmake
+        git
+        libboost-all-dev
+        libssl-dev
+        libpthread-stubs0-dev
+    # Configure and build
+    - mkdir build && cd build
+    - cmake .. -DCMAKE_BUILD_TYPE=Release
+    - make -j$(nproc)
+  artifacts:
+    name: "linux-x64-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build/src/Pastellad
+      - build/src/Pastella-Wallet
+      - build/src/Pastella-Wallet-API
+    expire_in: 1 week
+  cache:
+    key: linux-$CI_COMMIT_REF_SLUG
+    paths:
+      - build/
+  tags:
+    - docker
+
+# ============================================
+# Windows x86_64 Build (Cross-compile)
+# ============================================
+build-windows:
+  stage: build
+  image: ubuntu:22.04
+  script:
+    - echo "Building Windows x86_64 (cross-compile)..."
+    # Install dependencies including mingw-w64
+    - apt-get update -qq
+    - apt-get install -y -qq
+        build-essential
+        cmake
+        git
+        mingw-w64
+        libboost-all-dev
+        libssl-dev
+        wine
+    # Set up mingw-w64 symlinks for CMake to find
+    - update-alternatives --set x86_64-w64-mingw32-gcc x86_64-w64-mingw32-gcc-posix
+    - update-alternatives --set x86_64-w64-mingw32-g++ x86_64-w64-mingw32-g++-posix
+    # Configure and build with mingw toolchain
+    - mkdir build && cd build
+    - cmake .. -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_SYSTEM_NAME=Windows
+        -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc
+        -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
+        -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
+        -DWITH_LEVELDB=ON
+        -DOPENSSL_ROOT_DIR=/usr/x86_64-w64-mingw32
+        -DOPENSSL_CRYPTO_LIBRARY=/usr/lib/x86_64-linux-gnu/libcrypto.a
+        -DOPENSSL_SSL_LIBRARY=/usr/lib/x86_64-linux-gnu/libssl.a
+        -DOPENSSL_INCLUDE_DIR=/usr/include/openssl
+        -DBOOST_ROOT=/usr
+        -DBOOST_LIBRARYDIR=/usr/x86_64-w64-mingw32/lib
+        -DBoost_NO_SYSTEM_PATHS=ON
+    - make -j$(nproc)
+  artifacts:
+    name: "windows-x64-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build/src/Pastellad.exe
+      - build/src/Pastella-Wallet.exe
+      - build/src/Pastella-Wallet-API.dll
+      - build/src/*.exe
+    expire_in: 1 week
+  cache:
+    key: windows-$CI_COMMIT_REF_SLUG
+    paths:
+      - build/
+  allow_failure: true  # Windows cross-compile can be tricky
+  tags:
+    - docker
+
+# ============================================
+# Release Package (Linux)
+# ============================================
+package-linux:
+  stage: package
+  image: ubuntu:22.04
+  dependencies:
+    - build-linux
+  script:
+    - echo "Packaging Linux binaries..."
+    - mkdir -p release/linux
+    - cp build/src/Pastellad build/src/Pastella-Wallet build/src/Pastella-Wallet-API release/linux/
+    - cd release && tar -czf pastellacore-linux-x64-$CI_COMMIT_TAG.tar.gz linux/
+  artifacts:
+    name: "pastellacore-linux-package"
+    paths:
+      - release/*.tar.gz
+    expire_in: 1 month
+  only:
+    - tags
+    - main
+  tags:
+    - docker
+
+# ============================================
+# Release Package (Windows)
+# ============================================
+package-windows:
+  stage: package
+  image: ubuntu:22.04
+  dependencies:
+    - build-windows
+  script:
+    - echo "Packaging Windows binaries..."
+    - mkdir -p release/windows
+    - cp build/src/*.exe build/src/*.dll release/windows/ 2>/dev/null || true
+    - cd release && zip -r pastellacore-windows-x64-$CI_COMMIT_TAG.zip windows/
+  artifacts:
+    name: "pastellacore-windows-package"
+    paths:
+      - release/*.zip
+    expire_in: 1 month
+  only:
+    - tags
+    - main
+  tags:
+    - docker
