@@ -26,6 +26,8 @@
 #include <termios.h>
 #include <unistd.h>
 #include <fcntl.h>
+#else
+#include <conio.h>
 #endif
 
 /* Base58 alphabet: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz */
@@ -306,12 +308,14 @@ std::shared_ptr<WalletBackend> createVanityWallet(const ZedConfig &config)
     std::atomic<bool> workerCancel(false);
     std::atomic<bool> userCancel(false);
 
+#ifndef _WIN32
     /* Set terminal to non-canonical mode for instant key detection */
     struct termios oldt, newt;
     tcgetattr(STDIN_FILENO, &oldt);
     newt = oldt;
     newt.c_lflag &= ~(ICANON | ECHO);
     tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+#endif
 
     /* Launch worker threads */
     std::vector<std::thread> workers;
@@ -335,6 +339,7 @@ std::shared_ptr<WalletBackend> createVanityWallet(const ZedConfig &config)
     /* Launch input thread for cancellation */
     std::thread inputThread([&]()
     {
+#ifndef _WIN32
         char c;
         while (!foundMatch.load() && !workerCancel.load())
         {
@@ -359,6 +364,24 @@ std::shared_ptr<WalletBackend> createVanityWallet(const ZedConfig &config)
                 }
             }
         }
+#else
+        /* Windows: use _kbhit() for non-blocking input detection */
+        while (!foundMatch.load() && !workerCancel.load())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (_kbhit())
+            {
+                int c = _getch();
+                if (c == 'q' || c == 'Q')
+                {
+                    userCancel.store(true);
+                    workerCancel.store(true);
+                    g_cancelFlag.store(true);
+                    break;
+                }
+            }
+        }
+#endif
     });
 
     /* Progress reporting thread */
@@ -400,13 +423,14 @@ std::shared_ptr<WalletBackend> createVanityWallet(const ZedConfig &config)
             /* Cancel other workers immediately when match found */
             g_cancelFlag.store(true);
 
-            /* Give threads time to exit (input thread uses poll with 100ms timeout) */
+            /* Give threads time to exit */
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
             /* Stop threads */
             inputThread.join();
             progressThread.join();
 
+#ifndef _WIN32
             /* Restore terminal IMMEDIATELY */
             tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
 
@@ -416,6 +440,7 @@ std::shared_ptr<WalletBackend> createVanityWallet(const ZedConfig &config)
             char buf[1024];
             while (read(STDIN_FILENO, buf, sizeof(buf)) > 0);
             fcntl(STDIN_FILENO, F_SETFL, flags);
+#endif
 
             /* Print separator and flush */
             std::cout << "\r" << std::flush;
@@ -431,7 +456,9 @@ std::shared_ptr<WalletBackend> createVanityWallet(const ZedConfig &config)
     /* Restore terminal settings if not already done (e.g., user cancelled) */
     if (!finalResult.found)
     {
+#ifndef _WIN32
         tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+#endif
 
         /* Stop threads */
         if (inputThread.joinable())
