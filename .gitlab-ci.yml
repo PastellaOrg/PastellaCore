@@ -43,55 +43,38 @@ build-linux:
       - build/
 
 # ============================================
-# Windows x86_64 Build (Cross-compile)
+# Windows x86_64 Build (Native Windows Runner)
 # ============================================
 build-windows:
   stage: build
-  image: ubuntu:22.04
+  tags:
+    - windows  # Uses your Windows Server runner with shell executor
   script:
-    - echo "Building Windows x86_64 (cross-compile)..."
-    # Install dependencies including mingw-w64
-    - apt-get update -qq
-    - apt-get install -y -qq
-        build-essential
-        cmake
-        git
-        mingw-w64
-        libboost-all-dev
-        libssl-dev
-        wine
-    # Set up mingw-w64 symlinks for CMake to find
-    - update-alternatives --set x86_64-w64-mingw32-gcc x86_64-w64-mingw32-gcc-posix
-    - update-alternatives --set x86_64-w64-mingw32-g++ x86_64-w64-mingw32-g++-posix
-    # Configure and build with mingw toolchain
-    - mkdir -p build && cd build
-    - cmake .. -DCMAKE_BUILD_TYPE=Release
-        -DCMAKE_SYSTEM_NAME=Windows
-        -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc
-        -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++
-        -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
-        -DWITH_LEVELDB=ON
-        -DOPENSSL_ROOT_DIR=/usr/x86_64-w64-mingw32
-        -DOPENSSL_CRYPTO_LIBRARY=/usr/lib/x86_64-linux-gnu/libcrypto.a
-        -DOPENSSL_SSL_LIBRARY=/usr/lib/x86_64-linux-gnu/libssl.a
-        -DOPENSSL_INCLUDE_DIR=/usr/include/openssl
-        -DBOOST_ROOT=/usr
-        -DBOOST_LIBRARYDIR=/usr/x86_64-w64-mingw32/lib
-        -DBoost_NO_SYSTEM_PATHS=ON
-    - make -j$(nproc)
+    - echo "Building Windows x86_64 (native)..."
+    # Install dependencies via vcpkg if not cached
+    - if (-not (Test-Path "vcpkg")) { git clone https://github.com/Microsoft/vcpkg.git; .\vcpkg\bootstrap-vcpkg.bat }
+    # Install required packages via vcpkg (static, x64-windows)
+    - .\vcpkg\vcpkg install boost-system:x64-windows-static boost-thread:x64-windows-static boost-date-time:x64-windows-static boost-chrono:x64-windows-static boost-serialization:x64-windows-static boost-uuid:x64-windows-static openssl:x64-windows-static
+    # Create build directory
+    - New-Item -ItemType Directory -Force -Path build
+    - cd build
+    # Configure with Visual Studio and vcpkg toolchain
+    - cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="../vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DWITH_LEVELDB=ON -A x64
+    # Build
+    - cmake --build . --config Release -j
   artifacts:
     name: "windows-x64-$CI_COMMIT_SHORT_SHA"
     paths:
-      - build/src/Pastellad.exe
-      - build/src/Pastella-Wallet.exe
-      - build/src/Pastella-Wallet-API.dll
-      - build/src/*.exe
+      - build/src/Release/Pastellad.exe
+      - build/src/Release/Pastella-Wallet.exe
+      - build/src/Release/Pastella-Wallet-API.dll
+      - build/src/Release/*.exe
     expire_in: 1 week
   cache:
     key: windows-$CI_COMMIT_REF_SLUG
     paths:
       - build/
-  allow_failure: true  # Windows cross-compile can be tricky
+      - vcpkg/
 
 # ============================================
 # Release Package (Linux)
@@ -120,18 +103,20 @@ package-linux:
 # ============================================
 package-windows:
   stage: package
-  image: ubuntu:22.04
+  tags:
+    - windows
   dependencies:
     - build-windows
   script:
     - echo "Packaging Windows binaries..."
-    - mkdir -p release/windows
-    - cp build/src/*.exe build/src/*.dll release/windows/ 2>/dev/null || true
-    - cd release && zip -r pastellacore-windows-x64-$CI_COMMIT_TAG.zip windows/
+    - New-Item -ItemType Directory -Force -Path release/windows
+    - Copy-Item build/src/Release/*.exe release/windows/
+    - Copy-Item build/src/Release/*.dll release/windows/
+    - Compress-Archive -Path release/windows/* -DestinationPath pastellacore-windows-x64-$CI_COMMIT_TAG.zip
   artifacts:
     name: "pastellacore-windows-package"
     paths:
-      - release/*.zip
+      - "*.zip"
     expire_in: 1 month
   only:
     - tags
