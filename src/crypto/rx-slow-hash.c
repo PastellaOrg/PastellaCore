@@ -420,7 +420,12 @@ void rx_set_main_seedhash(const char *seedhash, size_t max_dataset_init_threads)
   if (!CTHR_THREAD_CREATE(t, rx_set_main_seedhash_thread, info)) {
     local_abort("Couldn't start RandomX seed thread");
   }
+#ifdef _WIN32
+  // On Windows, don't close the thread handle - let it run detached
+  // The thread will free the info struct when done
+#else
   CTHR_THREAD_CLOSE(t);
+#endif
 }
 
 void rx_slow_hash(const char *seedhash, const void *data, size_t length, char *result_hash) {
