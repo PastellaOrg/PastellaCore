@@ -489,21 +489,34 @@ int main(int argc, char *argv[])
             loggerRandomX(ERROR) << "Failed to initialize RandomX main seed hash: " << e.what();
         }
 
-        const auto cprotocol = std::make_shared<Pastella::PastellaProtocolHandler>(
-            currency,
-            dispatcher,
-            *ccore,
-            nullptr,
-            logManager
-        );
+        loggerStartup(INFO) << "RandomX initialization complete, creating protocol handler";
 
-        const auto p2psrv = std::make_shared<Pastella::NodeServer>(
-            dispatcher,
-            *cprotocol,
-            logManager
-        );
+        loggerStartup(INFO) << "Entering main initialization try block...";
 
-        std::string corsDomain;
+        try {
+            loggerStartup(INFO) << "About to create PastellaProtocolHandler...";
+
+            const auto cprotocol = std::make_shared<Pastella::PastellaProtocolHandler>(
+                currency,
+                dispatcher,
+                *ccore,
+                nullptr,
+                logManager
+            );
+
+            loggerStartup(INFO) << "Protocol handler created successfully";
+
+            loggerStartup(INFO) << "Creating NodeServer (P2P)...";
+
+            const auto p2psrv = std::make_shared<Pastella::NodeServer>(
+                dispatcher,
+                *cprotocol,
+                logManager
+            );
+
+            loggerStartup(INFO) << "NodeServer created successfully";
+
+            std::string corsDomain;
 
         /* TODO: enable cors should not be a vector */
         if (!config.enableCors.empty()) {
@@ -512,14 +525,24 @@ int main(int argc, char *argv[])
 
         RpcMode rpcMode = RpcMode::Default;
 
+        loggerStartup(INFO) << "Determining RPC mode...";
+
         if (config.enableBlockExplorerDetailed)
         {
             rpcMode = RpcMode::AllMethodsEnabled;
+            loggerStartup(INFO) << "RPC mode: All methods enabled";
         }
         else if (config.enableBlockExplorer)
         {
             rpcMode = RpcMode::BlockExplorerEnabled;
+            loggerStartup(INFO) << "RPC mode: Block explorer enabled";
         }
+        else
+        {
+            loggerStartup(INFO) << "RPC mode: Default";
+        }
+
+        loggerStartup(INFO) << "Creating RpcServer...";
 
         RpcServer rpcServer(
             config.rpcPort,
@@ -533,23 +556,34 @@ int main(int argc, char *argv[])
             cprotocol
         );
 
+        loggerStartup(INFO) << "RpcServer created successfully";
+
         cprotocol->set_p2p_endpoint(&(*p2psrv));
-        loggerStartup(INFO) << "Initializing p2p server";
+        loggerStartup(INFO) << "Setting p2p endpoint and initializing p2p server...";
+
         if (!p2psrv->init(netNodeConfig))
         {
             loggerStartup(ERROR, BRIGHT_RED) << "Failed to initialize p2p server";
             return 1;
         }
 
-        loggerStartup(INFO) << "P2P server initialized";
+        loggerStartup(INFO) << "P2P server initialized successfully";
 
         // Fire up the RPC Server
         loggerStartup(INFO) << "Starting RPC server on address " << config.rpcInterface << ":" << config.rpcPort;
 
+        loggerStartup(INFO) << "About to call rpcServer.start()...";
+
         rpcServer.start();
+
+        loggerStartup(INFO) << "RPC server started successfully";
+
+        loggerStartup(INFO) << "Getting RPC connection info...";
 
         /* Get the RPC IP address and port we are bound to */
         auto [ip, port] = rpcServer.getConnectionInfo();
+
+        loggerStartup(INFO) << "RPC connection info obtained: " << ip << ":" << port;
 
         /* If we bound the RPC to 0.0.0.0, we can't reach that with a
            standard HTTP client from anywhere. Instead, let's use the
@@ -595,7 +629,14 @@ int main(int argc, char *argv[])
     }
     catch (const std::exception &e)
     {
-        logger(ERROR) << "Exception: " << e.what();
+        LoggerRef loggerError(logManager, "Daemon.Error");
+        loggerError(ERROR, BRIGHT_RED) << "Exception caught: " << e.what();
+        return 1;
+    }
+    catch (...)
+    {
+        LoggerRef loggerError(logManager, "Daemon.Error");
+        loggerError(ERROR, BRIGHT_RED) << "Unknown exception caught";
         return 1;
     }
 
