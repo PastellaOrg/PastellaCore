@@ -356,6 +356,9 @@ typedef struct thread_info {
 } thread_info;
 
 static CTHR_THREAD_RTYPE rx_set_main_seedhash_thread(void *arg) {
+    fprintf(stderr, "[RX_DEBUG] Thread started!\n");
+    fflush(stderr);
+
   thread_info* info = arg;
 
   CTHR_RWLOCK_LOCK_WRITE(main_dataset_lock);
@@ -394,8 +397,13 @@ static CTHR_THREAD_RTYPE rx_set_main_seedhash_thread(void *arg) {
 }
 
 void rx_set_main_seedhash(const char *seedhash, size_t max_dataset_init_threads) {
+    fprintf(stderr, "[RX_DEBUG] rx_set_main_seedhash called\n");
+    fflush(stderr);
+
   // Early out if seedhash didn't change
   if (is_main(seedhash)) {
+    fprintf(stderr, "[RX_DEBUG] Seedhash already set, returning early\n");
+    fflush(stderr);
     return;
   }
 
@@ -409,23 +417,41 @@ void rx_set_main_seedhash(const char *seedhash, size_t max_dataset_init_threads)
     mdebug(RX_LOGCAT, "RandomX rx_set_main_seedhash: NEW=%s, OLD=none (INITIALIZING)", input_hash);
   }
 
+  fprintf(stderr, "[RX_DEBUG] About to allocate thread_info\n");
+  fflush(stderr);
+
   // Update main cache and dataset in the background
   thread_info* info = malloc(sizeof(thread_info));
   if (!info) local_abort("Couldn't allocate RandomX mining threadinfo");
 
+  fprintf(stderr, "[RX_DEBUG] thread_info allocated, copying seedhash\n");
+  fflush(stderr);
+
   memcpy(info->seedhash, seedhash, HASH_SIZE);
   info->max_threads = max_dataset_init_threads;
 
+  fprintf(stderr, "[RX_DEBUG] About to create thread\n");
+  fflush(stderr);
+
   CTHR_THREAD_TYPE t;
   if (!CTHR_THREAD_CREATE(t, rx_set_main_seedhash_thread, info)) {
+    fprintf(stderr, "[RX_DEBUG] Failed to create thread!\n");
+    fflush(stderr);
     local_abort("Couldn't start RandomX seed thread");
   }
+
+  fprintf(stderr, "[RX_DEBUG] Thread created successfully\n");
+  fflush(stderr);
+
 #ifdef _WIN32
   // On Windows, don't close the thread handle - let it run detached
   // The thread will free the info struct when done
 #else
   CTHR_THREAD_CLOSE(t);
 #endif
+
+  fprintf(stderr, "[RX_DEBUG] rx_set_main_seedhash returning\n");
+  fflush(stderr);
 }
 
 void rx_slow_hash(const char *seedhash, const void *data, size_t length, char *result_hash) {
