@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
