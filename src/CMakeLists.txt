@@ -61,9 +61,6 @@ elseif (APPLE)
 else ()
     file(GLOB_RECURSE System system/* platform/linux/system/* platform/posix/system/*)
 endif ()
-else ()
-    file(GLOB_RECURSE System system/* platform/linux/system/* platform/posix/system/*)
-endif ()
 
 # Group the files together in IDEs
 source_group("" FILES $${Common} ${Config} ${Crypto} ${PastellaCore} ${PastellaProtocol} ${Pastellad} ${JsonRpcServer} ${Http} ${Logging} ${Logger} ${Mnemonics} ${Nigel} ${NodeRpcProxy} ${P2p} ${Rpc} ${Serialization} ${System} ${Transfers} ${Wallet} ${WalletApi} ${WalletBackend} ${WalletService} ${pastellawallet} ${CryptoTest} ${Errors} ${Utilities} ${SubWallets})
