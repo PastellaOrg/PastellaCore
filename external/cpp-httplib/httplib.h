@@ -1718,7 +1718,7 @@ inline std::string SocketStream::get_remote_addr() const {
 // Buffer stream implementation
 inline int BufferStream::read(char* ptr, size_t size)
 {
-#ifdef _WIN32
+#ifdef _MSC_VER
     return static_cast<int>(buffer._Copy_s(ptr, size, size));
 #else
     return static_cast<int>(buffer.copy(ptr, size));

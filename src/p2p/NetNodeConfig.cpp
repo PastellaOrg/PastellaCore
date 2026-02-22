@@ -68,7 +68,7 @@ namespace Pastella
     }
 
     bool NetNodeConfig::init(
-        const std::string interface,
+        const std::string bindAddress,
         const int port,
         const int external,
         const bool localIp,
@@ -80,7 +80,7 @@ namespace Pastella
         const std::vector<std::string> addSeedNodes,
         const bool p2pResetPeerState)
     {
-        bindIp = interface;
+        bindIp = bindAddress;
         bindPort = port;
         externalPort = external;
         allowLocalIp = localIp;

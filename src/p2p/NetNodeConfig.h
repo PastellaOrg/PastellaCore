@@ -20,7 +20,7 @@ namespace Pastella
         NetNodeConfig();
 
         bool init(
-            const std::string interface,
+            const std::string bindAddress,
             const int port,
             const int external,
             const bool localIp,
