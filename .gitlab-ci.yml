@@ -8,6 +8,8 @@ stages:
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
   GIT_DEPTH: 3
+  MSYS2_ROOT: "C:\\msys64"
+  MSYS2_BASH: "C:\\msys64\\usr\\bin\\bash.exe"
 
 # ============================================
 # Linux x86_64 Build
@@ -86,34 +88,57 @@ build-linux-arm64:
 build-windows-x64:
   stage: build
   tags:
-    - windows  # Uses your Windows Server runner with shell executor
+    - windows
+  before_script:
+    # Install MSYS2 if missing
+    - |
+      if (!(Test-Path $env:MSYS2_ROOT)) {
+        Write-Host "MSYS2 not found. Downloading..."
+        $url = "https://github.com/msys2/msys2-installer/releases/download/2024-05-07/msys2-x86_64-20240507.exe"
+        Invoke-WebRequest -Uri $url -OutFile "msys2_installer.exe"
+        Start-Process -FilePath ".\msys2_installer.exe" -ArgumentList "--confirm-command", "--accept-licenses", "--root", $env:MSYS2_ROOT, "install" -Wait
+        Remove-Item ".\msys2_installer.exe"
+      }
+
+    # Update and Install all libraries via pacman
+    - >
+      & $env:MSYS2_BASH -lc "pacman -Syu --noconfirm"
+    - >
+      & $env:MSYS2_BASH -lc "pacman -S --needed --noconfirm
+      mingw-w64-x86_64-toolchain
+      mingw-w64-x86_64-cmake
+      mingw-w64-x86_64-ccache
+      mingw-w64-x86_64-openssl
+      mingw-w64-x86_64-zeromq
+      mingw-w64-x86_64-libsodium
+      mingw-w64-x86_64-hidapi
+      mingw-w64-x86_64-protobuf-c
+      mingw-w64-x86_64-libusb
+      mingw-w64-x86_64-unbound
+      make
+      git"
+    
   script:
-    - echo "Building Windows x86_64 (native)..."
-    # Install dependencies via vcpkg if not cached
-    - if (-not (Test-Path "vcpkg")) { git clone https://github.com/Microsoft/vcpkg.git; .\vcpkg\bootstrap-vcpkg.bat }
-    # Install required packages via vcpkg (static, x64-windows)
-    - .\vcpkg\vcpkg install boost-variant:x64-windows-static boost-optional:x64-windows-static boost-algorithm:x64-windows-static boost-format:x64-windows-static boost-scope-exit:x64-windows-static boost-range:x64-windows-static boost-iterator:x64-windows-static boost-integer:x64-windows-static boost-functional:x64-windows-static boost-utility:x64-windows-static boost-foreach:x64-windows-static boost-multi-index:x64-windows-static boost-uuid:x64-windows-static boost-date-time:x64-windows-static boost-system:x64-windows-static boost-thread:x64-windows-static boost-chrono:x64-windows-static boost-serialization:x64-windows-static openssl:x64-windows-static
-    # Create build directory
-    - New-Item -ItemType Directory -Force -Path build
-    - cd build
-    # Configure with Visual Studio and vcpkg toolchain
-    - cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="../vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -A x64
-    # Build
-    - cmake --build . --config Release -- /m
+    - echo "Building Windows x86_64 with MSYS2/MinGW..."
+    - >
+      & $env:MSYS2_BASH -lc "
+      rm -rf build &&
+      mkdir -p build &&
+      cd build &&
+      cmake .. -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release &&
+      make -j2"
   artifacts:
     name: "windows-x64-$CI_COMMIT_SHORT_SHA"
     paths:
-      - build/src/Release/Pastellad.exe
-      - build/src/Release/Pastella-Wallet.exe
-      - build/src/Release/Pastella-Wallet-API.dll
-      - build/src/Release/*.exe
+      - build/src/Pastellad.exe
+      - build/src/Pastella-Wallet.exe
+      - build/src/Pastella-Wallet-API.dll
     expire_in: 1 week
   cache:
-    key: windows-x64-$CI_COMMIT_REF_SLUG
+    key: windows-x64-cache
     paths:
-      - build/
-      - vcpkg/
-
+      - .ccache/
+      
 # ============================================
 # Release Package (Linux x64)
 # ============================================
