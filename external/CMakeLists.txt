@@ -41,7 +41,7 @@ elseif (NOT MSVC)
     add_dependencies(leveldblib leveldb)
 endif ()
 
-if (MSVC OR MINGW)
+if (MSVC)
     set_property(TARGET upnpc-static APPEND_STRING PROPERTY COMPILE_FLAGS " -wd4244 -wd4267")
 elseif (NOT MSVC)
     set_property(TARGET upnpc-static APPEND_STRING PROPERTY COMPILE_FLAGS " -Wno-undef -Wno-unused-result -Wno-unused-value")
