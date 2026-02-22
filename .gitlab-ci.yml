@@ -144,17 +144,15 @@ build-windows-x64:
       mkdir -p build &&
       cd build &&
       cmake .. -G 'Unix Makefiles' 
-      -DCMAKE_BUILD_TYPE=Release 
+      -DCMAKE_BUILD_TYPE=Release
       -DBOOST_ROOT='$BOOST_ROOT_UNIX'
-      -DBoost_DEBUG=ON
       -DBOOST_LIBRARYDIR='$BOOST_ROOT_UNIX/stage/lib'
       -DBoost_NO_SYSTEM_PATHS=ON
       -DBoost_NO_BOOST_CMAKE=ON
       -DBoost_USE_STATIC_LIBS=ON
       -DBoost_USE_MULTITHREADED=ON
       -DBoost_USE_STATIC_RUNTIME=ON
-      -DBoost_COMPILER=''
-      -DBoost_ARCHITECTURE='' &&
+      -DBoost_ARCHITECTURE='-x64' &&
       make -j$env:NUMBER_OF_PROCESSORS"
   artifacts:
     name: "windows-x64-$CI_COMMIT_SHORT_SHA"
