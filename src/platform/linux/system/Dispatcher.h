@@ -11,7 +11,7 @@
 #include <queue>
 #include <stack>
 
-#ifndef __GLIBC__
+#if defined(__linux__) && defined(__GLIBC__)
 
 #include <bits/reg.h>
 
