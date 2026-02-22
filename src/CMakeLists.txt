@@ -143,7 +143,7 @@ elseif (UNIX)
     target_link_libraries(__filesystem INTERFACE stdc++fs)
 endif ()
 
-if (MSVC)
+if (MSVC OR MINGW)
     if (WITH_LEVELDB)
       target_link_libraries(Pastellad System PastellaCore leveldb snappy Errors ${Boost_LIBRARIES})
     else ()

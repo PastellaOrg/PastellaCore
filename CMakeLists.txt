@@ -270,7 +270,7 @@ message(STATUS "Boost Found: ${Boost_INCLUDE_DIRS}")
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 if (APPLE)
     set(Boost_LIBRARIES "${Boost_LIBRARIES}")
-elseif (NOT MSVC)
+elseif (NOT MSVC AND NOT MINGW)
     set(Boost_LIBRARIES "${Boost_LIBRARIES};rt")
 endif ()
 
@@ -308,7 +308,7 @@ endif()
 
 if (OPENSSL_FOUND)
     ## On non MSVC build systems, we need to link ldl with the static OpenSSL library
-    if (NOT MSVC)
+    if (NOT MSVC AND NOT MINGW)
         set(OPENSSL_LIBRARIES "${OPENSSL_LIBRARIES};dl")
     endif ()
 
