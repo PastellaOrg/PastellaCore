@@ -97,9 +97,9 @@ build-windows-x64:
     - New-Item -ItemType Directory -Force -Path build
     - cd build
     # Configure with Visual Studio and vcpkg toolchain
-    - cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="../vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DWITH_LEVELDB=ON -A x64
+    - cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="../vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -A x64
     # Build
-    - cmake --build . --config Release -j
+    - cmake --build . --config Release -- /m
   artifacts:
     name: "windows-x64-$CI_COMMIT_SHORT_SHA"
     paths:
