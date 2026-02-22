@@ -152,7 +152,9 @@ build-windows-x64:
       -DBoost_NO_BOOST_CMAKE=ON
       -DBoost_USE_STATIC_LIBS=ON
       -DBoost_USE_MULTITHREADED=ON
-      -DBoost_USE_STATIC_RUNTIME=ON &&
+      -DBoost_USE_STATIC_RUNTIME=ON
+      -DBoost_COMPILER=''
+      -DBoost_ARCHITECTURE='' &&
       make -j$env:NUMBER_OF_PROCESSORS"
   artifacts:
     name: "windows-x64-$CI_COMMIT_SHORT_SHA"
