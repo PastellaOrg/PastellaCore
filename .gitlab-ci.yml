@@ -8,8 +8,6 @@ stages:
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
   GIT_DEPTH: 3
-  MSYS2_ROOT: "C:\\msys64"
-  MSYS2_BASH: "C:\\msys64\\usr\\bin\\bash.exe"
 
 # ============================================
 # Linux x86_64 Build
@@ -89,8 +87,13 @@ build-windows-x64:
   stage: build
   tags:
     - windows
+  variables:
+    MSYS2_ROOT: "C:\\msys64"
+    MSYS2_BASH: "C:\\msys64\\usr\\bin\\bash.exe"
+    BOOST_ROOT_WIN: "C:\\boost_1_68_0"
+    BOOST_ROOT_UNIX: "/c/boost_1_68_0"
   before_script:
-    # Install MSYS2 if missing
+    # 1. MSYS2 Install
     - |
       if (!(Test-Path $env:MSYS2_ROOT)) {
         Write-Host "MSYS2 not found. Downloading..."
@@ -100,32 +103,49 @@ build-windows-x64:
         Remove-Item ".\msys2_installer.exe"
       }
 
-    # Update and Install all libraries via pacman
+    # 2. Boost Download
+    - |
+      if (!(Test-Path $env:BOOST_ROOT_WIN)) {
+        Write-Host "Downloading Boost 1.68 Source..."
+        Invoke-WebRequest -Uri "https://archives.boost.io/release/1.68.0/source/boost_1_68_0.tar.gz" -OutFile "boost_1_68_0.tar.gz"
+        tar -xzf boost_1_68_0.tar.gz -C C:\
+        Remove-Item "boost_1_68_0.tar.gz"
+      }
+
+    # 3. Boost Compilation
+    - |
+      if (!(Test-Path "$env:BOOST_ROOT_WIN\b2.exe")) {
+        Write-Host "Bootstrapping Boost..."
+        cd $env:BOOST_ROOT_WIN
+        .\bootstrap.bat gcc
+      }
+      if (!(Test-Path "$env:BOOST_ROOT_WIN\stage")) {
+        Write-Host "Compiling Boost libraries..."
+        & $env:MSYS2_BASH -c "cd $env:BOOST_ROOT_UNIX && ./b2 toolset=gcc link=static threading=multi runtime-link=static --with-system --with-thread --with-date_time --with-chrono --with-serialization stage"
+      }
+
+    # 4. Dependencies (Avoid mingw-w64-x86_64-boost here to prevent 1.90 conflict)
     - >
-      & $env:MSYS2_BASH -lc "pacman -Syu --noconfirm"
-    - >
-      & $env:MSYS2_BASH -lc "pacman -S --needed --noconfirm
-      mingw-w64-x86_64-toolchain
-      mingw-w64-x86_64-cmake
-      mingw-w64-x86_64-ccache
-      mingw-w64-x86_64-openssl
-      mingw-w64-x86_64-zeromq
-      mingw-w64-x86_64-libsodium
-      mingw-w64-x86_64-hidapi
-      mingw-w64-x86_64-protobuf-c
-      mingw-w64-x86_64-libusb
-      mingw-w64-x86_64-unbound
-      make
-      git"
-    
+      & $env:MSYS2_BASH -lc "pacman -S --needed --noconfirm 
+      mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ccache 
+      mingw-w64-x86_64-openssl mingw-w64-x86_64-zeromq mingw-w64-x86_64-libsodium 
+      mingw-w64-x86_64-hidapi mingw-w64-x86_64-protobuf-c mingw-w64-x86_64-libusb 
+      mingw-w64-x86_64-unbound make git"
+
   script:
     - echo "Building Windows x86_64 with MSYS2/MinGW..."
+    # REMOVED -lc and ADDED manual PATH export to fix "cmake not found"
     - >
-      & $env:MSYS2_BASH -lc "
+      & $env:MSYS2_BASH -c "
+      export PATH='/mingw64/bin:/usr/bin:$PATH' &&
       rm -rf build &&
       mkdir -p build &&
       cd build &&
-      cmake .. -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release &&
+      cmake .. -G 'Unix Makefiles' 
+      -DCMAKE_BUILD_TYPE=Release 
+      -DBOOST_ROOT='$BOOST_ROOT_UNIX' 
+      -DBoost_NO_SYSTEM_PATHS=ON 
+      -DBoost_NO_BOOST_CMAKE=ON &&
       make -j2"
   artifacts:
     name: "windows-x64-$CI_COMMIT_SHORT_SHA"
