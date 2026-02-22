@@ -10,7 +10,7 @@
 #include <cstdio>
 #include <cstring>
 
-#ifdef WIN32
+#ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -25,7 +25,7 @@
 
 namespace Tools
 {
-#ifdef WIN32
+#ifdef _WIN32
 
     std::string get_windows_version_display_string()
     {
@@ -274,14 +274,14 @@ namespace Tools
 
     std::string get_os_version_string()
     {
-#ifdef WIN32
+#ifdef _WIN32
         return get_windows_version_display_string();
 #else
         return get_nix_version_display_string();
 #endif
     }
 
-#ifdef WIN32
+#ifdef _WIN32
 
     std::string get_special_folder_path(int nfolder, bool iscreate)
     {
@@ -304,7 +304,7 @@ namespace Tools
         // Mac: ~/Library/Application Support/Pastella
         // Unix: ~/.Pastella
         std::string config_folder;
-#ifdef WIN32
+#ifdef _WIN32
         // Windows
         config_folder = get_special_folder_path(CSIDL_APPDATA, true) + "/" + Pastella::COIN_NAME;
 #else
