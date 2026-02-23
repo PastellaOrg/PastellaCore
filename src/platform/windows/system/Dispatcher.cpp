@@ -45,9 +45,15 @@ namespace System
         std::string message;
         if (ConvertThreadToFiberEx(NULL, 0) == NULL)
         {
-            message = "ConvertThreadToFiberEx failed, " + lastErrorMessage();
+            DWORD error = GetLastError();
+            if (error != ERROR_ALREADY_EXISTS)
+            {
+                message = "ConvertThreadToFiberEx failed, " + errorMessage(error);
+            }
+            // Thread is already a fiber, continue with GetCurrentFiber()
         }
-        else
+
+        if (message.empty())
         {
             completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
             if (completionPort == NULL)
