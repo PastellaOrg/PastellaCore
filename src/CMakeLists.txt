@@ -123,6 +123,11 @@ if (MSVC)
     target_link_libraries(Pastellad Rpcrt4 ws2_32 advapi32 crypt32 gdi32 user32)
     target_link_libraries(pastellawallet ws2_32 advapi32 crypt32 gdi32 user32)
     target_link_libraries(WalletApi ws2_32 advapi32 crypt32 gdi32 user32)
+elseif (MINGW)
+    target_link_libraries(System -lws2_32)
+    target_link_libraries(Pastellad -lrpcrt4 -lws2_32 -ladvapi32 -lcrypt32 -lgdi32 -luser32 -lbcrypt)
+    target_link_libraries(pastellawallet -lws2_32 -ladvapi32 -lcrypt32 -lgdi32 -luser32)
+    target_link_libraries(WalletApi -lws2_32 -ladvapi32 -lcrypt32 -lgdi32 -luser32)
 endif ()
 
 # A bit of hackery so we don't have to do the if/else/ for every target that
