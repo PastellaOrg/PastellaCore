@@ -188,6 +188,13 @@ if (OPENSSL_FOUND)
     target_link_libraries(WalletApi ${OPENSSL_LIBRARIES})
     target_link_libraries(pastellawallet ${OPENSSL_LIBRARIES})
     target_link_libraries(Pastellad ${OPENSSL_LIBRARIES})
+    # MSYS2 OpenSSL static library needs Windows libraries
+    if (MINGW)
+        target_link_libraries(Pastellad -lcrypt32)
+        target_link_libraries(pastellawallet -lcrypt32)
+        target_link_libraries(WalletApi -lcrypt32)
+        target_link_libraries(Nigel -lcrypt32)
+    endif ()
 endif ()
 
 # Add dependencies means we have to build the latter before we build the former
