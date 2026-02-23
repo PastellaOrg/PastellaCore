@@ -11,11 +11,6 @@
 #include <queue>
 #include <stack>
 
-#if defined(__linux__) && defined(__GLIBC__)
-
-#include <bits/reg.h>
-
-#endif
 
 namespace System
 {
