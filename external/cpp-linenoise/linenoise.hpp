@@ -1639,25 +1639,27 @@ inline bool enableRawMode(int fd) {
         if (hOut==INVALID_HANDLE_VALUE) goto fatal;
     }
 
-    DWORD consolemodeOut;
-    if (!GetConsoleMode(hOut, &consolemodeOut)) {
-        CloseHandle(hOut);
-        errno = ENOTTY;
-        return false;
-    };
+    {
+        DWORD consolemodeOut;
+        if (!GetConsoleMode(hOut, &consolemodeOut)) {
+            CloseHandle(hOut);
+            errno = ENOTTY;
+            return false;
+        };
 
-    hIn = GetStdHandle(STD_INPUT_HANDLE);
-    if (hIn == INVALID_HANDLE_VALUE) {
-        CloseHandle(hOut);
-        errno = ENOTTY;
-        return false;
+        hIn = GetStdHandle(STD_INPUT_HANDLE);
+        if (hIn == INVALID_HANDLE_VALUE) {
+            CloseHandle(hOut);
+            errno = ENOTTY;
+            return false;
+        }
+
+        GetConsoleMode(hIn, &consolemodeIn);
+        DWORD consolemodeInWithRaw = consolemodeIn & ~ENABLE_PROCESSED_INPUT;
+        SetConsoleMode(hIn, consolemodeInWithRaw);
+
+        rawmode = true;
     }
-
-    GetConsoleMode(hIn, &consolemodeIn);
-    DWORD consolemodeInWithRaw = consolemodeIn & ~ENABLE_PROCESSED_INPUT;
-    SetConsoleMode(hIn, consolemodeInWithRaw);
-
-    rawmode = true;
 #endif
     return true;
 
