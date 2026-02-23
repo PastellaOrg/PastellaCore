@@ -19,6 +19,9 @@
 #include "ErrorMessage.h"
 
 #include <winsock2.h>
+#include <windows.h>
+
+#define DEBUG_LOG(msg) OutputDebugStringA(msg)
 
 namespace System
 {
@@ -147,6 +150,7 @@ namespace System
     void Dispatcher::dispatch()
     {
         assert(GetCurrentThreadId() == threadId);
+        DEBUG_LOG("[DEBUG] Dispatcher::dispatch() entered\n");
         NativeContext *context;
         for (;;)
         {
@@ -320,7 +324,9 @@ namespace System
     void Dispatcher::spawn(std::function<void()> &&procedure)
     {
         assert(GetCurrentThreadId() == threadId);
+        DEBUG_LOG("[DEBUG] Dispatcher::spawn() called\n");
         NativeContext *context = &getReusableContext();
+        DEBUG_LOG("[DEBUG] Dispatcher::spawn() got reusable context\n");
         if (contextGroup.firstContext != nullptr)
         {
             context->groupPrev = contextGroup.lastContext;
@@ -480,7 +486,9 @@ namespace System
         context.next = nullptr;
         context.inExecutionQueue = false;
         firstReusableContext = &context;
+        DEBUG_LOG("[DEBUG] contextProcedure() created context, switching back\n");
         SwitchToFiber(currentContext->fiber);
+        DEBUG_LOG("[DEBUG] contextProcedure() resumed, running procedure\n");
         for (;;)
         {
             ++runningContextCount;
