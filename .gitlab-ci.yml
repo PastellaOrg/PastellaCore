@@ -52,6 +52,8 @@ build-linux-arm64:
     - echo "Building Linux ARM64 (cross-compile from x86_64)..."
     # Install dependencies for musl-cross (32-bit runtime needed for musl.cc toolchain)
     - apt-get update -qq
+    - dpkg --add-architecture i386
+    - apt-get update -qq
     - apt-get install -y -qq
         build-essential
         cmake
