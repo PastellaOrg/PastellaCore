@@ -1,5 +1,5 @@
 # GitLab CI for PastellaCore
-# Builds for Linux x86_64, Linux ARM64, and Windows x86_64
+# Builds for Linux x86_64, Linux ARM64, and Windows x86_64 (cross-compiled from Linux)
 
 stages:
   - build
@@ -81,92 +81,42 @@ build-linux-arm64:
   allow_failure: true  # ARM64 build is optional
 
 # ============================================
-# Windows x86_64 Build (Native Windows Runner)
+# Windows x86_64 Build (Cross-compile from Linux)
 # ============================================
 build-windows-x64:
   stage: build
-  tags:
-    - windows
-  variables:
-    MSYS2_ROOT: "C:\\msys64"
-    MSYS2_BASH: "C:\\msys64\\usr\\bin\\bash.exe"
-    BOOST_ROOT_WIN: "C:\\boost_1_68_0"
-    BOOST_ROOT_UNIX: "/c/boost_1_68_0"
-  before_script:
-    # 1. MSYS2 Install
-    - |
-      if (!(Test-Path $env:MSYS2_ROOT)) {
-        Write-Host "MSYS2 not found. Downloading..."
-        $url = "https://github.com/msys2/msys2-installer/releases/download/2024-05-07/msys2-x86_64-20240507.exe"
-        Invoke-WebRequest -Uri $url -OutFile "msys2_installer.exe"
-        Start-Process -FilePath ".\msys2_installer.exe" -ArgumentList "--confirm-command", "--accept-licenses", "--root", $env:MSYS2_ROOT, "install" -Wait
-        Remove-Item ".\msys2_installer.exe"
-      }
-
-    # 2. Boost Download
-    - |
-      if (!(Test-Path $env:BOOST_ROOT_WIN)) {
-        Write-Host "Downloading Boost 1.68 Source..."
-        Invoke-WebRequest -Uri "https://archives.boost.io/release/1.68.0/source/boost_1_68_0.tar.gz" -OutFile "boost_1_68_0.tar.gz"
-        tar -xzf boost_1_68_0.tar.gz -C C:\
-        Remove-Item "boost_1_68_0.tar.gz"
-      }
-
-    # 3. Boost Compilation
-    - |
-      if (!(Test-Path "$env:BOOST_ROOT_WIN\b2.exe")) {
-        Write-Host "Bootstrapping Boost..."
-        cd $env:BOOST_ROOT_WIN
-        .\bootstrap.bat gcc
-      }
-      if (!(Test-Path "$env:BOOST_ROOT_WIN\stage")) {
-        Write-Host "Compiling Boost libraries..."
-        & $env:MSYS2_BASH -c "cd $env:BOOST_ROOT_UNIX && ./b2 toolset=gcc link=static threading=multi runtime-link=static --with-system --with-thread --with-date_time --with-chrono --with-serialization stage"
-      }
-
-    # 4. Dependencies (Avoid mingw-w64-x86_64-boost here to prevent 1.90 conflict)
-    - >
-      & $env:MSYS2_BASH -lc "pacman -S --needed --noconfirm 
-      mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ccache 
-      mingw-w64-x86_64-openssl mingw-w64-x86_64-zeromq mingw-w64-x86_64-libsodium 
-      mingw-w64-x86_64-hidapi mingw-w64-x86_64-protobuf-c mingw-w64-x86_64-libusb 
-      mingw-w64-x86_64-unbound make git"
-
+  when: manual  # Can be manually triggered
+  image: ubuntu:22.04
   script:
-    - echo "Building project in $CI_PROJECT_DIR"
-    # Convert the Windows path to a Unix path that MSYS2 understands
-    - $UNIX_PROJECT_DIR = $CI_PROJECT_DIR.Replace('\', '/').Replace('C:', '/c')
-    - >
-      & $env:MSYS2_BASH -c "
-      export PATH='/mingw64/bin:/usr/bin:$PATH' &&
-      cd $UNIX_PROJECT_DIR &&
-      rm -rf build &&
-      mkdir -p build &&
-      cd build &&
-      cmake .. -G 'Unix Makefiles'
-      -DCMAKE_BUILD_TYPE=Release
-      -DWITH_LEVELDB=ON
-      -DBOOST_ROOT='$BOOST_ROOT_UNIX'
-      -DBOOST_LIBRARYDIR='$BOOST_ROOT_UNIX/stage/lib'
-      -DBoost_NO_SYSTEM_PATHS=ON
-      -DBoost_NO_BOOST_CMAKE=ON
-      -DBoost_USE_STATIC_LIBS=ON
-      -DBoost_USE_MULTITHREADED=ON
-      -DBoost_USE_STATIC_RUNTIME=ON
-      -DBoost_ARCHITECTURE='-x64' &&
-      make -j8"
+    - echo "Building Windows x86_64 (cross-compile from Linux)..."
+    # Install dependencies
+    - apt-get update -qq
+    - apt-get install -y -qq
+        build-essential
+        cmake
+        git
+        python3
+        g++-mingw-w64-x86-64
+        g++-mingw-w64-i686
+        mingw-w64-tools
+    # Build dependencies for Windows x64
+    - make depends-win64
+    # Build Windows x64 static binary
+    - make release-static-win64
   artifacts:
     name: "windows-x64-$CI_COMMIT_SHORT_SHA"
     paths:
-      - build/src/Pastellad.exe
-      - build/src/Pastella-Wallet.exe
-      - build/src/Pastella-Wallet-API.dll
+      - build/release/x86_64-w64-mingw32/src/Pastellad.exe
+      - build/release/x86_64-w64-mingw32/src/Pastella-Wallet.exe
+      - build/release/x86_64-w64-mingw32/src/Pastella-Wallet-API.exe
+      - build/release/x86_64-w64-mingw32/src/*.exe
     expire_in: 1 week
   cache:
-    key: windows-x64-cache
+    key: windows-x64-$CI_COMMIT_REF_SLUG
     paths:
-      - .ccache/
-      
+      - contrib/depends/built/
+      - build/
+
 # ============================================
 # Release Package (Linux x64)
 # ============================================
@@ -216,20 +166,19 @@ package-linux-arm64:
 # ============================================
 package-windows-x64:
   stage: package
-  tags:
-    - windows
+  image: ubuntu:22.04
   dependencies:
     - build-windows-x64
   script:
     - echo "Packaging Windows x64 binaries..."
-    - New-Item -ItemType Directory -Force -Path release/windows-x64
-    - Copy-Item build/src/Release/*.exe release/windows-x64/
-    - Copy-Item build/src/Release/*.dll release/windows-x64/
-    - Compress-Archive -Path release/windows-x64/* -DestinationPath pastellacore-windows-x64-$CI_COMMIT_TAG.zip
+    - apt-get update -qq && apt-get install -y -qq zip
+    - mkdir -p release/windows-x64
+    - cp build/release/x86_64-w64-mingw32/src/*.exe release/windows-x64/
+    - cd release && zip -r pastellacore-windows-x64-$CI_COMMIT_TAG.zip windows-x64/
   artifacts:
     name: "pastellacore-windows-x64-package"
     paths:
-      - "*.zip"
+      - release/*.zip
     expire_in: 1 month
   only:
     - tags
