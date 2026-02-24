@@ -11,11 +11,7 @@
 #include "hash.h"
 #include "random.h"
 
-#ifdef _WIN32
-#include <malloc.h>
-#else
 #include <alloca.h>
-#endif
 #include <cassert>
 #include <cstddef>
 #include <cstdint>

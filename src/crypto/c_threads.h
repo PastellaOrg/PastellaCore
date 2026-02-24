@@ -32,7 +32,6 @@
 #ifdef _WIN32
 
 #include <windows.h>
-#include <process.h>
 
 #define CTHR_RWLOCK_TYPE	SRWLOCK
 #define CTHR_RWLOCK_INIT	SRWLOCK_INIT
@@ -45,7 +44,8 @@
 #define CTHR_THREAD_TYPE	HANDLE
 #define CTHR_THREAD_RTYPE	unsigned __stdcall
 #define CTHR_THREAD_RETURN	_endthreadex(0); return 0;
-#define CTHR_THREAD_CREATE(thr, func, arg)	((thr = (HANDLE)_beginthreadex(0, 0, func, arg, 0, 0)) != 0L)
+/* MinGW cross-compilation fix: Use CreateThread directly instead of _beginthreadex */
+#define CTHR_THREAD_CREATE(thr, func, arg)	((thr = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(func), arg, 0, NULL)) != 0L)
 #define CTHR_THREAD_JOIN(thr)			do { WaitForSingleObject(thr, INFINITE); CloseHandle(thr); } while(0)
 #define CTHR_THREAD_CLOSE(thr)			CloseHandle((HANDLE)thr);
 

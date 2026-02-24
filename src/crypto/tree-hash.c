@@ -5,11 +5,7 @@
 
 #include "hash-ops.h"
 
-#ifdef _WIN32
-#include <malloc.h>
-#else
 #include <alloca.h>
-#endif
 #include <assert.h>
 #include <stddef.h>
 #include <string.h>

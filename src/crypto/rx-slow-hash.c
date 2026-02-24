@@ -307,12 +307,20 @@ static CTHR_THREAD_RTYPE rx_seedthread(void *arg) {
 }
 
 static void rx_init_dataset(size_t max_threads) {
+  minfo(RX_LOGCAT, "RandomX: rx_init_dataset called with max_threads=%zu", max_threads);
+  fflush(stderr);
+
   if (!main_dataset) {
+    minfo(RX_LOGCAT, "RandomX: ERROR - main_dataset is NULL!");
+    fflush(stderr);
     return;
   }
 
   // leave 2 CPU cores for other tasks
   const size_t num_threads = (max_threads < 4) ? 1 : (max_threads - 2);
+  minfo(RX_LOGCAT, "RandomX: Using %zu threads for dataset initialization", num_threads);
+  fflush(stderr);
+
   seedinfo* si = malloc(num_threads * sizeof(seedinfo));
   if (!si) local_abort("Couldn't allocate RandomX mining threadinfo");
 
@@ -334,14 +342,18 @@ static void rx_init_dataset(size_t max_threads) {
   CTHR_THREAD_TYPE *st = malloc(num_threads * sizeof(CTHR_THREAD_TYPE));
   if (!st) local_abort("Couldn't allocate RandomX mining threadlist");
 
+  minfo(RX_LOGCAT, "RandomX: Creating %zu worker threads...", n1);
   CTHR_RWLOCK_LOCK_READ(main_cache_lock);
   for (size_t i = 0; i < n1; ++i) {
     if (!CTHR_THREAD_CREATE(st[i], rx_seedthread, &si[i])) {
       local_abort("Couldn't start RandomX seed thread");
     }
   }
+  minfo(RX_LOGCAT, "RandomX: Worker threads created, initializing main dataset chunk...");
   randomx_init_dataset(main_dataset, si[n1].si_cache, si[n1].si_start, si[n1].si_count);
+  minfo(RX_LOGCAT, "RandomX: Main chunk initialized, waiting for worker threads...");
   for (size_t i = 0; i < n1; ++i) CTHR_THREAD_JOIN(st[i]);
+  minfo(RX_LOGCAT, "RandomX: All worker threads completed");
   CTHR_RWLOCK_UNLOCK_READ(main_cache_lock);
 
   free(st);
@@ -356,14 +368,15 @@ typedef struct thread_info {
 } thread_info;
 
 static CTHR_THREAD_RTYPE rx_set_main_seedhash_thread(void *arg) {
-    fprintf(stderr, "[RX_DEBUG] Thread started!\n");
-    fflush(stderr);
-
   thread_info* info = arg;
 
+  minfo(RX_LOGCAT, "RandomX: Thread started, acquiring locks...");
+  fflush(stderr);
   CTHR_RWLOCK_LOCK_WRITE(main_dataset_lock);
   CTHR_RWLOCK_LOCK_WRITE(main_cache_lock);
 
+  minfo(RX_LOGCAT, "RandomX: Locks acquired, checking seedhash...");
+  fflush(stderr);
   // Double check that seedhash wasn't already updated
   if (is_main(info->seedhash)) {
     CTHR_RWLOCK_UNLOCK_WRITE(main_cache_lock);
@@ -377,18 +390,32 @@ static CTHR_THREAD_RTYPE rx_set_main_seedhash_thread(void *arg) {
   char buf[HASH_SIZE * 2 + 1];
   hash2hex(main_seedhash, buf);
   minfo(RX_LOGCAT, "RandomX new main seed hash is %s", buf);
+  fflush(stderr);
 
   const randomx_flags flags = enabled_flags() & ~disabled_flags();
+  minfo(RX_LOGCAT, "RandomX: Allocating dataset...");
+  fflush(stderr);
   rx_alloc_dataset(flags, &main_dataset, 0);
+  minfo(RX_LOGCAT, "RandomX: Dataset allocated, allocating cache...");
+  fflush(stderr);
   rx_alloc_cache(flags, &main_cache);
+  minfo(RX_LOGCAT, "RandomX: Cache allocated, initializing cache...");
+  fflush(stderr);
 
+  minfo(RX_LOGCAT, "RandomX: About to call randomx_init_cache...");
+  fflush(stderr);
   randomx_init_cache(main_cache, info->seedhash, HASH_SIZE);
   minfo(RX_LOGCAT, "RandomX main cache initialized");
+  fflush(stderr);
 
   CTHR_RWLOCK_UNLOCK_WRITE(main_cache_lock);
 
   // From this point, rx_slow_hash can calculate hashes in light mode, but dataset is not initialized yet
+  minfo(RX_LOGCAT, "RandomX: Starting dataset initialization with %zu threads...", info->max_threads);
+  fflush(stderr);
   rx_init_dataset(info->max_threads);
+  minfo(RX_LOGCAT, "RandomX: Dataset initialization complete");
+  fflush(stderr);
 
   CTHR_RWLOCK_UNLOCK_WRITE(main_dataset_lock);
 
@@ -397,13 +424,8 @@ static CTHR_THREAD_RTYPE rx_set_main_seedhash_thread(void *arg) {
 }
 
 void rx_set_main_seedhash(const char *seedhash, size_t max_dataset_init_threads) {
-    fprintf(stderr, "[RX_DEBUG] rx_set_main_seedhash called\n");
-    fflush(stderr);
-
   // Early out if seedhash didn't change
   if (is_main(seedhash)) {
-    fprintf(stderr, "[RX_DEBUG] Seedhash already set, returning early\n");
-    fflush(stderr);
     return;
   }
 
@@ -417,40 +439,25 @@ void rx_set_main_seedhash(const char *seedhash, size_t max_dataset_init_threads)
     mdebug(RX_LOGCAT, "RandomX rx_set_main_seedhash: NEW=%s, OLD=none (INITIALIZING)", input_hash);
   }
 
-  fprintf(stderr, "[RX_DEBUG] About to allocate thread_info\n");
-  fflush(stderr);
-
   // Update main cache and dataset in the background
+  minfo(RX_LOGCAT, "RandomX: Allocating thread_info structure...");
   thread_info* info = malloc(sizeof(thread_info));
   if (!info) local_abort("Couldn't allocate RandomX mining threadinfo");
 
-  fprintf(stderr, "[RX_DEBUG] thread_info allocated, copying seedhash\n");
-  fflush(stderr);
-
+  minfo(RX_LOGCAT, "RandomX: Copying seedhash to thread_info...");
   memcpy(info->seedhash, seedhash, HASH_SIZE);
   info->max_threads = max_dataset_init_threads;
 
-  fprintf(stderr, "[RX_DEBUG] About to create thread\n");
+  minfo(RX_LOGCAT, "RandomX: Creating initialization thread with max_threads=%d...", max_dataset_init_threads);
   fflush(stderr);
-
   CTHR_THREAD_TYPE t;
   if (!CTHR_THREAD_CREATE(t, rx_set_main_seedhash_thread, info)) {
-    fprintf(stderr, "[RX_DEBUG] Failed to create thread!\n");
-    fflush(stderr);
     local_abort("Couldn't start RandomX seed thread");
   }
-
-  fprintf(stderr, "[RX_DEBUG] Thread created successfully\n");
+  minfo(RX_LOGCAT, "RandomX: Thread created successfully, waiting for completion...");
   fflush(stderr);
-
-#ifdef _WIN32
-  // On Windows, don't close the thread handle - let it run detached
-  // The thread will free the info struct when done
-#else
-  CTHR_THREAD_CLOSE(t);
-#endif
-
-  fprintf(stderr, "[RX_DEBUG] rx_set_main_seedhash returning\n");
+  CTHR_THREAD_JOIN(t);  /* Wait for dataset initialization to complete */
+  minfo(RX_LOGCAT, "RandomX: Thread completed successfully!");
   fflush(stderr);
 }
 
