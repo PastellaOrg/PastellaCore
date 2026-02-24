@@ -52,12 +52,14 @@ file(GLOB_RECURSE WalletApi walletapi/*)
 file(GLOB_RECURSE WalletBackend walletbackend/*)
 file(GLOB_RECURSE pastellawallet pastellawallet/*)
 
-if (MSVC)
-    file(GLOB_RECURSE System system/* platform/windows/system/*)
-elseif (MINGW OR MSYS)
+if (MSVC OR WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
     file(GLOB_RECURSE System system/* platform/windows/system/*)
 elseif (APPLE)
-    file(GLOB_RECURSE System system/* platform/osx/system/*)
+    file(GLOB_RECURSE System system/* platform/osx/system/* platform/posix/system/*)
+    # Exclude x86-64 assembly on ARM64 macOS
+    if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm64|aarch64")
+        list(FILTER System EXCLUDE REGEX ".*\.s$")
+    endif ()
 else ()
     file(GLOB_RECURSE System system/* platform/linux/system/* platform/posix/system/*)
 endif ()
@@ -118,17 +120,10 @@ add_executable(Pastellad ${Pastellad} ${DAEMON_SOURCES_OS})
 add_executable(WalletApi ${WalletApi} ${WALLET_API_SOURCES_OS})
 add_executable(pastellawallet ${pastellawallet} ${ZED_WALLET_SOURCES_OS})
 
-if (MSVC)
+if (MSVC OR WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(System ws2_32)
-    target_link_libraries(Pastellad Rpcrt4 ws2_32 advapi32 crypt32 gdi32 user32)
-    target_link_libraries(pastellawallet ws2_32 advapi32 crypt32 gdi32 user32)
-    target_link_libraries(WalletApi ws2_32 advapi32 crypt32 gdi32 user32)
-elseif (MINGW)
-    target_link_libraries(System -lws2_32)
-    target_link_libraries(P2P -lbcrypt)
-    target_link_libraries(Pastellad -lrpcrt4 -lws2_32 -ladvapi32 -lcrypt32 -lgdi32 -luser32 -lbcrypt)
-    target_link_libraries(pastellawallet -lws2_32 -ladvapi32 -lcrypt32 -lgdi32 -luser32)
-    target_link_libraries(WalletApi -lws2_32 -ladvapi32 -lcrypt32 -lgdi32 -luser32)
+    # Pastellad and pastellawallet system libraries are linked after OpenSSL to fix dependency order
+    # WalletApi also linked after OpenSSL
 endif ()
 
 # A bit of hackery so we don't have to do the if/else/ for every target that
@@ -145,19 +140,19 @@ if (APPLE)
         target_link_libraries(__filesystem INTERFACE /usr/local/opt/llvm/lib/libc++fs.a)
     endif ()
     # If Homebrew LLVM not found, libc++ has filesystem built-in (no link needed)
-elseif (UNIX)
+elseif (UNIX AND NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(__filesystem INTERFACE stdc++fs)
 endif ()
 
-if (MSVC OR MINGW)
+if (MSVC OR WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
     if (WITH_LEVELDB)
-      target_link_libraries(Pastellad System PastellaCore leveldb snappy Errors ${Boost_LIBRARIES})
+      target_link_libraries(Pastellad System PastellaCore leveldblib snappy Errors ${Boost_LIBRARIES})
     else ()
       target_link_libraries(Pastellad System PastellaCore rocksdb zstd Errors ${Boost_LIBRARIES})
     endif ()
 else ()
     if (WITH_LEVELDB)
-      target_link_libraries(Pastellad System PastellaCore levellib snappy Errors ${Boost_LIBRARIES})
+      target_link_libraries(Pastellad System PastellaCore leveldblib snappy Errors ${Boost_LIBRARIES})
     else ()
       target_link_libraries(Pastellad System PastellaCore rocksdblib zstd Errors ${Boost_LIBRARIES})
     endif ()
@@ -185,17 +180,40 @@ target_link_libraries(WalletBackend Serialization Mnemonics Nigel cryptopp-stati
 target_link_libraries(pastellawallet WalletBackend)
 
 if (OPENSSL_FOUND)
-    target_link_libraries(Nigel ${OPENSSL_LIBRARIES})
-    target_link_libraries(WalletApi ${OPENSSL_LIBRARIES})
-    target_link_libraries(pastellawallet ${OPENSSL_LIBRARIES})
-    target_link_libraries(Pastellad ${OPENSSL_LIBRARIES})
-    # MSYS2 OpenSSL static library needs Windows libraries
-    if (MINGW)
-        target_link_libraries(Pastellad -lcrypt32)
-        target_link_libraries(pastellawallet -lcrypt32)
-        target_link_libraries(WalletApi -lcrypt32)
-        target_link_libraries(Nigel -lcrypt32)
+    # Use full static library paths when cross-compiling to Windows
+    # (OPENSSL_LIBRARIES contains just "ssl;crypto" which won't work with MinGW)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        target_link_libraries(Nigel /root/pastella-test-build/openssl_mingw/lib/libssl.a /root/pastella-test-build/openssl_mingw/lib/libcrypto.a)
+        target_link_libraries(WalletApi /root/pastella-test-build/openssl_mingw/lib/libssl.a /root/pastella-test-build/openssl_mingw/lib/libcrypto.a)
+        target_link_libraries(pastellawallet /root/pastella-test-build/openssl_mingw/lib/libssl.a /root/pastella-test-build/openssl_mingw/lib/libcrypto.a)
+        target_link_libraries(Pastellad /root/pastella-test-build/openssl_mingw/lib/libssl.a /root/pastella-test-build/openssl_mingw/lib/libcrypto.a)
+    else ()
+        target_link_libraries(Nigel ${OPENSSL_LIBRARIES})
+        target_link_libraries(WalletApi ${OPENSSL_LIBRARIES})
+        target_link_libraries(pastellawallet ${OPENSSL_LIBRARIES})
+        target_link_libraries(Pastellad ${OPENSSL_LIBRARIES})
     endif ()
+endif ()
+
+# Link Windows system libraries AFTER OpenSSL for proper dependency order
+if (MSVC OR WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    if (OPENSSL_FOUND)
+        target_link_libraries(WalletApi ws2_32 advapi32 crypt32 gdi32 user32)
+        target_link_libraries(pastellawallet ws2_32 advapi32 crypt32 gdi32 user32)
+        target_link_libraries(Pastellad rpcrt4 ws2_32 advapi32 crypt32 gdi32 user32)
+    endif ()
+endif ()
+
+# For Pastellad on Windows with MinGW, bcrypt must be linked LAST
+# Add a custom command to append -lbcrypt to linklibs.rsp after it's generated
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND OPENSSL_FOUND)
+    add_custom_command(
+        TARGET Pastellad
+        PRE_LINK
+        COMMAND ${CMAKE_COMMAND} -E echo " -lbcrypt" >> ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/Pastellad.dir/linklibs.rsp
+        COMMENT "Appending bcrypt library to link command for proper linking order"
+        VERBATIM
+    )
 endif ()
 
 # Add dependencies means we have to build the latter before we build the former

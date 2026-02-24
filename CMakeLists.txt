@@ -132,7 +132,7 @@ else ()
     find_package(Git QUIET)
     if (Git_FOUND OR GIT_FOUND)
         message(STATUS "Found Git: ${GIT_EXECUTABLE}")
-        add_custom_target(version ALL "${CMAKE_COMMAND}" "-D" "VERSION=${VERSION}" "-D" "GIT=${GIT_EXECUTABLE}" "-D" "TO=${CMAKE_CURRENT_BINARY_DIR}/version/version.h" "-P" "${CMAKE_CURRENT_SOURCE_DIR}/src/version.cmake" WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        add_custom_target(version ALL "${CMAKE_COMMAND}" "-D" "VERSION=${VERSION}" "-D" "GIT=${GIT_EXECUTABLE}" "-D" "TO=${CMAKE_CURRENT_BINARY_DIR}/version/version.h" "-D" "SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}" "-P" "${CMAKE_CURRENT_SOURCE_DIR}/src/version.cmake")
     else ()
         message(STATUS "WARNING: Git was not found!")
         set(VERSION "${VERSION}-unknown")
@@ -151,6 +151,9 @@ if (MSVC)
         string(REPLACE "/MD" "/MT" ${VAR} "${${VAR}}")
     endforeach ()
     include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/msc)
+elseif (WIN32)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/platform/mingw)
 elseif (APPLE)
     include_directories(SYSTEM /usr/include/malloc)
     enable_language(ASM)
@@ -270,7 +273,7 @@ message(STATUS "Boost Found: ${Boost_INCLUDE_DIRS}")
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 if (APPLE)
     set(Boost_LIBRARIES "${Boost_LIBRARIES}")
-elseif (NOT MSVC AND NOT MINGW)
+elseif (NOT MSVC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set(Boost_LIBRARIES "${Boost_LIBRARIES};rt")
 endif ()
 
@@ -306,9 +309,17 @@ if (NOT OPENSSL_FOUND)
     endif()
 endif()
 
+# Force OPENSSL_LIBRARIES to use full static library paths when cross-compiling to Windows
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    if (OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
+        set(OPENSSL_LIBRARIES "${OPENSSL_SSL_LIBRARY};${OPENSSL_CRYPTO_LIBRARY}" CACHE STRING "OpenSSL libraries" FORCE)
+        set(OPENSSL_FOUND TRUE CACHE BOOL "OpenSSL found" FORCE)
+    endif ()
+endif ()
+
 if (OPENSSL_FOUND)
     ## On non MSVC build systems, we need to link ldl with the static OpenSSL library
-    if (NOT MSVC AND NOT MINGW)
+    if (NOT MSVC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
         set(OPENSSL_LIBRARIES "${OPENSSL_LIBRARIES};dl")
     endif ()
 
@@ -327,7 +338,17 @@ add_subdirectory(src)
 if (NOT MSVC)
     if (WITH_LEVELDB)
         execute_process(
-            COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/leveldb -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF -DLEVELDB_INSTALL=OFF -B${PROJECT_BINARY_DIR}/leveldb
+            COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/leveldb
+                -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+                -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
+                -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+                -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+                -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+                -DLEVELDB_BUILD_TESTS=OFF
+                -DLEVELDB_BUILD_BENCHMARKS=OFF
+                -DLEVELDB_INSTALL=OFF
+                -DLEVELDB_BUILD_UTIL=OFF
+                -B${PROJECT_BINARY_DIR}/leveldb
         )
         set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${PROJECT_BINARY_DIR}/leveldb/libleveldb.a")
     else ()
@@ -347,11 +368,16 @@ if (NOT MSVC)
         #
         # For these reasons, do not force `-march=armv8-a+crc` from the parent
         # project; let RocksDB decide.
+        #
+        # For ARM64 cross-compilation, disable zstd in RocksDB (it causes linking
+        # issues) and use Snappy instead. The main project still links zstd for
+        # other uses, and Snappy provides good compression performance.
+
         if (IS_ARM64)
             execute_process(
                 COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb
                     -DARCH=${ARCH}
-                    -DWITH_ZSTD=${WITH_ZSTD}
+                    -DWITH_ZSTD=OFF
                     -DWITH_GFLAGS=0
                     -DCMAKE_BUILD_TYPE=MinSizeRel
                     -DWITH_TESTS=OFF
@@ -363,6 +389,7 @@ if (NOT MSVC)
             if(NOT ROCKSDB_CONFIG_RESULT EQUAL 0)
                 message(FATAL_ERROR "RocksDB ARM64 configuration failed with code ${ROCKSDB_CONFIG_RESULT}")
             endif()
+            message(STATUS "ARM64: RocksDB configured WITHOUT zstd compression (zstd disabled due to linking issues)")
         else ()
             execute_process(
                 COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/external/rocksdb
