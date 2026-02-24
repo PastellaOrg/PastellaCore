@@ -165,6 +165,34 @@ else ()
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/platform/posix)
 endif ()
 
+# Detect musl libc (for static builds with depends system)
+if (UNIX AND NOT APPLE AND NOT MSVC)
+    # Check if musl libraries are available in the deps prefix
+    find_library(MUSL_LIB
+        NAMES musl
+        PATHS ${CMAKE_SOURCE_DIR}/contrib/depends/built
+        PATH_SUFFIXES x86_64-linux-gnu/lib aarch64-linux-gnu/lib
+        NO_DEFAULT_PATH
+    )
+
+    if (MUSL_LIB)
+        message(STATUS "Found musl libc: ${MUSL_LIB}")
+        set(USE_MUSL ON)
+        add_definitions(-DUSE_MUSL)
+        # Add musl include path
+        include_directories(SYSTEM ${CMAKE_SOURCE_DIR}/contrib/depends/built/x86_64-linux-gnu/include
+                                    ${CMAKE_SOURCE_DIR}/contrib/depends/built/aarch64-linux-gnu/include)
+    endif ()
+endif ()
+
+# Link musl libc when available (for static builds with glibc compatibility)
+if (USE_MUSL AND MUSL_LIB)
+    message(STATUS "Linking against musl libc: ${MUSL_LIB}")
+    # Link all executables against musl
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_LIB}")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${MUSL_LIB}")
+endif ()
+
 if (NOT MSVC)
     if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
         # This option has no effect in glibc version less than 2.20.

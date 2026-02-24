@@ -54,6 +54,15 @@ DEPS_LINUX_PREFIX := $(CONTRIB_DEPENDS_DIR)/$(DEPS_LINUX_HOST)
 DEPS_LINUX_ARM64_HOST := aarch64-linux-gnu
 DEPS_LINUX_ARM64_PREFIX := $(CONTRIB_DEPENDS_DIR)/$(DEPS_LINUX_ARM64_HOST)
 
+# Check if musl is available in depends (musl builds as libc.a, not libmusl.a)
+MUSL_LIB := $(wildcard $(DEPS_LINUX_ARM64_PREFIX)/lib/libc.a)
+ifneq ($(MUSL_LIB),)
+    MUSL_AVAILABLE := 1
+    MUSL_LIB_FILE := $(MUSL_LIB)
+else
+    MUSL_AVAILABLE := 0
+endif
+
 # SIMD flags for x86/x86_64 builds (AES-NI, PCLMUL, SSSE3, SSE4.1, SSE4.2)
 X86_SIMD_FLAGS := -maes -mpclmul -mssse3 -msse4.1 -msse4.2
 
@@ -213,7 +222,7 @@ release-static-linux-x86_64:
 
 release-static-linux-arm64:
 	mkdir -p $(builddir)/release/arm64-linux
-	(cd $(builddir)/release/arm64-linux && cmake -G "Unix Makefiles" \
+	(cd $(builddir)/release/arm64-linux && DEPS_LINUX_ARM64_PREFIX=$(DEPS_LINUX_ARM64_PREFIX) cmake -G "Unix Makefiles" \
 		-D CMAKE_BUILD_TYPE=Release \
 		-D STATIC=ON \
 		-D ARCH="armv8-a" \
@@ -396,4 +405,5 @@ help:
 	release-static-linux-x86_64 release-static-linux-arm64 \
 	release-static-win64 debug-static-win64 \
 	release-static-mac-x86_64 release-static-mac-arm64 release-static-freebsd-x86_64 \
-	release-static coverage fuzz clean clean-all help
+	release-static coverage fuzz clean clean-all help \
+	clean-depends clean-depends-win64 clean-depends-linux clean-depends-linux-arm64 clean-depends-mac clean-depends-mac-arm64 clean-depends-freebsd clean-depends-all distclean-depends

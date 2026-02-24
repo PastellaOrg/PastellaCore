@@ -1,5 +1,5 @@
 native_packages :=
-packages := boost openssl
+packages := boost openssl musl musl-cross
 
 linux_native_packages :=
 linux_packages :=
