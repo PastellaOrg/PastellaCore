@@ -50,20 +50,19 @@ build-linux-arm64:
   image: ubuntu:22.04
   script:
     - echo "Building Linux ARM64 (cross-compile from x86_64)..."
-    # Install dependencies including ARM64 cross-compilation toolchain
+    # Install dependencies for musl-cross (32-bit runtime needed for musl.cc toolchain)
     - apt-get update -qq
     - apt-get install -y -qq
         build-essential
         cmake
         git
         python3
-        g++-aarch64-linux-gnu
-        gcc-aarch64-linux-gnu
-        binutils-aarch64-linux-gnu
         curl
-    # Build dependencies for Linux ARM64
+        libc6:i386
+        libstdc++6:i386
+    # Build dependencies for Linux ARM64 (downloads and sets up musl-cross)
     - make depends-linux-arm64 -j8
-    # Build Linux ARM64 static binary
+    # Build Linux ARM64 static binary (uses musl-cross from depends)
     - make release-static-linux-arm64 -j8
   artifacts:
     name: "linux-arm64-$CI_COMMIT_SHORT_SHA"
