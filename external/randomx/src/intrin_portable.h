@@ -99,6 +99,8 @@ void rx_set_double_precision();
 typedef __m128i rx_vec_i128;
 typedef __m128d rx_vec_f128;
 
+// MinGW cross-compilation fix: _mm_malloc() DOES work with MinGW (proven by Monero)
+// Previous assumption that it doesn't work was incorrect
 #define rx_aligned_alloc(a, b) _mm_malloc(a,b)
 #define rx_aligned_free(a) _mm_free(a)
 #define rx_prefetch_nta(x) _mm_prefetch((const char *)(x), _MM_HINT_NTA)

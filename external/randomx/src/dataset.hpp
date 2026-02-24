@@ -92,6 +92,12 @@ namespace randomx {
 	void initDataset(randomx_cache* cache, uint8_t* dataset, uint32_t startBlock, uint32_t endBlock);
 
 	inline randomx_argon2_impl* selectArgonImpl(randomx_flags flags) {
+		// Force reference implementation for MinGW cross-compilation compatibility
+		// AVX2/SSSE3 implementations crash under MinGW
+		(void)flags; // Unused parameter
+		return &randomx_argon2_fill_segment_ref;
+
+		/* Original code - disabled due to MinGW compatibility issues
 		if (flags & RANDOMX_FLAG_ARGON2_AVX2) {
 			return randomx_argon2_impl_avx2();
 		}
@@ -99,5 +105,6 @@ namespace randomx {
 			return randomx_argon2_impl_ssse3();
 		}
 		return &randomx_argon2_fill_segment_ref;
+		*/
 	}
 }

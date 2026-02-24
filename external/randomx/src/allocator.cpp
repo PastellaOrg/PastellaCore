@@ -36,7 +36,18 @@ namespace randomx {
 
 	template<size_t alignment>
 	void* AlignedAllocator<alignment>::allocMemory(size_t count) {
+		FILE* f = fopen("C:\\Users\\cuper\\OneDrive\\Bureaublad\\PastellaTestCompile\\rx_debug.txt", "a");
+		if (f) {
+			fprintf(f, "[RX_DEBUG] AlignedAllocator::allocMemory: ENTER - count=%zu bytes, alignment=%zu\n", count, alignment);
+			fflush(f);
+			fclose(f);
+		}
+		printf("[RX_DEBUG] AlignedAllocator::allocMemory: ENTER - count=%zu bytes, alignment=%zu\n", count, alignment);
+		fflush(stdout);
 		void *mem = rx_aligned_alloc(count, alignment);
+		if (f) { f = fopen("C:\\Users\\cuper\\OneDrive\\Bureaublad\\PastellaTestCompile\\rx_debug.txt", "a"); fprintf(f, "[RX_DEBUG] AlignedAllocator::allocMemory: rx_aligned_alloc returned %p\n", mem); fflush(f); fclose(f); }
+		printf("[RX_DEBUG] AlignedAllocator::allocMemory: rx_aligned_alloc returned %p\n", mem);
+		fflush(stdout);
 		if (mem == nullptr)
 			throw std::bad_alloc();
 		return mem;
