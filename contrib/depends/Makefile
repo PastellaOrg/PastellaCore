@@ -113,7 +113,9 @@ build_id_string:=$(realpath $(GUIX_ENVIRONMENT))
 $(host_arch)_$(host_os)_id_string:=$(realpath $(GUIX_ENVIRONMENT))
 endif
 
-packages += $($(host_arch)_$(host_os)_packages) $($(host_os)_packages)
+# Prepend platform-specific packages before base packages so cross-compiler is available for boost
+_base_packages:=$(packages)
+packages := $($(host_arch)_$(host_os)_packages) $($(host_os)_packages) $(_base_packages)
 native_packages += $($(host_arch)_$(host_os)_native_packages) $($(host_os)_native_packages)
 
 all_packages = $(packages) $(native_packages)
