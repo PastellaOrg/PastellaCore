@@ -1,8 +1,9 @@
 native_packages :=
-packages := boost openssl musl musl-cross
+packages := boost openssl
 
 linux_native_packages :=
-linux_packages :=
+linux_packages := musl musl-cross
+aarch64_linux_packages := libucontext
 
 freebsd_native_packages :=
 freebsd_packages :=

@@ -36,3 +36,14 @@ set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
 # Static linking - musl handles this natively
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+
+# Link libucontext for ucontext functions on musl
+if(DEFINED ENV{UCONTEXT_LIBRARY})
+    set(UCONTEXT_LIB $ENV{UCONTEXT_LIBRARY})
+    if(EXISTS ${UCONTEXT_LIB})
+        message(STATUS "Using libucontext: ${UCONTEXT_LIB}")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${UCONTEXT_LIB}")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -I${DEPS_PREFIX}/include")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${DEPS_PREFIX}/include")
+    endif()
+endif()

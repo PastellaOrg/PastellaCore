@@ -6,13 +6,15 @@ $(package)_sha256_hash=cf3098950cb4d853ad95c0841f1f9c6d3dc102dccfcacd521d9392520
 
 
 define $(package)_set_vars
-$(package)_config_env=AR="$($(package)_ar)" RANLIB="$($(package)_ranlib)" CC="$($(package)_cc)"
+$(package)_config_env=AR="$($(package)_ar)" RANLIB="$($(package)_ranlib)" CC="$($(package)_cc)" CFLAGS="-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+$(package)_build_env=CFLAGS="-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
 $(package)_config_env_android=ANDROID_NDK_ROOT="$(host_prefix)/native" PATH="$(host_prefix)/native/bin"
 $(package)_build_env_android=ANDROID_NDK_ROOT="$(host_prefix)/native"
 $(package)_config_opts=--prefix=$(host_prefix) --openssldir=$(host_prefix)/etc/openssl --libdir=$(host_prefix)/lib
 $(package)_config_opts+=no-capieng
 $(package)_config_opts+=no-dso
 $(package)_config_opts+=no-dtls1
+$(package)_config_opts+=no-afalgeng
 $(package)_config_opts+=no-ec_nistp_64_gcc_128
 $(package)_config_opts+=no-gost
 $(package)_config_opts+=no-md2
@@ -34,6 +36,8 @@ $(package)_config_opts_x86_64_linux=linux-x86_64
 $(package)_config_opts_i686_linux=linux-generic32
 $(package)_config_opts_arm_linux=linux-generic32
 $(package)_config_opts_aarch64_linux=linux-generic64
+$(package)_cflags_aarch64_linux=-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0
+$(package)_cflags_linux=-fPIC -Wa,--noexecstack
 $(package)_config_opts_x86_64_darwin=darwin64-x86_64-cc
 $(package)_config_opts_x86_64_mingw32=mingw64
 $(package)_config_opts_i686_mingw32=mingw

@@ -27,3 +27,6 @@ set(CMAKE_CXX_FLAGS_RELEASE "@release_type@")
 set(BUILD_TESTS @build_tests@)
 
 set(allow_host_packages @allow_host_packages@)
+
+# Set DEPS_LINUX_ARM64_PREFIX for ARM64 builds
+set(DEPS_LINUX_ARM64_PREFIX "@prefix@")
