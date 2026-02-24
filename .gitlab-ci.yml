@@ -85,7 +85,6 @@ build-linux-arm64:
 # ============================================
 build-windows-x64:
   stage: build
-  when: manual  # Can be manually triggered
   image: ubuntu:22.04
   script:
     - echo "Building Windows x86_64 (cross-compile from Linux)..."
@@ -99,6 +98,7 @@ build-windows-x64:
         g++-mingw-w64-x86-64
         g++-mingw-w64-i686
         mingw-w64-tools
+        curl
     # Build dependencies for Windows x64
     - make depends-win64
     # Build Windows x64 static binary
