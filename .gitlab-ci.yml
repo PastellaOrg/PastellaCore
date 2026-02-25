@@ -106,6 +106,93 @@ build-windows-x64:
       - build/release/x86_64-w64-mingw32/src/Pastella-Wallet-API.exe
     expire_in: 1 week
 
+# ============================================
+# Arch Linux x86_64 Build
+# ============================================
+build-archlinux-x64:
+  stage: build
+  image: archlinux:latest
+  script:
+    - echo "Building Arch Linux x86_64..."
+    # Install dependencies
+    - pacman -Sy --noconfirm
+        base-devel
+        cmake
+        git
+        python3
+        curl
+    # Build dependencies for Linux x64
+    - make depends-linux -j8
+    # Build Linux x64 static binary
+    - make release-static-linux-x86_64 -j8
+  artifacts:
+    name: "archlinux-x64-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build/release/x86_64-linux-gnu/src/Pastellad
+      - build/release/x86_64-linux-gnu/src/Pastella-Wallet
+      - build/release/x86_64-linux-gnu/src/Pastella-Wallet-API
+    expire_in: 1 week
+
+# ============================================
+# macOS x86_64 Build (Cross-compile from Linux)
+# ============================================
+build-macos-x64:
+  stage: build
+  image: crazymax/osxcross:latest
+  script:
+    - echo "Building macOS x86_64 using osxcross Docker image..."
+    # Install additional dependencies
+    - apt-get update -qq
+    - apt-get install -y -qq
+        build-essential
+        cmake
+        git
+        python3
+        curl
+    # osxcross is already installed in /opt/osxcross
+    - export PATH="/opt/osxcross/target/bin:$PATH"
+    - export CMAKE_LIBRARY_PATH="/opt/osxcross/target/lib/x86_64-apple-darwin:$CMAKE_LIBRARY_PATH"
+    - export CMAKE_INCLUDE_PATH="/opt/osxcross/target/include:$CMAKE_INCLUDE_PATH"
+    - echo "Building macOS x64 static binary..."
+    - make release-static-mac-x86_64 -j8
+  artifacts:
+    name: "macos-x64-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build/release/x86_64-apple-darwin/src/Pastellad
+      - build/release/x86_64-apple-darwin/src/Pastella-Wallet
+      - build/release/x86_64-apple-darwin/src/Pastella-Wallet-API
+    expire_in: 1 week
+
+# ============================================
+# macOS ARM64 Build (Cross-compile from Linux)
+# ============================================
+build-macos-arm64:
+  stage: build
+  image: crazymax/osxcross:latest
+  script:
+    - echo "Building macOS ARM64 using osxcross Docker image..."
+    # Install additional dependencies
+    - apt-get update -qq
+    - apt-get install -y -qq
+        build-essential
+        cmake
+        git
+        python3
+        curl
+    # osxcross is already installed in /opt/osxcross
+    - export PATH="/opt/osxcross/target/bin:$PATH"
+    - export CMAKE_LIBRARY_PATH="/opt/osxcross/target/lib/aarch64-apple-darwin:$CMAKE_LIBRARY_PATH"
+    - export CMAKE_INCLUDE_PATH="/opt/osxcross/target/include:$CMAKE_INCLUDE_PATH"
+    - echo "Building macOS ARM64 static binary..."
+    - make release-static-mac-arm64 -j8
+  artifacts:
+    name: "macos-arm64-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build/release/arm64-apple-darwin/src/Pastellad
+      - build/release/arm64-apple-darwin/src/Pastella-Wallet
+      - build/release/arm64-apple-darwin/src/Pastella-Wallet-API
+    expire_in: 1 week
+
 
 
 # ============================================
@@ -172,6 +259,75 @@ package-windows-x64:
     name: "pastellacore-windows-x64-package"
     paths:
       - release/*.zip
+    expire_in: 1 month
+  only:
+    - tags
+    - main
+
+# ============================================
+# Release Package (Arch Linux x64)
+# ============================================
+package-archlinux-x64:
+  stage: package
+  image: archlinux:latest
+  dependencies:
+    - build-archlinux-x64
+  script:
+    - echo "Packaging Arch Linux x64 binaries..."
+    - pacman -Sy --noconfirm tar
+    - mkdir -p release/archlinux-x64
+    - cp build/release/x86_64-linux-gnu/src/Pastellad build/release/x86_64-linux-gnu/src/Pastella-Wallet build/release/x86_64-linux-gnu/src/Pastella-Wallet-API release/archlinux-x64/
+    - cd release && tar -czf pastellacore-archlinux-x64-$CI_COMMIT_TAG.tar.gz archlinux-x64/
+  artifacts:
+    name: "pastellacore-archlinux-x64-package"
+    paths:
+      - release/*.tar.gz
+    expire_in: 1 month
+  only:
+    - tags
+    - main
+
+# ============================================
+# Release Package (macOS x64)
+# ============================================
+package-macos-x64:
+  stage: package
+  image: ubuntu:22.04
+  dependencies:
+    - build-macos-x64
+  script:
+    - echo "Packaging macOS x64 binaries..."
+    - apt-get update -qq && apt-get install -y -qq tar
+    - mkdir -p release/macos-x64
+    - cp build/release/x86_64-apple-darwin/src/Pastellad build/release/x86_64-apple-darwin/src/Pastella-Wallet build/release/x86_64-apple-darwin/src/Pastella-Wallet-API release/macos-x64/
+    - cd release && tar -czf pastellacore-macos-x64-$CI_COMMIT_TAG.tar.gz macos-x64/
+  artifacts:
+    name: "pastellacore-macos-x64-package"
+    paths:
+      - release/*.tar.gz
+    expire_in: 1 month
+  only:
+    - tags
+    - main
+
+# ============================================
+# Release Package (macOS ARM64)
+# ============================================
+package-macos-arm64:
+  stage: package
+  image: ubuntu:22.04
+  dependencies:
+    - build-macos-arm64
+  script:
+    - echo "Packaging macOS ARM64 binaries..."
+    - apt-get update -qq && apt-get install -y -qq tar
+    - mkdir -p release/macos-arm64
+    - cp build/release/arm64-apple-darwin/src/Pastellad build/release/arm64-apple-darwin/src/Pastella-Wallet build/release/arm64-apple-darwin/src/Pastella-Wallet-API release/macos-arm64/
+    - cd release && tar -czf pastellacore-macos-arm64-$CI_COMMIT_TAG.tar.gz macos-arm64/
+  artifacts:
+    name: "pastellacore-macos-arm64-package"
+    paths:
+      - release/*.tar.gz
     expire_in: 1 month
   only:
     - tags
