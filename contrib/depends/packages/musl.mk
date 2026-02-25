@@ -15,10 +15,11 @@ $(package)_ld=$(host_CC)
 $(package)_cflags=$(CFLAGS)
 $(package)_cxxflags=$(CXXFLAGS)
 $(package)_ldflags=$(LDFLAGS)
+$(package)_config_env=CC="$($(package)_cc)" AR="$($(package)_ar)" RANLIB="$($(package)_ranlib)"
 endef
 
 define $(package)_config_cmds
-	./configure --host=$(host) --build=$(build) $($(package)_config_opts) CC=$($(package)_cc) AR=$($(package)_ar) RANLIB=$($(package)_ranlib)
+	./configure --host=$(host) --build=$(build) $($(package)_config_opts)
 endef
 
 define $(package)_build_cmds
