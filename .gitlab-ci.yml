@@ -63,7 +63,7 @@ build-linux-arm64:
         libc6:i386
         libstdc++6:i386
         libgcc-s1:i386
-        cc-aarch64-linux-gnu
+        gcc-aarch64-linux-gnu
         g++-aarch64-linux-gnu
     # Build dependencies for Linux ARM64 (downloads and sets up musl-cross)
     - make depends-linux-arm64 -j8
