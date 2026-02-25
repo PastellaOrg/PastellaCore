@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <stdint.h>
 #include <stdio.h>
 #include <map>

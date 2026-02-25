@@ -7,6 +7,7 @@
 
 #ifndef ROCKSDB_LITE
 
+#include <cstdint>
 #include <memory>
 #include <string>
 

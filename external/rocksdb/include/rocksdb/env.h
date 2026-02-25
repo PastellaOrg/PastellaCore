@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <stdint.h>
 #include <cstdarg>
 #include <functional>

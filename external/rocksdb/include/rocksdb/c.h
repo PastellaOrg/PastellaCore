@@ -62,6 +62,7 @@
 extern "C" {
 #endif
 
+#include <cstdint>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>

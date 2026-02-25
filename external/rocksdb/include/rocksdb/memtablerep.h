@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <rocksdb/slice.h>
 #include <stdint.h>
 #include <stdlib.h>

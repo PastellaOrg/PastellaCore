@@ -7,6 +7,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #pragma once
 
+#include <cstdint>
 #include <stdint.h>
 #include <memory>
 #include <string>

@@ -4,6 +4,7 @@
 // Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 #pragma once
 
+#include <cstdint>
 #include <stdint.h>
 #include <map>
 #include <string>

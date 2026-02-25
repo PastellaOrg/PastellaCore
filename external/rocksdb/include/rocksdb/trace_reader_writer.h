@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include "rocksdb/env.h"
 
 namespace rocksdb {

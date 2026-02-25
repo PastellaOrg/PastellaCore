@@ -7,6 +7,7 @@
 
 #if !defined(ROCKSDB_LITE)
 
+#include <cstdint>
 #include <string>
 
 #include "env.h"
