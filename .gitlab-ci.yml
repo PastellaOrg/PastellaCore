@@ -210,7 +210,7 @@ package-debian-x64:
   stage: package
   image: ubuntu:22.04
   dependencies:
-    - build-linux-x64
+    - build-debian-x64
   script:
     - echo "Packaging Linux x64 binaries..."
     - apt-get update -qq && apt-get install -y -qq tar
@@ -233,7 +233,7 @@ package-debian-arm64:
   stage: package
   image: ubuntu:22.04
   dependencies:
-    - build-linux-arm64
+    - build-debian-arm64
   script:
     - echo "Packaging Linux ARM64 binaries..."
     - apt-get update -qq && apt-get install -y -qq tar
