@@ -1,6 +1,6 @@
 package=musl-cross
 $(package)_version=11.2.1
-$(package)_download_path=https://musl.cc
+$(package)_download_path=https://pastella.org/depends
 $(package)_file_name=aarch64-linux-musl-cross.tgz
 $(package)_sha256_hash=c909817856d6ceda86aa510894fa3527eac7989f0ef6e87b5721c58737a06c38
 

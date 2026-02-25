@@ -1,6 +1,6 @@
 package=libucontext
 $(package)_version=1.2
-$(package)_download_path=https://github.com/kaniini/libucontext/archive/refs/tags
+$(package)_download_path=https://pastella.org/depends
 $(package)_file_name=$(package)-$($(package)_version).tar.gz
 $(package)_sha256_hash=937fba9d0beebd7cf957b79979b19fe3a29bb9c4bfd25e869477d7154bbf8fd3
 
