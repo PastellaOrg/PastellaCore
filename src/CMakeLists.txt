@@ -211,7 +211,7 @@ if (MSVC OR WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
     if (OPENSSL_FOUND)
         target_link_libraries(WalletApi ws2_32 advapi32 crypt32 gdi32 user32)
         target_link_libraries(pastellawallet ws2_32 advapi32 crypt32 gdi32 user32)
-        target_link_libraries(Pastellad rpcrt4 ws2_32 advapi32 crypt32 gdi32 user32)
+        target_link_libraries(Pastellad rpcrt4 ws2_32 advapi32 crypt32 gdi32 user32 bcrypt)
     endif ()
 endif ()
 
