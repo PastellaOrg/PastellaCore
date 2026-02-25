@@ -39,8 +39,10 @@ build-linux-x64:
   cache:
     key: linux-x64-$CI_COMMIT_REF_SLUG
     paths:
-      - contrib/depends/built/
-      - build/
+      - contrib/depends/x86_64-linux-gnu
+      - contrib/depends/built
+      - contrib/depends/sources
+      - contrib/depends/work
 
 # ============================================
 # Linux ARM64 Build (Cross-compile from x86_64)
@@ -79,8 +81,11 @@ build-linux-arm64:
   cache:
     key: linux-arm64-$CI_COMMIT_REF_SLUG
     paths:
-      - contrib/depends/built/
-      - build/
+      - contrib/depends/aarch64-linux-gnu
+      - contrib/depends/aarch64-linux-musl
+      - contrib/depends/built
+      - contrib/depends/sources
+      - contrib/depends/work
   allow_failure: true  # ARM64 build is optional
 
 # ============================================
@@ -119,8 +124,12 @@ build-windows-x64:
   cache:
     key: windows-x64-$CI_COMMIT_REF_SLUG
     paths:
-      - contrib/depends/built/
-      - build/
+      - contrib/depends/x86_64-w64-mingw32
+      - contrib/depends/built
+      - contrib/depends/sources
+      - contrib/depends/work
+
+
 
 # ============================================
 # Release Package (Linux x64)
