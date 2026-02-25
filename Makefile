@@ -52,6 +52,7 @@ DEPS_LINUX_HOST := x86_64-linux-gnu
 DEPS_LINUX_PREFIX := $(CONTRIB_DEPENDS_DIR)/$(DEPS_LINUX_HOST)
 
 DEPS_LINUX_ARM64_HOST := aarch64-linux-musl
+DEPS_LINUX_ARM64_ALT := $(CONTRIB_DEPENDS_DIR)/aarch64-linux-gnu
 DEPS_LINUX_ARM64_PREFIX := $(CONTRIB_DEPENDS_DIR)/$(DEPS_LINUX_ARM64_HOST)
 
 # Check if musl is available in depends (musl builds as libc.a, not libmusl.a)
@@ -228,17 +229,17 @@ release-static-linux-arm64:
 		-D ARCH="armv8-a" \
 		-D CMAKE_TOOLCHAIN_FILE=$(topdir)/cmake/arm64_toolchain.cmake \
 		-D WITH_LEVELDB=OFF \
-		-D BOOST_ROOT=$(DEPS_LINUX_ARM64_PREFIX) \
-		-D Boost_INCLUDE_DIR=$(DEPS_LINUX_ARM64_PREFIX)/include \
-		-D Boost_LIBRARY_DIR=$(DEPS_LINUX_ARM64_PREFIX)/lib \
+		-D BOOST_ROOT=$(DEPS_LINUX_ARM64_ALT) \
+		-D Boost_INCLUDE_DIR=$(DEPS_LINUX_ARM64_ALT)/include \
+		-D Boost_LIBRARY_DIR=$(DEPS_LINUX_ARM64_ALT)/lib \
 		-D Boost_NO_SYSTEM_PATHS=ON \
 		-D Boost_USE_STATIC_LIBS=ON \
 		-D Boost_FOUND=ON \
-		-D OPENSSL_ROOT_DIR=$(DEPS_LINUX_ARM64_PREFIX) \
-		-D OPENSSL_INCLUDE_DIR=$(DEPS_LINUX_ARM64_PREFIX)/include \
-		-D OPENSSL_CRYPTO_LIBRARY=$(DEPS_LINUX_ARM64_PREFIX)/lib/libcrypto.a \
-		-D OPENSSL_SSL_LIBRARY=$(DEPS_LINUX_ARM64_PREFIX)/lib/libssl.a \
-		-D UCONTEXT_LIBRARY=$(DEPS_LINUX_ARM64_PREFIX)/lib/libucontext.a \
+		-D OPENSSL_ROOT_DIR=$(DEPS_LINUX_ARM64_ALT) \
+		-D OPENSSL_INCLUDE_DIR=$(DEPS_LINUX_ARM64_ALT)/include \
+		-D OPENSSL_CRYPTO_LIBRARY=$(DEPS_LINUX_ARM64_ALT)/lib/libcrypto.a \
+		-D OPENSSL_SSL_LIBRARY=$(DEPS_LIDEPS_LINUX_ARM64_ALTNUX_ARM64_PREFIX)/lib/libssl.a \
+		-D UCONTEXT_LIBRARY=$(DEPS_LINUX_ARM64_ALT)/lib/libucontext.a \
 		$(topdir) && $(MAKE) --no-print-directory)
 
 # =============================================================================
