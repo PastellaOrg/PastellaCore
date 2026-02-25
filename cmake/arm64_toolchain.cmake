@@ -4,11 +4,11 @@ set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 
 # Check if musl-cross is available from depends system
-if(DEFINED ENV{DEPS_LINUX_ARM64_PREFIX})
-    set(DEPS_PREFIX $ENV{DEPS_LINUX_ARM64_PREFIX})
-else()
-    set(DEPS_PREFIX /root/git/PastellaCore/contrib/depends/aarch64-linux-gnu)
+if(NOT DEFINED ENV{DEPS_LINUX_ARM64_PREFIX})
+    message(FATAL_ERROR "DEPS_LINUX_ARM64_PREFIX environment variable not set. "
+                        "Please run 'make release-static-linux-arm64' from the Makefile instead of calling CMake directly.")
 endif()
+set(DEPS_PREFIX $ENV{DEPS_LINUX_ARM64_PREFIX})
 
 # Musl cross-compiler should be in DEPS_PREFIX/bin
 set(MUSL_CROSS_BIN ${DEPS_PREFIX}/bin)
