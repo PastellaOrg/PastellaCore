@@ -180,12 +180,22 @@ build-macos-x64:
     - export OSXCROSS_TARGET_DIR="$(pwd)/osxcross/target"
   script:
     - echo "Building macOS x64 static binary..."
-    # Use osxcross compilers for cross-compilation
-    - export CC="$(pwd)/osxcross/target/bin/x86_64-apple-darwin15-clang"
-    - export CXX="$(pwd)/osxcross/target/bin/x86_64-apple-darwin15-clang++"
+    # List available osxcross compilers to find correct names
+    - echo "Available osxcross compilers:"
+    - ls -la $(pwd)/osxcross/target/bin/ | grep -E "clang|gcc|g\+\+" | head -20
+    # Find the actual x86_64 macOS cross-compiler
+    - export CC=$(find $(pwd)/osxcross/target/bin -name "*x86_64*apple*clang" -o -name "*x64*apple*clang" | head -1)
+    - export CXX=$(find $(pwd)/osxcross/target/bin -name "*x86_64*apple*clang++" -o -name "*x64*apple*clang++" | head -1)
+    # If not found, try alternative patterns
+    - |
+      if [ -z "$CC" ]; then
+        export CC=$(find $(pwd)/osxcross/target/bin -name "o32-clang" | head -1)
+        export CXX=$(find $(pwd)/osxcross/target/bin -name "o32-clang++" | head -1)
+      fi
+    - echo "Using CC: $CC"
+    - echo "Using CXX: $CXX"
     # Verify compilers are found
-    - $CC --version || echo "CC not found at $CC"
-    - $CXX --version || echo "CXX not found at $CXX"
+    - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
     - make release-static-mac-x86_64 -j8
   artifacts:
     name: "macos-x64-$CI_COMMIT_SHORT_SHA"
@@ -227,12 +237,22 @@ build-macos-arm64:
     - export OSXCROSS_TARGET_DIR="$(pwd)/osxcross/target"
   script:
     - echo "Building macOS ARM64 static binary..."
-    # Use osxcross compilers for cross-compilation
-    - export CC="$(pwd)/osxcross/target/bin/aarch64-apple-darwin20-clang"
-    - export CXX="$(pwd)/osxcross/target/bin/aarch64-apple-darwin20-clang++"
+    # List available osxcross compilers to find correct names
+    - echo "Available osxcross compilers:"
+    - ls -la $(pwd)/osxcross/target/bin/ | grep -E "clang|gcc|g\+\+" | head -20
+    # Find the actual ARM64 macOS cross-compiler
+    - export CC=$(find $(pwd)/osxcross/target/bin -name "*aarch64*apple*clang" -o -name "*arm64*apple*clang" | head -1)
+    - export CXX=$(find $(pwd)/osxcross/target/bin -name "*aarch64*apple*clang++" -o -name "*arm64*apple*clang++" | head -1)
+    # If not found, try alternative patterns
+    - |
+      if [ -z "$CC" ]; then
+        export CC=$(find $(pwd)/osxcross/target/bin -name "o64-clang" | head -1)
+        export CXX=$(find $(pwd)/osxcross/target/bin -name "o64-clang++" | head -1)
+      fi
+    - echo "Using CC: $CC"
+    - echo "Using CXX: $CXX"
     # Verify compilers are found
-    - $CC --version || echo "CC not found at $CC"
-    - $CXX --version || echo "CXX not found at $CXX"
+    - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
     - make release-static-mac-arm64 -j8
   artifacts:
     name: "macos-arm64-$CI_COMMIT_SHORT_SHA"
