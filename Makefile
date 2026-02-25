@@ -222,6 +222,7 @@ release-static-linux-x86_64:
 		$(topdir) && $(MAKE) --no-print-directory)
 
 release-static-linux-arm64:
+	rm -rf $(builddir)/release/arm64-linux
 	mkdir -p $(builddir)/release/arm64-linux
 	(cd $(builddir)/release/arm64-linux && DEPS_LINUX_ARM64_PREFIX=$(DEPS_LINUX_ARM64_PREFIX) cmake -G "Unix Makefiles" \
 		-D CMAKE_BUILD_TYPE=Release \
