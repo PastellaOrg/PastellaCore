@@ -109,7 +109,7 @@ depends-freebsd:
 	@echo "Now you can run: make release-static-freebsd-x86_64"
 
 depends-linux-arm64:
-	cd contrib/depends && $(MAKE) HOST=aarch64-linux-gnu
+	cd contrib/depends && $(MAKE) HOST=aarch64-linux-musl
 	@echo ""
 	@echo "Dependencies built successfully!"
 	@echo "Now you can run: make release-static-linux-arm64"
@@ -148,7 +148,7 @@ clean-depends-freebsd:
 	@echo "Dependencies cleaned for FreeBSD"
 
 clean-depends-linux-arm64:
-	cd contrib/depends && $(MAKE) HOST=aarch64-linux-gnu clean
+	cd contrib/depends && $(MAKE) HOST=aarch64-linux-musl clean
 	@echo ""
 	@echo "Dependencies cleaned for Linux ARM64"
 
