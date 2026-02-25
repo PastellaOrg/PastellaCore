@@ -78,15 +78,6 @@ build-linux-arm64:
       - build/release/arm64-linux/src/Pastella-Wallet
       - build/release/arm64-linux/src/Pastella-Wallet-API
     expire_in: 1 week
-  cache:
-    key: linux-arm64-$CI_COMMIT_REF_SLUG
-    paths:
-      - contrib/depends/aarch64-linux-gnu
-      - contrib/depends/aarch64-linux-musl
-      - contrib/depends/built
-      - contrib/depends/sources
-      - contrib/depends/work
-  allow_failure: true  # ARM64 build is optional
 
 # ============================================
 # Windows x86_64 Build (Cross-compile from Linux)
