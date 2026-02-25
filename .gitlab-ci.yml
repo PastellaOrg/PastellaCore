@@ -36,6 +36,7 @@ build-debian-x64:
       - build/release/x86_64-linux-gnu/src/Pastella-Wallet
       - build/release/x86_64-linux-gnu/src/Pastella-Wallet-API
     expire_in: 1 week
+  when: manual
 
 # ============================================
 # Debian ARM64 Build
@@ -71,6 +72,7 @@ build-debian-arm64:
       - build/release/arm64-linux/src/Pastella-Wallet
       - build/release/arm64-linux/src/Pastella-Wallet-API
     expire_in: 1 week
+  when: manual
 
 # ============================================
 # Windows x86_64 Build (Cross-compile from Linux)
@@ -105,6 +107,7 @@ build-windows-x64:
       - build/release/x86_64-w64-mingw32/src/Pastella-Wallet.exe
       - build/release/x86_64-w64-mingw32/src/Pastella-Wallet-API.exe
     expire_in: 1 week
+  when: manual
 
 # ============================================
 # Arch Linux x86_64 Build
@@ -168,7 +171,7 @@ build-macos-x64:
         docker.io
     # Extract osxcross toolchain from Docker image
     - echo "Extracting macOS toolchain..."
-    - docker create --name osx-tools crazymax/osxcross:latest-ubuntu
+    - docker create --name osx-tools crazymax/osxcross:latest-ubuntu sleep infinity
     - docker cp osx-tools:/opt/osxcross ./osxcross
     - docker rm osx-tools
     - export PATH="$(pwd)/osxcross/target/bin:$PATH"
@@ -209,7 +212,7 @@ build-macos-arm64:
         docker.io
     # Extract osxcross toolchain from Docker image
     - echo "Extracting macOS ARM64 toolchain..."
-    - docker create --name osx-tools-arm64 crazymax/osxcross:latest-ubuntu
+    - docker create --name osx-tools-arm64 crazymax/osxcross:latest-ubuntu sleep infinity
     - docker cp osx-tools-arm64:/opt/osxcross ./osxcross
     - docker rm osx-tools-arm64
     - export PATH="$(pwd)/osxcross/target/bin:$PATH"

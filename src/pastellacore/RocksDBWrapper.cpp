@@ -5,6 +5,8 @@
 
 #include "RocksDBWrapper.h"
 
+#include <cstdint>
+
 #include "DataBaseErrors.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/db.h"
