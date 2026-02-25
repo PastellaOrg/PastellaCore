@@ -51,7 +51,7 @@ DEPS_WIN64_PREFIX := $(CONTRIB_DEPENDS_DIR)/$(DEPS_WIN64_HOST)
 DEPS_LINUX_HOST := x86_64-linux-gnu
 DEPS_LINUX_PREFIX := $(CONTRIB_DEPENDS_DIR)/$(DEPS_LINUX_HOST)
 
-DEPS_LINUX_ARM64_HOST := aarch64-linux-gnu
+DEPS_LINUX_ARM64_HOST := aarch64-linux-musl
 DEPS_LINUX_ARM64_PREFIX := $(CONTRIB_DEPENDS_DIR)/$(DEPS_LINUX_ARM64_HOST)
 
 # Check if musl is available in depends (musl builds as libc.a, not libmusl.a)

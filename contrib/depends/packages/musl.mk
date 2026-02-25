@@ -7,10 +7,10 @@ $(package)_sha256_hash=a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596f
 # Cross-compilation settings for musl
 define $(package)_set_vars
 $(package)_config_opts=--prefix=$(host_prefix) --exec-prefix=$(host_prefix) --libdir=$(host_prefix)/lib
-$(package)_cc=$(host_prefix)/bin/aarch64-linux-musl-gcc
-$(package)_ar=$(host_prefix)/bin/aarch64-linux-musl-ar
-$(package)_ranlib=$(host_prefix)/bin/aarch64-linux-musl-ranlib
-$(package)_config_env=CC="$(host_prefix)/bin/aarch64-linux-musl-gcc" AR="$(host_prefix)/bin/aarch64-linux-musl-ar" RANLIB="$(host_prefix)/bin/aarch64-linux-musl-ranlib"
+$(package)_cc=$(BASEDIR)/aarch64-linux-musl/bin/aarch64-linux-musl-gcc
+$(package)_ar=$(BASEDIR)/aarch64-linux-musl/bin/aarch64-linux-musl-ar
+$(package)_ranlib=$(BASEDIR)/aarch64-linux-musl/bin/aarch64-linux-musl-ranlib
+$(package)_config_env=CC="$(BASEDIR)/aarch64-linux-musl/bin/aarch64-linux-musl-gcc" AR="$(BASEDIR)/aarch64-linux-musl/bin/aarch64-linux-musl-ar" RANLIB="$(BASEDIR)/aarch64-linux-musl/bin/aarch64-linux-musl-ranlib"
 endef
 
 define $(package)_config_cmds
