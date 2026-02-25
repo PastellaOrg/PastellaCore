@@ -10,9 +10,9 @@ variables:
   GIT_DEPTH: 3
 
 # ============================================
-# Linux x86_64 Build
+# Debian x86_64 Build
 # ============================================
-build-linux-x64:
+build-debian-x64:
   stage: build
   image: ubuntu:22.04
   script:
@@ -38,9 +38,9 @@ build-linux-x64:
     expire_in: 1 week
 
 # ============================================
-# Linux ARM64 Build (Cross-compile from x86_64)
+# Debian ARM64 Build
 # ============================================
-build-linux-arm64:
+build-debian-arm64:
   stage: build
   image: ubuntu:22.04
   script:
@@ -121,6 +121,14 @@ build-archlinux-x64:
         git
         python3
         curl
+    # Arch Linux uses unprefixed toolchain (ar, ranlib) vs Debian (x86_64-linux-gnu-ar, x86_64-linux-gnu-ranlib)
+    # Set these for depends/Boost build
+    - export AR=ar
+    - export RANLIB=ranlib
+    - export CC=gcc
+    - export CXX=g++
+    - export STRIP=strip
+    - export NM=nm
     # Build dependencies for Linux x64
     - make depends-linux -j8
     # Build Linux x64 static binary
@@ -138,7 +146,7 @@ build-archlinux-x64:
 # ============================================
 build-macos-x64:
   stage: build
-  image: crazymax/osxcross:latest
+  image: crazymax/osxcross:latest-ubuntu
   script:
     - echo "Building macOS x86_64 using osxcross Docker image..."
     # Install additional dependencies
@@ -168,7 +176,7 @@ build-macos-x64:
 # ============================================
 build-macos-arm64:
   stage: build
-  image: crazymax/osxcross:latest
+  image: crazymax/osxcross:latest-ubuntu
   script:
     - echo "Building macOS ARM64 using osxcross Docker image..."
     # Install additional dependencies
@@ -196,9 +204,9 @@ build-macos-arm64:
 
 
 # ============================================
-# Release Package (Linux x64)
+# Release Package (Debian x64)
 # ============================================
-package-linux-x64:
+package-debian-x64:
   stage: package
   image: ubuntu:22.04
   dependencies:
@@ -219,9 +227,9 @@ package-linux-x64:
     - main
 
 # ============================================
-# Release Package (Linux ARM64)
+# Release Package (Debian ARM64)
 # ============================================
-package-linux-arm64:
+package-debian-arm64:
   stage: package
   image: ubuntu:22.04
   dependencies:

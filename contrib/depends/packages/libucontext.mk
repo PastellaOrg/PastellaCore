@@ -2,7 +2,7 @@ package=libucontext
 $(package)_version=1.2
 $(package)_download_path=https://pastella.org/depends
 $(package)_file_name=$(package)-$($(package)_version).tar.gz
-$(package)_sha256_hash=ac855dc04a55ce6551379cf892dabaa79dd5572316c27a77bc9ef9cc6ddf85c7
+$(package)_sha256_hash=937fba9d0beebd7cf957b79979b19fe3a29bb9c4bfd25e869477d7154bbf8fd3
 
 define $(package)_build_cmds
 	$(MAKE) -s ARCH=aarch64 CC=$(host_CC) AR=$(host_AR)
