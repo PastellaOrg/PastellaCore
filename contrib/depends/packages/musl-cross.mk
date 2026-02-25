@@ -14,5 +14,6 @@ endef
 
 define $(package)_stage_cmds
 	mkdir -p $($(package)_staging_prefix_dir) && \
-	cp -r aarch64-linux-musl-cross/* $($(package)_staging_prefix_dir)/
+	cp -r aarch64-linux-musl-cross/* $($(package)_staging_prefix_dir)/ && \
+	chmod +x $($(package)_staging_prefix_dir)/bin/* || true
 endef

@@ -62,6 +62,7 @@ build-linux-arm64:
         curl
         libc6:i386
         libstdc++6:i386
+        libgcc-s1:i386
     # Build dependencies for Linux ARM64 (downloads and sets up musl-cross)
     - make depends-linux-arm64 -j8
     # Build Linux ARM64 static binary (uses musl-cross from depends)
