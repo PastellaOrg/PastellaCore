@@ -279,7 +279,7 @@ release-static-win64:
 		-D CMAKE_CXX_FLAGS="$(WINDOWS_DEFINES) $(X86_SIMD_FLAGS) -isystem $(topdir)/src/platform/windows -I$(topdir)/src -I/usr/x86_64-w64-mingw32/include" \
 		-D CMAKE_C_FLAGS="$(WINDOWS_DEFINES) $(X86_SIMD_FLAGS) -isystem $(topdir)/src/platform/windows -I$(topdir)/src -I/usr/x86_64-w64-mingw32/include" \
 		-D CMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
-		$(topdir) && $(MAKE) --no-print-directory)
+		$(topdir) && sed -i 's/@CMakeFiles\/Pastellad.dir\/linkLibs.rsp/@CMakeFiles\/Pastellad.dir\/linkLibs.rsp -lbcrypt/g' src/CMakeFiles/Pastellad.dir/link.txt 2>/dev/null || true && $(MAKE) --no-print-directory)
 
 debug-static-win64:
 	mkdir -p $(builddir)/debug/x86_64-w64-mingw32
@@ -301,7 +301,7 @@ debug-static-win64:
 		-D OPENSSL_CRYPTO_LIBRARY=$(DEPS_WIN64_PREFIX)/lib/libcrypto.a \
 		-D OPENSSL_SSL_LIBRARY=$(DEPS_WIN64_PREFIX)/lib/libssl.a \
 		-D CMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
-		$(topdir) && $(MAKE) --no-print-directory)
+		$(topdir) && sed -i 's/@CMakeFiles\/Pastellad.dir\/linkLibs.rsp/@CMakeFiles\/Pastellad.dir\/linkLibs.rsp -lbcrypt/g' src/CMakeFiles/Pastellad.dir/link.txt 2>/dev/null || true && $(MAKE) --no-print-directory)
 
 # =============================================================================
 # Static Builds - macOS

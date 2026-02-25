@@ -224,13 +224,11 @@ if (MSVC OR WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
         target_link_libraries(Pastellad rpcrt4 ws2_32 advapi32 crypt32 gdi32 user32)
     endif ()
     # For MinGW cross-compilation, add Windows system libraries needed for networking
+    # These are needed regardless of OpenSSL being found
     if(NOT MSVC)
+        target_link_libraries(WalletApi ws2_32 crypt32 gdi32 user32)
+        target_link_libraries(pastellawallet ws2_32 crypt32 gdi32 user32)
         target_link_libraries(Pastellad ws2_32 gdi32 crypt32 iphlpapi shlwapi mswsock)
-    endif()
-    # For MinGW cross-compilation, append -lbcrypt at END of link command
-    # because libP2P.a uses BCryptGenRandom and MinGW linker needs bcrypt AFTER P2P
-    if(NOT MSVC)
-        set_target_properties(Pastellad PROPERTIES LINK_FLAGS "-lbcrypt")
     endif()
 endif ()
 
@@ -258,14 +256,3 @@ set_property(TARGET WalletApi PROPERTY OUTPUT_NAME "Pastella-Wallet-API")
 add_custom_target(pool DEPENDS Pastellad)
 add_custom_target(cli DEPENDS Pastellad pastellawallet)
 add_custom_target(pastella-wallet DEPENDS pastellawallet)
-
-# For Windows builds with MinGW, append -lbcrypt to the linkLibs.rsp file before linking
-# This ensures bcrypt is linked at the very end after all other libraries
-# Required because libP2P.a uses BCryptGenRandom and MinGW linker needs library order
-if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    add_custom_command(TARGET Pastellad PRE_LINK
-        COMMAND bash -c "echo ' -lbcrypt' >> CMakeFiles/Pastellad.dir/linkLibs.rsp" || true
-        COMMENT "Appending -lbcrypt to linkLibs.rsp for Windows MinGW build"
-        VERBATIM
-    )
-endif ()
