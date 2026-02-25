@@ -238,7 +238,7 @@ release-static-linux-arm64:
 		-D OPENSSL_ROOT_DIR=$(DEPS_LINUX_ARM64_ALT) \
 		-D OPENSSL_INCLUDE_DIR=$(DEPS_LINUX_ARM64_ALT)/include \
 		-D OPENSSL_CRYPTO_LIBRARY=$(DEPS_LINUX_ARM64_ALT)/lib/libcrypto.a \
-		-D OPENSSL_SSL_LIBRARY=$(DEPS_LIDEPS_LINUX_ARM64_ALTNUX_ARM64_PREFIX)/lib/libssl.a \
+		-D OPENSSL_SSL_LIBRARY=$(DEPS_LINUX_ARM64_ALT)/lib/libssl.a \
 		-D UCONTEXT_LIBRARY=$(DEPS_LINUX_ARM64_ALT)/lib/libucontext.a \
 		$(topdir) && $(MAKE) --no-print-directory)
 
