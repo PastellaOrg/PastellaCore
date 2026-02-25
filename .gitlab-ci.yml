@@ -172,7 +172,7 @@ build-macos-x64:
     # Extract osxcross toolchain from Docker image
     - echo "Extracting macOS toolchain..."
     - docker create --name osx-tools crazymax/osxcross:latest-ubuntu sleep infinity
-    - docker cp osx-tools:/opt/osxcross ./osxcross
+    - docker cp osx-tools:/osxcross ./osxcross
     - docker rm osx-tools
     - export PATH="$(pwd)/osxcross/target/bin:$PATH"
     - export CMAKE_LIBRARY_PATH="$(pwd)/osxcross/target/lib/x86_64-apple-darwin:$CMAKE_LIBRARY_PATH"
@@ -213,7 +213,7 @@ build-macos-arm64:
     # Extract osxcross toolchain from Docker image
     - echo "Extracting macOS ARM64 toolchain..."
     - docker create --name osx-tools-arm64 crazymax/osxcross:latest-ubuntu sleep infinity
-    - docker cp osx-tools-arm64:/opt/osxcross ./osxcross
+    - docker cp osx-tools-arm64:/osxcross ./osxcross
     - docker rm osx-tools-arm64
     - export PATH="$(pwd)/osxcross/target/bin:$PATH"
     - export CMAKE_LIBRARY_PATH="$(pwd)/osxcross/target/lib/aarch64-apple-darwin:$CMAKE_LIBRARY_PATH"
