@@ -204,10 +204,16 @@ if (OPENSSL_FOUND)
     # Use full static library paths when cross-compiling to Windows
     # (OPENSSL_LIBRARIES contains just "ssl;crypto" which won't work with MinGW)
     if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-        target_link_libraries(Nigel /root/pastella-test-build/openssl_mingw/lib/libssl.a /root/pastella-test-build/openssl_mingw/lib/libcrypto.a)
-        target_link_libraries(WalletApi /root/pastella-test-build/openssl_mingw/lib/libssl.a /root/pastella-test-build/openssl_mingw/lib/libcrypto.a)
-        target_link_libraries(pastellawallet /root/pastella-test-build/openssl_mingw/lib/libssl.a /root/pastella-test-build/openssl_mingw/lib/libcrypto.a)
-        target_link_libraries(Pastellad /root/pastella-test-build/openssl_mingw/lib/libssl.a /root/pastella-test-build/openssl_mingw/lib/libcrypto.a)
+        # Find OpenSSL and bcrypt libraries for Windows MinGW cross-compilation
+        find_library(OPENSSL_SSL_LIB ssl PATHS ${CMAKE_FIND_ROOT_PATH} ${OPENSSL_ROOT_DIR} NO_DEFAULT_PATH)
+        find_library(OPENSSL_CRYPTO_LIB crypto PATHS ${CMAKE_FIND_ROOT_PATH} ${OPENSSL_ROOT_DIR} NO_DEFAULT_PATH)
+
+        if(OPENSSL_SSL_LIB AND OPENSSL_CRYPTO_LIB)
+            target_link_libraries(Nigel ${OPENSSL_SSL_LIB} ${OPENSSL_CRYPTO_LIB})
+            target_link_libraries(WalletApi ${OPENSSL_SSL_LIB} ${OPENSSL_CRYPTO_LIB})
+            target_link_libraries(pastellawallet ${OPENSSL_SSL_LIB} ${OPENSSL_CRYPTO_LIB})
+            target_link_libraries(Pastellad ${OPENSSL_SSL_LIB} ${OPENSSL_CRYPTO_LIB})
+        endif()
     else ()
         target_link_libraries(Nigel ${OPENSSL_LIBRARIES})
         target_link_libraries(WalletApi ${OPENSSL_LIBRARIES})
@@ -229,6 +235,15 @@ if (MSVC OR WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
         target_link_libraries(WalletApi ws2_32 crypt32 gdi32 user32)
         target_link_libraries(pastellawallet ws2_32 crypt32 gdi32 user32)
         target_link_libraries(Pastellad ws2_32 gdi32 crypt32 iphlpapi shlwapi mswsock)
+        # Find and link bcrypt library for Pastellad (required by libP2P.a for BCryptGenRandom)
+        # This is a Windows system library, NOT part of OpenSSL
+        find_library(BCRYPT_LIB bcrypt PATHS ${CMAKE_FIND_ROOT_PATH} /usr/x86_64-w64-mingw32/lib NO_DEFAULT_PATH)
+        if(BCRYPT_LIB)
+            target_link_libraries(Pastellad ${BCRYPT_LIB})
+        else()
+            # Fallback to -lbcrypt if find_library doesn't work
+            target_link_libraries(Pastellad bcrypt)
+        endif()
     endif()
 endif ()
 
@@ -256,3 +271,16 @@ set_property(TARGET WalletApi PROPERTY OUTPUT_NAME "Pastella-Wallet-API")
 add_custom_target(pool DEPENDS Pastellad)
 add_custom_target(cli DEPENDS Pastellad pastellawallet)
 add_custom_target(pastella-wallet DEPENDS pastellawallet)
+
+# CRITICAL FIX for MinGW Windows cross-compilation:
+# Force P2P and bcrypt to be linked at the VERY END of Pastellad's link order.
+# This is required because libP2P.a uses BCryptGenRandom and MinGW linker needs
+# libraries that PROVIDE symbols to come AFTER libraries that USE them.
+# P2P is normally linked as a transitive dependency through PastellaCore,
+# which places it in the middle of linkLibs.rsp. By linking it here as a direct
+# dependency AFTER all other processing, it gets added at the end of linkLibs.rsp.
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT MSVC)
+    target_link_libraries(Pastellad P2P)
+    # Ensure bcrypt is linked LAST (it provides BCrypt* functions used by P2P)
+    target_link_libraries(Pastellad bcrypt)
+endif ()
