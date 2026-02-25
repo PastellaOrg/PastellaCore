@@ -186,8 +186,8 @@ build-macos-x64:
     - export CXX=$(find $(pwd)/osxcross/target/bin -name "*x86_64*apple*clang*" -o -name "*x64*apple*clang*" | head -1)
     - test -z "$CC" && export CC=$(find $(pwd)/osxcross/target/bin -name "o32-clang" | head -1) || true
     - test -z "$CXX" && export CXX=$(find $(pwd)/osxcross/target/bin -name "o32-clang*" | head -1) || true
-    - echo "Using CC: $CC"
-    - echo "Using CXX: $CXX"
+    - echo "Using CC $CC"
+    - echo "Using CXX $CXX"
     - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
     - make release-static-mac-x86_64 -j8
   artifacts:
@@ -236,8 +236,8 @@ build-macos-arm64:
     - export CXX=$(find $(pwd)/osxcross/target/bin -name "*aarch64*apple*clang*" -o -name "*arm64*apple*clang*" | head -1)
     - test -z "$CC" && export CC=$(find $(pwd)/osxcross/target/bin -name "o64-clang" | head -1) || true
     - test -z "$CXX" && export CXX=$(find $(pwd)/osxcross/target/bin -name "o64-clang*" | head -1) || true
-    - echo "Using CC: $CC"
-    - echo "Using CXX: $CXX"
+    - echo "Using CC $CC"
+    - echo "Using CXX $CXX"
     - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
     - make release-static-mac-arm64 -j8
   artifacts:
