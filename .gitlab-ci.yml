@@ -97,10 +97,13 @@ build-windows-x64:
         cmake
         git
         python3
-        g++-mingw-w64-x86-64
-        g++-mingw-w64-i686
+        g++-mingw-w64-x86-64-posix
+        g++-mingw-w64-i686-posix
         mingw-w64-tools
         curl
+    # Set POSIX MinGW as default for cross-compilation
+    - update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+    - update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
     # Build dependencies for Windows x64
     - make depends-win64 -j8
     # Build Windows x64 static binary
