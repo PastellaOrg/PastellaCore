@@ -53,7 +53,7 @@ define $(package)_config_cmds
 endef
 
 define $(package)_build_cmds
-  $(MAKE) build_libs
+  $(MAKE) -s build_libs
 endef
 
 define $(package)_stage_cmds
