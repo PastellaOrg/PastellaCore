@@ -60,8 +60,6 @@ build-linux-arm64:
         git
         python3
         curl
-        g++-aarch64-linux-gnu
-        gcc-aarch64-linux-gnu
         libc6:i386
         libstdc++6:i386
     # Build dependencies for Linux ARM64 (downloads and sets up musl-cross)
