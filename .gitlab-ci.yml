@@ -177,13 +177,13 @@ build-macos-x64:
     - |
       if [ ! -d "/opt/osxcross-x64" ]; then
         echo "=== osxcross not cached, starting fresh build ==="
-        git clone https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-x64
+        git clone --branch 2.0-llvm-based https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-x64
         cd /tmp/osxcross-x64
         echo "=== Downloading macOS SDK ==="
         mkdir -p tarballs
         curl -L -o tarballs/MacOSX10.15.sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
-        echo "=== Building osxcross base toolchain (using libstdc++) ==="
-        TARGET_DIR=/opt/osxcross-x64 UNATTENDED=1 ENABLE_ARCHS="x86_64" OSXCROSS_LIBCXX=stdc++ ./build.sh
+        echo "=== Building osxcross base toolchain ==="
+        TARGET_DIR=/opt/osxcross-x64 UNATTENDED=1 ENABLE_ARCHS="x86_64" ./build.sh
         echo "=== Building libc++ for C++ standard library headers ==="
         cd /tmp/osxcross-x64
         TARGET_DIR=/opt/osxcross-x64 ./build_libcxx.sh
