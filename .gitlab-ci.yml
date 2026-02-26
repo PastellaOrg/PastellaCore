@@ -163,12 +163,12 @@ build-macos-x64:
   before_script:
     # Install Linux dependencies
     - apt-get update -qq && apt-get install -y -qq
-        build-essential
-        cmake
-        git
-        python3
-        curl
-        docker.io
+      build-essential
+      cmake
+      git
+      python3
+      curl
+      docker.io
     # Extract osxcross toolchain from Docker image
     - echo "Extracting macOS toolchain..."
     - docker create --name osx-tools crazymax/osxcross:latest-ubuntu sleep infinity
@@ -213,12 +213,12 @@ build-macos-arm64:
   before_script:
     # Install Linux dependencies
     - apt-get update -qq && apt-get install -y -qq
-        build-essential
-        cmake
-        git
-        python3
-        curl
-        docker.io
+      build-essential
+      cmake
+      git
+      python3
+      curl
+      docker.io
     # Extract osxcross toolchain from Docker image
     - echo "Extracting macOS ARM64 toolchain..."
     - docker create --name osx-tools-arm64 crazymax/osxcross:latest-ubuntu sleep infinity
