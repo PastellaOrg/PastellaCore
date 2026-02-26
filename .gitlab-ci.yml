@@ -182,10 +182,10 @@ build-macos-x64:
         curl -L -o tarballs/MacOSX10.15.sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
         tar -xf tarballs/MacOSX10.15.sdk.tar.xz -C tarballs/
         export XCODE_DIR=$(pwd)/tarballs/MacOSX10.15.sdk
-        # Build clang for x86_64-apple-darwin (non-interactive, no bootstrap)
-        # Use printf to answer prompts: Y for bootstrap, then enter
-        (printf "Y\n" | head -1 | TARGET=x86_64-apple-darwin15 ENABLE_BOOTSTRAP=1 ./build_clang.sh) || \
-        (TARGET=x86_64-apple-darwin15 ENABLE_BOOTSTRAP=0 ./build_clang.sh)
+        # Build clang for x86_64-apple-darwin - disable bootstrap to simplify
+        # Still need to handle the "press enter" prompt
+        (echo "" | TARGET=x86_64-apple-darwin15 ENABLE_BOOTSTRAP=0 ./build_clang.sh 2>&1 | tee build.log || \
+         (cat build.log && false))
         ./build_libcxx.sh
         mv target /opt/osxcross-x64
         cd /
