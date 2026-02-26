@@ -177,7 +177,7 @@ build-macos-x64:
       if [ ! -d "/opt/osxcross-x64" ]; then
         git clone https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-x64
         cd /tmp/osxcross-x64
-        ./tools/gen-sdk-package.sh
+        ./tools/gen_sdk_package.sh
         TARGET=x86_64-apple-darwin15 ./build_clang.sh
         ./build_libcxx.sh
         mv target /opt/osxcross-x64
@@ -228,7 +228,7 @@ build-macos-arm64:
       if [ ! -d "/opt/osxcross-arm64" ]; then
         git clone https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-arm64
         cd /tmp/osxcross-arm64
-        ./tools/gen-sdk-package.sh
+        ./tools/gen_sdk_package.sh
         TARGET=arm64-apple-darwin20 ./build_clang.sh
         ./build_libcxx.sh
         mv target /opt/osxcross-arm64
