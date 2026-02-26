@@ -147,6 +147,7 @@ build-arch-x64:
       - build/release/x86_64-linux-gnu/src/Pastella-Wallet
       - build/release/x86_64-linux-gnu/src/Pastella-Wallet-API
     expire_in: 1 week
+  when: manual
 
 # ============================================
 # macOS x86_64 Build (Cross-compile from Linux)
@@ -154,45 +155,43 @@ build-arch-x64:
 build-macos-x64:
   stage: build
   image: ubuntu:22.04
-  services:
-    - docker:dind
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-    OSX_VERSION_MIN: "10.15"
   before_script:
-    # Install Linux dependencies
+    # Install dependencies for building osxcross
     - apt-get update -qq && apt-get install -y -qq
       build-essential
       cmake
       git
       python3
       curl
-      docker.io
-    # Extract osxcross toolchain from Docker image
-    - echo "Extracting macOS toolchain..."
-    - docker create --name osx-tools crazymax/osxcross:latest-ubuntu sleep infinity
-    - docker cp osx-tools:/osxcross ./osxcross
-    - docker rm osx-tools
-    - echo "Full osxcross directory structure:"
-    - find ./osxcross -type d
-    - echo "Looking for ALL files (not just dirs):"
-    - find ./osxcross -type f | head -30
-    - echo "Checking if /usr/bin has osxcross tools:"
-    - ls -la ./osxcross/ 2>/dev/null || echo "No files in osxcross root"
-    - ls -la ./osxcross/bin/ 2>/dev/null || echo "No bin directory"
+      libxml2-utils
+      libssl-dev
+      lzip
+      xz-utils
+      clang
+      llvm
+      libbz2-dev
+      liblzma-dev
+      zlib1g-dev
+    # Build osxcross from scratch (cached for speed)
+    - |
+      if [ ! -d "/opt/osxcross-x64" ]; then
+        git clone https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-x64
+        cd /tmp/osxcross-x64
+        ./tools/gen-sdk-package.sh
+        TARGET=x86_64-apple-darwin15 ./build_clang.sh
+        ./build_libcxx.sh
+        mv target /opt/osxcross-x64
+        cd /
+        rm -rf /tmp/osxcross-x64
+      fi
+    - export PATH="/opt/osxcross-x64/target/bin:$PATH"
+    - x86_64-apple-darwin15-clang --version || echo "Compiler check"
   script:
-    - echo "Building macOS x64 static binary..."
-    - echo "Full osxcross directory structure:"
-    - find ./osxcross -type d
-    - echo "All files in osxcross:"
-    - find ./osxcross -type f -name "*" | head -50
-    - echo "Looking for clang in entire osxcross tree:"
-    - find ./osxcross -name "*clang*" -o -name "*gcc*" 2>/dev/null
-    - echo "Trying to list what's in osxcross root:"
-    - ls -la ./osxcross/ | head -20
-    - echo "Trying to find bin directory anywhere:"
-    - find ./osxcross -type d -name "*bin*"
+    - make release-static-mac-x86_64 -j8
+  cache:
+    paths:
+      - /opt/osxcross-x64
+    key: "$CI_JOB_NAME-osxcross"
   artifacts:
     name: "macos-x64-$CI_COMMIT_SHORT_SHA"
     paths:
@@ -207,49 +206,43 @@ build-macos-x64:
 build-macos-arm64:
   stage: build
   image: ubuntu:22.04
-  services:
-    - docker:dind
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-    OSX_VERSION_MIN: "11.0"
   before_script:
-    # Install Linux dependencies
+    # Install dependencies for building osxcross
     - apt-get update -qq && apt-get install -y -qq
       build-essential
       cmake
       git
       python3
       curl
-      docker.io
-    # Extract osxcross toolchain from Docker image
-    - echo "Extracting macOS ARM64 toolchain..."
-    - docker create --name osx-tools-arm64 crazymax/osxcross:latest-ubuntu sleep infinity
-    - docker cp osx-tools-arm64:/osxcross ./osxcross
-    - docker rm osx-tools-arm64
-    - echo "osxcross directory structure:"
-    - find ./osxcross -type d | head -20
-    - echo "Looking for bin directory:"
-    - find ./osxcross -name "bin" -type d
-    - echo "Looking for compilers:"
-    - find ./osxcross -name "*clang*" -o -name "*gcc*" 2>/dev/null | head -10
+      libxml2-utils
+      libssl-dev
+      lzip
+      xz-utils
+      clang
+      llvm
+      libbz2-dev
+      liblzma-dev
+      zlib1g-dev
+    # Build osxcross for ARM64 from scratch (cached separately)
+    - |
+      if [ ! -d "/opt/osxcross-arm64" ]; then
+        git clone https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-arm64
+        cd /tmp/osxcross-arm64
+        ./tools/gen-sdk-package.sh
+        TARGET=arm64-apple-darwin20 ./build_clang.sh
+        ./build_libcxx.sh
+        mv target /opt/osxcross-arm64
+        cd /
+        rm -rf /tmp/osxcross-arm64
+      fi
+    - export PATH="/opt/osxcross-arm64/target/bin:$PATH"
+    - arm64-apple-darwin20-clang --version || aarch64-apple-darwin20-clang --version || echo "Compiler check"
   script:
-    - echo "Building macOS ARM64 static binary..."
-    - echo "osxcross directory structure:"
-    - find ./osxcross -type d | head -20
-    - echo "Looking for compilers:"
-    - find ./osxcross -name "*clang*" -type f 2>/dev/null | head -10
-    - OSX_BIN=$(find ./osxcross -type d -name "bin" | head -1)
-    - echo "Found bin directory $OSX_BIN"
-    - export PATH="$OSX_BIN:$PATH"
-    - export CC=$(find $OSX_BIN -name "*aarch64*apple*clang" -o -name "*arm64*apple*clang" | head -1)
-    - export CXX=$(find $OSX_BIN -name "*aarch64*apple*clang*" -o -name "*arm64*apple*clang*" | head -1)
-    - test -z "$CC" && export CC=$(find $OSX_BIN -name "o64-clang" | head -1) || true
-    - test -z "$CXX" && export CXX=$(find $OSX_BIN -name "o64-clang*" | head -1) || true
-    - echo "Using CC $CC"
-    - echo "Using CXX $CXX"
-    - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
     - make release-static-mac-arm64 -j8
+  cache:
+    paths:
+      - /opt/osxcross-arm64
+    key: "$CI_JOB_NAME-osxcross-arm64"
   artifacts:
     name: "macos-arm64-$CI_COMMIT_SHORT_SHA"
     paths:
@@ -257,6 +250,7 @@ build-macos-arm64:
       - build/release/arm64-apple-darwin/src/Pastella-Wallet
       - build/release/arm64-apple-darwin/src/Pastella-Wallet-API
     expire_in: 1 week
+  when: manual
 
 
 
