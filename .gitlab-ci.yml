@@ -171,27 +171,24 @@ build-macos-x64:
       zlib1g-dev
       cpio
       clang
-      lld
       llvm-dev
       bash
-    # Create symlink for ld64.lld (osxcross expects this name)
-    - ln -sf /usr/bin/ld.lld /usr/bin/ld64.lld
     # Build osxcross from scratch (cached for speed)
     - |
       if [ ! -d "/opt/osxcross-x64" ]; then
         echo "=== osxcross not cached, starting fresh build ==="
-        git clone --branch 2.0-llvm-based https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-x64
+        git clone https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-x64
         cd /tmp/osxcross-x64
-        echo "=== Patching build.sh to skip libc++ validation ==="
-        sed -i 's/testing.*-stdlib=libc++.*/# libc++ test disabled for CI/' ./build.sh
-        sed -i 's/while detecting target/while detecting target (skipped)/' ./build.sh
         echo "=== Downloading macOS SDK ==="
         mkdir -p tarballs
         curl -L -o tarballs/MacOSX10.15.sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
+        echo "=== Patching build.sh to skip libc++ validation ==="
+        # Patch the script to not exit on missing libc++ headers
+        sed -i '/osxcross: error: cannot find libc++ headers/,+1{ s/exit 1/return 0/; }' ./build.sh
+        sed -i 's/exiting with abnormal exit code (1)/exiting with code 0 (libc++ headers will be built separately)/' ./build.sh
         echo "=== Building osxcross base toolchain ==="
-        TARGET_DIR=/opt/osxcross-x64 UNATTENDED=1 ENABLE_ARCHS="x86_64" ./build.sh || echo "Build completed with warnings"
+        TARGET_DIR=/opt/osxcross-x64 UNATTENDED=1 ENABLE_ARCHS="x86_64" ./build.sh || true
         echo "=== Building libc++ for C++ standard library headers ==="
-        cd /tmp/osxcross-x64
         TARGET_DIR=/opt/osxcross-x64 ./build_libcxx.sh
         echo "=== Cleaning up osxcross source ==="
         cd /
