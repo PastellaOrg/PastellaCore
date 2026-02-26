@@ -107,11 +107,7 @@ namespace Pastella
 
     size_t Currency::blockGrantedFullRewardZoneByBlockVersion(uint8_t blockMajorVersion) const
     {
-        if (blockMajorVersion >= BLOCK_MAJOR_VERSION_3)
-        {
-            return m_blockGrantedFullRewardZone;
-        }
-        else if (blockMajorVersion == BLOCK_MAJOR_VERSION_2)
+        if (blockMajorVersion == BLOCK_MAJOR_VERSION_2)
         {
             return Pastella::parameters::PASTELLA_BLOCK_GRANTED_FULL_REWARD_ZONE_V2;
         }
@@ -126,22 +122,6 @@ namespace Pastella
         if (majorVersion == BLOCK_MAJOR_VERSION_2)
         {
             return m_upgradeHeightV2;
-        }
-        else if (majorVersion == BLOCK_MAJOR_VERSION_3)
-        {
-            return m_upgradeHeightV3;
-        }
-        else if (majorVersion == BLOCK_MAJOR_VERSION_4)
-        {
-            return m_upgradeHeightV4;
-        }
-        else if (majorVersion == BLOCK_MAJOR_VERSION_5)
-        {
-            return m_upgradeHeightV5;
-        }
-        else if (majorVersion == BLOCK_MAJOR_VERSION_6)
-        {
-            return m_upgradeHeightV6;
         }
         else
         {
@@ -762,10 +742,6 @@ namespace Pastella
         m_mempoolTxLiveTime(currency.m_mempoolTxLiveTime),
         m_numberOfPeriodsToForgetTxDeletedFromPool(currency.m_numberOfPeriodsToForgetTxDeletedFromPool),
         m_upgradeHeightV2(currency.m_upgradeHeightV2),
-        m_upgradeHeightV3(currency.m_upgradeHeightV3),
-        m_upgradeHeightV4(currency.m_upgradeHeightV4),
-        m_upgradeHeightV5(currency.m_upgradeHeightV5),
-        m_upgradeHeightV6(currency.m_upgradeHeightV6),
         m_upgradeVotingThreshold(currency.m_upgradeVotingThreshold),
         m_upgradeVotingWindow(currency.m_upgradeVotingWindow),
         m_upgradeWindow(currency.m_upgradeWindow),
@@ -822,10 +798,6 @@ namespace Pastella
             parameters::PASTELLA_PERIODS_TO_FORGET_TX_DELETED_FROM_POOL);
 
         upgradeHeightV2(parameters::UPGRADE_HEIGHT_V2);
-        upgradeHeightV3(parameters::UPGRADE_HEIGHT_V3);
-        upgradeHeightV4(parameters::UPGRADE_HEIGHT_V4);
-        upgradeHeightV5(parameters::UPGRADE_HEIGHT_V5);
-        upgradeHeightV6(parameters::UPGRADE_HEIGHT_V6);
         upgradeVotingThreshold(parameters::UPGRADE_VOTING_THRESHOLD);
         upgradeVotingWindow(parameters::UPGRADE_VOTING_WINDOW);
         upgradeWindow(parameters::UPGRADE_WINDOW);

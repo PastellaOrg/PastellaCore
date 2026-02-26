@@ -213,12 +213,7 @@ namespace Pastella
 
     const size_t   NORMAL_TX_MAX_OUTPUT_COUNT_V1                           = 90;
     const size_t   NORMAL_TX_MAX_OUTPUT_COUNT_V1_HEIGHT                    = 250;
-    const uint32_t UPGRADE_HEIGHT_V2                                       = 1; 
-    const uint32_t UPGRADE_HEIGHT_V3                                       = 2;
-    const uint32_t UPGRADE_HEIGHT_V4                                       = 3; 
-    const uint32_t UPGRADE_HEIGHT_V5                                       = 4;
-    const uint32_t UPGRADE_HEIGHT_V6                                       = 5;
-    const uint32_t UPGRADE_HEIGHT_CURRENT                                  = UPGRADE_HEIGHT_V6;
+    const uint32_t UPGRADE_HEIGHT_V2                                       = 1;
     const unsigned UPGRADE_VOTING_THRESHOLD                                = 90;
     const uint32_t UPGRADE_VOTING_WINDOW                                   = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;
     const uint32_t UPGRADE_WINDOW                                          = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;
@@ -229,13 +224,11 @@ namespace Pastella
     /* Hard fork block heights */
     const uint64_t FORK_HEIGHTS[] = {
       250,    /* 0 ~ TRANSACTION_SIGNATURE_COUNT_VALIDATION, BLOCK_BLOB_SHUFFLE_CHECK, TRANSACTION_INPUT_BLOCKTIME_VALIDATION, NORMAL_TX_MAX_OUTPUT_COUNT_V1 */
-      50000,  /* 1 ~ MIXIN LIMIT V2 */
-      250000, /* 2 ~ MIXIN LIMIT V3 */
-      500000  /* 3 ~ MAX_OUTPUT_SIZE */
+      500000  /* 1 ~ MAX_OUTPUT_SIZE */
     };
 
     /* MAKE SURE TO UPDATE THIS VALUE WITH EVERY MAJOR RELEASE BEFORE A FORK - Count from 0 */
-    const uint64_t SOFTWARE_SUPPORTED_FORK_INDEX                           = 3;
+    const uint64_t SOFTWARE_SUPPORTED_FORK_INDEX                           = 1;
     const uint64_t FORK_HEIGHTS_SIZE                                       = sizeof(FORK_HEIGHTS) / sizeof(*FORK_HEIGHTS);
     const uint8_t  CURRENT_FORK_INDEX                                      = FORK_HEIGHTS_SIZE == 0 ? 0 : SOFTWARE_SUPPORTED_FORK_INDEX;
     //static_assert(CURRENT_FORK_INDEX >= 0, "CURRENT FORK INDEX must be >= 0");
@@ -261,10 +254,6 @@ namespace Pastella
 
   const uint8_t BLOCK_MAJOR_VERSION_1                                      = 1;                /* Height 1 */
   const uint8_t BLOCK_MAJOR_VERSION_2                                      = 2;                /* UPGRADE_HEIGHT_V2 */
-  const uint8_t BLOCK_MAJOR_VERSION_3                                      = 3;                /* UPGRADE_HEIGHT_V3 */
-  const uint8_t BLOCK_MAJOR_VERSION_4                                      = 4;                /* UPGRADE_HEIGHT_V4 */
-  const uint8_t BLOCK_MAJOR_VERSION_5                                      = 5;                /* UPGRADE_HEIGHT_V5 */
-  const uint8_t BLOCK_MAJOR_VERSION_6                                      = 6;                /* UPGRADE_HEIGHT_V6 */
 
   const uint8_t BLOCK_MINOR_VERSION_0                                      = 0;
   const uint8_t BLOCK_MINOR_VERSION_1                                      = 1;
@@ -272,11 +261,7 @@ namespace Pastella
   const std::unordered_map<uint8_t, std::function<void(const void *data, size_t length, Crypto::Hash &hash)>>
     HASHING_ALGORITHMS_BY_BLOCK_VERSION = {
       {BLOCK_MAJOR_VERSION_1, Crypto::randomx_slow_hash},              /* Height 1 - RandomX */
-      {BLOCK_MAJOR_VERSION_2, Crypto::randomx_slow_hash},              /* UPGRADE_HEIGHT_V2 - RandomX */
-      {BLOCK_MAJOR_VERSION_3, Crypto::randomx_slow_hash},              /* UPGRADE_HEIGHT_V3 - RandomX */
-      {BLOCK_MAJOR_VERSION_4, Crypto::randomx_slow_hash},              /* UPGRADE_HEIGHT_V4 - RandomX */
-      {BLOCK_MAJOR_VERSION_5, Crypto::randomx_slow_hash},              /* UPGRADE_HEIGHT_V5 - RandomX */
-      {BLOCK_MAJOR_VERSION_6, Crypto::randomx_slow_hash}               /* UPGRADE_HEIGHT_V6 - RandomX */
+      {BLOCK_MAJOR_VERSION_2, Crypto::randomx_slow_hash}               /* UPGRADE_HEIGHT_V2 - RandomX */
     };
 
 

@@ -264,10 +264,6 @@ namespace Pastella
         m_transactionValidationThreadPool(transactionValidationThreads)
     {
         upgradeManager->addMajorBlockVersion(BLOCK_MAJOR_VERSION_2, currency.upgradeHeight(BLOCK_MAJOR_VERSION_2));
-        upgradeManager->addMajorBlockVersion(BLOCK_MAJOR_VERSION_3, currency.upgradeHeight(BLOCK_MAJOR_VERSION_3));
-        upgradeManager->addMajorBlockVersion(BLOCK_MAJOR_VERSION_4, currency.upgradeHeight(BLOCK_MAJOR_VERSION_4));
-        upgradeManager->addMajorBlockVersion(BLOCK_MAJOR_VERSION_5, currency.upgradeHeight(BLOCK_MAJOR_VERSION_5));
-        upgradeManager->addMajorBlockVersion(BLOCK_MAJOR_VERSION_6, currency.upgradeHeight(BLOCK_MAJOR_VERSION_6));
 
         transactionPool = std::unique_ptr<ITransactionPoolCleanWrapper>(new TransactionPoolCleanWrapper(
             std::unique_ptr<ITransactionPool>(new TransactionPool(loggerParam)),
@@ -2183,17 +2179,9 @@ namespace Pastella
                                  ? BLOCK_MINOR_VERSION_1
                                  : BLOCK_MINOR_VERSION_0;
         }
-        else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2)
+        else if (b.majorVersion == BLOCK_MAJOR_VERSION_2)
         {
-            if (currency.upgradeHeight(BLOCK_MAJOR_VERSION_3) == IUpgradeDetector::UNDEF_HEIGHT)
-            {
-                b.minorVersion =
-                    b.majorVersion == BLOCK_MAJOR_VERSION_2 ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
-            }
-            else
-            {
-                b.minorVersion = BLOCK_MINOR_VERSION_0;
-            }
+            b.minorVersion = BLOCK_MINOR_VERSION_0;
         }
 
         b.previousBlockHash = getTopBlockHash();
