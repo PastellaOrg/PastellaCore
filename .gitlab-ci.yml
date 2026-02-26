@@ -182,8 +182,10 @@ build-macos-x64:
         curl -L -o tarballs/MacOSX10.15.sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
         tar -xf tarballs/MacOSX10.15.sdk.tar.xz -C tarballs/
         export XCODE_DIR=$(pwd)/tarballs/MacOSX10.15.sdk
-        # Build clang for x86_64-apple-darwin with debug enabled
-        OCDEBUG=1 TARGET=x86_64-apple-darwin15 ./build_clang.sh || (tail -100 /tmp/osxcross-x64/build/clang/*/build.log 2>/dev/null || echo "Build failed")
+        # Build clang for x86_64-apple-darwin (non-interactive)
+        # Pipe "yes" and echo to handle the prompts automatically
+        yes "" | TARGET=x86_64-apple-darwin15 ./build_clang.sh < /dev/null || \
+          (echo "" | TARGET=x86_64-apple-darwin15 ./build_clang.sh)
         ./build_libcxx.sh
         mv target /opt/osxcross-x64
         cd /
