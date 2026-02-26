@@ -174,20 +174,27 @@ build-macos-x64:
     - docker create --name osx-tools crazymax/osxcross:latest-ubuntu sleep infinity
     - docker cp osx-tools:/osxcross ./osxcross
     - docker rm osx-tools
-    - export PATH="$(pwd)/osxcross/target/bin:$PATH"
-    - export CMAKE_LIBRARY_PATH="$(pwd)/osxcross/target/lib/x86_64-apple-darwin:$CMAKE_LIBRARY_PATH"
-    - export CMAKE_INCLUDE_PATH="$(pwd)/osxcross/target/include:$CMAKE_INCLUDE_PATH"
-    - export OSXCROSS_TARGET_DIR="$(pwd)/osxcross/target"
+    - echo "osxcross directory structure:"
+    - find ./osxcross -type d | head -20
+    - echo "Looking for bin directory:"
+    - find ./osxcross -name "bin" -type d
+    - echo "Looking for compilers:"
+    - find ./osxcross -name "*clang*" -o -name "*gcc*" 2>/dev/null | head -10
   script:
     - echo "Building macOS x64 static binary..."
-    - echo "Available osxcross compilers:"
-    - ls -la $(pwd)/osxcross/target/bin/ | grep -E "clang|gcc" | head -20
-    - export CC=$(find $(pwd)/osxcross/target/bin -name "*x86_64*apple*clang" -o -name "*x64*apple*clang" | head -1)
-    - export CXX=$(find $(pwd)/osxcross/target/bin -name "*x86_64*apple*clang*" -o -name "*x64*apple*clang*" | head -1)
-    - test -z "$CC" && export CC=$(find $(pwd)/osxcross/target/bin -name "o32-clang" | head -1) || true
-    - test -z "$CXX" && export CXX=$(find $(pwd)/osxcross/target/bin -name "o32-clang*" | head -1) || true
-    - echo "Using CC $CC"
-    - echo "Using CXX $CXX"
+    - echo "osxcross directory structure:"
+    - find ./osxcross -type d | head -20
+    - echo "Looking for compilers:"
+    - find ./osxcross -name "*clang*" -type f 2>/dev/null | head -10
+    - OSX_BIN=$(find ./osxcross -type d -name "bin" | head -1)
+    - echo "Found bin directory: $OSX_BIN"
+    - export PATH="$OSX_BIN:$PATH"
+    - export CC=$(find $OSX_BIN -name "*x86_64*apple*clang" -o -name "*x64*apple*clang" | head -1)
+    - export CXX=$(find $OSX_BIN -name "*x86_64*apple*clang*" -o -name "*x64*apple*clang*" | head -1)
+    - test -z "$CC" && export CC=$(find $OSX_BIN -name "o32-clang" | head -1) || true
+    - test -z "$CXX" && export CXX=$(find $OSX_BIN -name "o32-clang*" | head -1) || true
+    - echo "Using CC: $CC"
+    - echo "Using CXX: $CXX"
     - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
     - make release-static-mac-x86_64 -j8
   artifacts:
@@ -224,20 +231,27 @@ build-macos-arm64:
     - docker create --name osx-tools-arm64 crazymax/osxcross:latest-ubuntu sleep infinity
     - docker cp osx-tools-arm64:/osxcross ./osxcross
     - docker rm osx-tools-arm64
-    - export PATH="$(pwd)/osxcross/target/bin:$PATH"
-    - export CMAKE_LIBRARY_PATH="$(pwd)/osxcross/target/lib/aarch64-apple-darwin:$CMAKE_LIBRARY_PATH"
-    - export CMAKE_INCLUDE_PATH="$(pwd)/osxcross/target/include:$CMAKE_INCLUDE_PATH"
-    - export OSXCROSS_TARGET_DIR="$(pwd)/osxcross/target"
+    - echo "osxcross directory structure:"
+    - find ./osxcross -type d | head -20
+    - echo "Looking for bin directory:"
+    - find ./osxcross -name "bin" -type d
+    - echo "Looking for compilers:"
+    - find ./osxcross -name "*clang*" -o -name "*gcc*" 2>/dev/null | head -10
   script:
     - echo "Building macOS ARM64 static binary..."
-    - echo "Available osxcross compilers:"
-    - ls -la $(pwd)/osxcross/target/bin/ | grep -E "clang|gcc" | head -20
-    - export CC=$(find $(pwd)/osxcross/target/bin -name "*aarch64*apple*clang" -o -name "*arm64*apple*clang" | head -1)
-    - export CXX=$(find $(pwd)/osxcross/target/bin -name "*aarch64*apple*clang*" -o -name "*arm64*apple*clang*" | head -1)
-    - test -z "$CC" && export CC=$(find $(pwd)/osxcross/target/bin -name "o64-clang" | head -1) || true
-    - test -z "$CXX" && export CXX=$(find $(pwd)/osxcross/target/bin -name "o64-clang*" | head -1) || true
-    - echo "Using CC $CC"
-    - echo "Using CXX $CXX"
+    - echo "osxcross directory structure:"
+    - find ./osxcross -type d | head -20
+    - echo "Looking for compilers:"
+    - find ./osxcross -name "*clang*" -type f 2>/dev/null | head -10
+    - OSX_BIN=$(find ./osxcross -type d -name "bin" | head -1)
+    - echo "Found bin directory: $OSX_BIN"
+    - export PATH="$OSX_BIN:$PATH"
+    - export CC=$(find $OSX_BIN -name "*aarch64*apple*clang" -o -name "*arm64*apple*clang" | head -1)
+    - export CXX=$(find $OSX_BIN -name "*aarch64*apple*clang*" -o -name "*arm64*apple*clang*" | head -1)
+    - test -z "$CC" && export CC=$(find $OSX_BIN -name "o64-clang" | head -1) || true
+    - test -z "$CXX" && export CXX=$(find $OSX_BIN -name "o64-clang*" | head -1) || true
+    - echo "Using CC: $CC"
+    - echo "Using CXX: $CXX"
     - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
     - make release-static-mac-arm64 -j8
   artifacts:
