@@ -51,16 +51,16 @@ build-debian-arm64:
     - dpkg --add-architecture i386
     - apt-get update -qq
     - apt-get install -y -qq
-        build-essential
-        cmake
-        git
-        python3
-        curl
-        libc6:i386
-        libstdc++6:i386
-        libgcc-s1:i386
-        gcc-aarch64-linux-gnu
-        g++-aarch64-linux-gnu
+      build-essential
+      cmake
+      git
+      python3
+      curl
+      libc6:i386
+      libstdc++6:i386
+      libgcc-s1:i386
+      gcc-aarch64-linux-gnu
+      g++-aarch64-linux-gnu
     # Build dependencies for Linux ARM64 (downloads and sets up musl-cross)
     - make depends-linux-arm64 -j8
     # Build Linux ARM64 static binary (uses musl-cross from depends)
@@ -85,14 +85,14 @@ build-windows-x64:
     # Install dependencies
     - apt-get update -qq
     - apt-get install -y -qq
-        build-essential
-        cmake
-        git
-        python3
-        g++-mingw-w64-x86-64-posix
-        g++-mingw-w64-i686-posix
-        mingw-w64-tools
-        curl
+      build-essential
+      cmake
+      git
+      python3
+      g++-mingw-w64-x86-64-posix
+      g++-mingw-w64-i686-posix
+      mingw-w64-tools
+      curl
     # Set POSIX MinGW as default for cross-compilation
     - update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
     - update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
@@ -119,11 +119,11 @@ build-arch-x64:
     - echo "Building Arch Linux x86_64..."
     # Install dependencies
     - pacman -Sy --noconfirm
-        base-devel
-        cmake
-        git
-        python3
-        curl
+      base-devel
+      cmake
+      git
+      python3
+      curl
     # Arch Linux uses unprefixed toolchain (ar, ranlib) vs Debian (x86_64-linux-gnu-ar, x86_64-linux-gnu-ranlib)
     # Create symlinks so depends/Boost build can find the prefixed tools it expects
     - mkdir -p /usr/local/bin
@@ -187,14 +187,14 @@ build-macos-x64:
     - echo "Looking for compilers:"
     - find ./osxcross -name "*clang*" -type f 2>/dev/null | head -10
     - OSX_BIN=$(find ./osxcross -type d -name "bin" | head -1)
-    - echo "Found bin directory: $OSX_BIN"
+    - echo "Found bin directory $OSX_BIN"
     - export PATH="$OSX_BIN:$PATH"
     - export CC=$(find $OSX_BIN -name "*x86_64*apple*clang" -o -name "*x64*apple*clang" | head -1)
     - export CXX=$(find $OSX_BIN -name "*x86_64*apple*clang*" -o -name "*x64*apple*clang*" | head -1)
     - test -z "$CC" && export CC=$(find $OSX_BIN -name "o32-clang" | head -1) || true
     - test -z "$CXX" && export CXX=$(find $OSX_BIN -name "o32-clang*" | head -1) || true
-    - echo "Using CC: $CC"
-    - echo "Using CXX: $CXX"
+    - echo "Using CC $CC"
+    - echo "Using CXX $CXX"
     - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
     - make release-static-mac-x86_64 -j8
   artifacts:
@@ -244,14 +244,14 @@ build-macos-arm64:
     - echo "Looking for compilers:"
     - find ./osxcross -name "*clang*" -type f 2>/dev/null | head -10
     - OSX_BIN=$(find ./osxcross -type d -name "bin" | head -1)
-    - echo "Found bin directory: $OSX_BIN"
+    - echo "Found bin directory $OSX_BIN"
     - export PATH="$OSX_BIN:$PATH"
     - export CC=$(find $OSX_BIN -name "*aarch64*apple*clang" -o -name "*arm64*apple*clang" | head -1)
     - export CXX=$(find $OSX_BIN -name "*aarch64*apple*clang*" -o -name "*arm64*apple*clang*" | head -1)
     - test -z "$CC" && export CC=$(find $OSX_BIN -name "o64-clang" | head -1) || true
     - test -z "$CXX" && export CXX=$(find $OSX_BIN -name "o64-clang*" | head -1) || true
-    - echo "Using CC: $CC"
-    - echo "Using CXX: $CXX"
+    - echo "Using CC $CC"
+    - echo "Using CXX $CXX"
     - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
     - make release-static-mac-arm64 -j8
   artifacts:
