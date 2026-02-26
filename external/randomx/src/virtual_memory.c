@@ -130,15 +130,7 @@ out:
 void* allocMemoryPages(size_t bytes) {
 	void* mem;
 #if defined(_WIN32) || defined(__CYGWIN__)
-	printf("[RX_DEBUG] allocMemoryPages: Calling VirtualAlloc for %zu bytes...\n", bytes);
-	fflush(stdout);
 	mem = VirtualAlloc(NULL, bytes, MEM_COMMIT, PAGE_READWRITE);
-	printf("[RX_DEBUG] allocMemoryPages: VirtualAlloc returned %p\n", mem);
-	fflush(stdout);
-	if (mem == NULL) {
-		printf("[RX_DEBUG] allocMemoryPages: ERROR - VirtualAlloc failed!\n");
-		fflush(stdout);
-	}
 #else
 	#if defined(__NetBSD__)
 		#define RESERVED_FLAGS PROT_MPROTECT(PROT_EXEC)

@@ -69,8 +69,6 @@ extern "C" {
 	randomx_cache *randomx_alloc_cache(randomx_flags flags) {
 		randomx_cache *cache = nullptr;
 		auto impl = randomx::selectArgonImpl(flags);
-		printf("[RX_DEBUG] randomx_alloc_cache: selectArgonImpl returned %p, flags=%u\n", (void*)impl, flags);
-		fflush(stdout);
 		if (impl == nullptr) {
 			return cache;
 		}
@@ -78,8 +76,6 @@ extern "C" {
 		try {
 			cache = new randomx_cache();
 			cache->argonImpl = impl;
-			printf("[RX_DEBUG] randomx_alloc_cache: cache->argonImpl set to %p\n", (void*)cache->argonImpl);
-			fflush(stdout);
 			switch ((int)(flags & (RANDOMX_FLAG_JIT | RANDOMX_FLAG_LARGE_PAGES))) {
 				case RANDOMX_FLAG_DEFAULT:
 					cache->dealloc = &randomx::deallocCache<randomx::DefaultAllocator>;
@@ -134,22 +130,12 @@ extern "C" {
 	void randomx_init_cache(randomx_cache *cache, const void *key, size_t keySize) {
 		assert(cache != nullptr);
 		assert(keySize == 0 || key != nullptr);
-		printf("[RX_DEBUG] randomx_init_cache: Starting, cache=%p, key=%p, keySize=%zu\n", cache, key, keySize);
-		fflush(stdout);
 		std::string cacheKey;
 		cacheKey.assign((const char *)key, keySize);
-		printf("[RX_DEBUG] randomx_init_cache: cacheKey assigned, checking if initialization needed...\n");
-		fflush(stdout);
 		if (cache->cacheKey != cacheKey || !cache->isInitialized()) {
-			printf("[RX_DEBUG] randomx_init_cache: Calling cache->initialize()...\n");
-			fflush(stdout);
 			cache->initialize(cache, key, keySize);
-			printf("[RX_DEBUG] randomx_init_cache: cache->initialize() completed\n");
-			fflush(stdout);
 			cache->cacheKey = cacheKey;
 		}
-		printf("[RX_DEBUG] randomx_init_cache: Completed successfully\n");
-		fflush(stdout);
 	}
 
 	void *randomx_get_cache_memory(randomx_cache *cache) {

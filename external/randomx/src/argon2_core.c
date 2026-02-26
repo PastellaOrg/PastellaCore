@@ -163,43 +163,22 @@ uint32_t randomx_argon2_index_alpha(const argon2_instance_t *instance,
 static int fill_memory_blocks_st(argon2_instance_t *instance) {
 	uint32_t r, s, l;
 
-	printf("[RX_DEBUG] fill_memory_blocks_st: ENTER, passes=%u, lanes=%u\n", instance->passes, instance->lanes);
-	fflush(stdout);
-
 	for (r = 0; r < instance->passes; ++r) {
-		printf("[RX_DEBUG] fill_memory_blocks_st: Pass %u/%u\n", r, instance->passes);
-		fflush(stdout);
 		for (s = 0; s < ARGON2_SYNC_POINTS; ++s) {
-			printf("[RX_DEBUG] fill_memory_blocks_st: Slice %u/%u\n", s, ARGON2_SYNC_POINTS);
-			fflush(stdout);
 			for (l = 0; l < instance->lanes; ++l) {
-				printf("[RX_DEBUG] fill_memory_blocks_st: Lane %u/%u, instance->impl=%p, calling...\n",
-				       l, instance->lanes, (void*)instance->impl);
-				fflush(stdout);
 				argon2_position_t position = { r, l, (uint8_t)s, 0 };
 				//fill the segment using the selected implementation
 				instance->impl(instance, position);
-				printf("[RX_DEBUG] fill_memory_blocks_st: Lane %u completed\n", l);
-				fflush(stdout);
 			}
 		}
 	}
-	printf("[RX_DEBUG] fill_memory_blocks_st: Completed successfully\n");
-	fflush(stdout);
 	return ARGON2_OK;
 }
 
 int randomx_argon2_fill_memory_blocks(argon2_instance_t *instance) {
-	printf("[RX_DEBUG] randomx_argon2_fill_memory_blocks: ENTER, instance=%p\n", (void*)instance);
-	fflush(stdout);
 	if (instance == NULL || instance->lanes == 0) {
-		printf("[RX_DEBUG] randomx_argon2_fill_memory_blocks: ERROR - NULL or lanes=0\n");
-		fflush(stdout);
 		return ARGON2_INCORRECT_PARAMETER;
 	}
-	printf("[RX_DEBUG] randomx_argon2_fill_memory_blocks: Calling fill_memory_blocks_st, passes=%u, lanes=%u, segment_length=%u\n",
-	       instance->passes, instance->lanes, instance->segment_length);
-	fflush(stdout);
 	return fill_memory_blocks_st(instance);
 }
 
@@ -325,14 +304,8 @@ void rxa2_fill_first_blocks(uint8_t *blockhash, const argon2_instance_t *instanc
 	   G(H0||1||i) */
 	uint8_t blockhash_bytes[ARGON2_BLOCK_SIZE];
 
-	printf("[RX_DEBUG] rxa2_fill_first_blocks: ENTER, instance=%p, memory=%p, lanes=%u\n",
-	       (void*)instance, (void*)instance->memory, instance->lanes);
-	fflush(stdout);
 
 	for (l = 0; l < instance->lanes; ++l) {
-		printf("[RX_DEBUG] rxa2_fill_first_blocks: Lane %u, writing to blocks 0 and 1 at offsets %u and %u\n",
-		       l, l * instance->lane_length + 0, l * instance->lane_length + 1);
-		fflush(stdout);
 
 		store32(blockhash + ARGON2_PREHASH_DIGEST_LENGTH, 0);
 		store32(blockhash + ARGON2_PREHASH_DIGEST_LENGTH + 4, l);
@@ -348,8 +321,6 @@ void rxa2_fill_first_blocks(uint8_t *blockhash, const argon2_instance_t *instanc
 			blockhash_bytes);
 	}
 
-	printf("[RX_DEBUG] rxa2_fill_first_blocks: Completed successfully\n");
-	fflush(stdout);
 }
 
 void rxa2_initial_hash(uint8_t *blockhash, argon2_context *context, argon2_type type) {
@@ -437,12 +408,7 @@ int randomx_argon2_initialize(argon2_instance_t *instance, argon2_context *conte
 
 	/* 3. Creating first blocks, we always have at least two blocks in a slice
 	 */
-	printf("[RX_DEBUG] randomx_argon2_initialize: About to call rxa2_fill_first_blocks, instance=%p, memory=%p\n",
-	       (void*)instance, (void*)instance->memory);
-	fflush(stdout);
 	rxa2_fill_first_blocks(blockhash, instance);
-	printf("[RX_DEBUG] randomx_argon2_initialize: rxa2_fill_first_blocks completed\n");
-	fflush(stdout);
 
 	return ARGON2_OK;
 }

@@ -70,15 +70,10 @@ namespace randomx {
 	template void deallocCache<LargePageAllocator>(randomx_cache* cache);
 
 	void initCache(randomx_cache* cache, const void* key, size_t keySize) {
-		printf("[RX_DEBUG] initCache: ENTER - cache=%p, key=%p, keySize=%zu\n", cache, key, keySize);
-		fflush(stdout);
-
 		uint32_t memory_blocks, segment_length;
 		argon2_instance_t instance;
 		argon2_context context;
 
-		printf("[RX_DEBUG] initCache: Setting up context...\n");
-		fflush(stdout);
 		context.out = nullptr;
 		context.outlen = 0;
 		context.pwd = CONST_CAST(uint8_t *)key;
@@ -97,12 +92,8 @@ namespace randomx {
 		context.free_cbk = NULL;
 		context.flags = ARGON2_DEFAULT_FLAGS;
 		context.version = ARGON2_VERSION_NUMBER;
-		printf("[RX_DEBUG] initCache: Context setup complete, calling validate_inputs...\n");
-		fflush(stdout);
 
 		int inputsValid = randomx_argon2_validate_inputs(&context);
-		printf("[RX_DEBUG] initCache: validate_inputs returned %d\n", inputsValid);
-		fflush(stdout);
 		assert(inputsValid == ARGON2_OK);
 
 		/* 2. Align memory size */
@@ -110,8 +101,6 @@ namespace randomx {
 		memory_blocks = context.m_cost;
 
 		segment_length = memory_blocks / (context.lanes * ARGON2_SYNC_POINTS);
-		printf("[RX_DEBUG] initCache: memory_blocks=%u, segment_length=%u\n", memory_blocks, segment_length);
-		fflush(stdout);
 
 		instance.version = context.version;
 		instance.memory = NULL;
@@ -122,16 +111,8 @@ namespace randomx {
 		instance.lanes = context.lanes;
 		instance.threads = context.threads;
 		instance.type = Argon2_d;
-		printf("[RX_DEBUG] initCache: About to assign instance.memory, cache->memory=%p\n", cache->memory);
-		fflush(stdout);
 		instance.memory = (block*)cache->memory;
 		instance.impl = cache->argonImpl;
-		printf("[RX_DEBUG] initCache: instance.impl=%p, cache->argonImpl=%p\n",
-		       (void*)instance.impl, (void*)cache->argonImpl);
-		fflush(stdout);
-		printf("[RX_DEBUG] initCache: Instance setup complete, memory=%p, cache->memory=%p\n",
-		       instance.memory, cache->memory);
-		fflush(stdout);
 
 		if (instance.threads > instance.lanes) {
 			instance.threads = instance.lanes;
@@ -140,25 +121,12 @@ namespace randomx {
 		/* 3. Initialization: Hashing inputs, allocating memory, filling first
 		 * blocks
 		 */
-		printf("[RX_DEBUG] initCache: Calling randomx_argon2_initialize...\n");
-		fflush(stdout);
 		randomx_argon2_initialize(&instance, &context);
-		printf("[RX_DEBUG] initCache: randomx_argon2_initialize completed\n");
-		fflush(stdout);
-
-		printf("[RX_DEBUG] initCache: Calling randomx_argon2_fill_memory_blocks...\n");
-		fflush(stdout);
 		randomx_argon2_fill_memory_blocks(&instance);
-		printf("[RX_DEBUG] initCache: randomx_argon2_fill_memory_blocks completed\n");
-		fflush(stdout);
 
-		printf("[RX_DEBUG] initCache: Clearing reciprocalCache and starting superscalar generation...\n");
-		fflush(stdout);
 		cache->reciprocalCache.clear();
 		randomx::Blake2Generator gen(key, keySize);
 		for (int i = 0; i < RANDOMX_CACHE_ACCESSES; ++i) {
-			printf("[RX_DEBUG] initCache: Superscalar iteration %d/%d\n", i, RANDOMX_CACHE_ACCESSES);
-			fflush(stdout);
 			randomx::generateSuperscalar(cache->programs[i], gen);
 			for (unsigned j = 0; j < cache->programs[i].getSize(); ++j) {
 				auto& instr = cache->programs[i](j);
@@ -169,10 +137,6 @@ namespace randomx {
 				}
 			}
 		}
-		printf("[RX_DEBUG] initCache: Superscalar generation complete\n");
-		fflush(stdout);
-		printf("[RX_DEBUG] initCache: EXIT - function completed successfully\n");
-		fflush(stdout);
 	}
 
 	void initCacheCompile(randomx_cache* cache, const void* key, size_t keySize) {

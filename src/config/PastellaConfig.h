@@ -134,7 +134,7 @@ namespace Pastella
     /* This is the unix timestamp of the first "mined" block (technically block 2, not the genesis block)
        You can get this value by doing "print_block 2" in Pastellad. It is used to know what timestamp
        to import from when the block height cannot be found in the node or the node is offline. */
-    const uint64_t GENESIS_BLOCK_TIMESTAMP                               = 1704803400;                    /* 01:30 PM GMT+1, 9th of January 2024 */
+    const uint64_t GENESIS_BLOCK_TIMESTAMP                               = 1772132400;                    /* 08:00 PM GMT+1, 26th of February 2026 */
     const size_t   PASTELLA_REWARD_BLOCKS_WINDOW                         = 100;
     const size_t   PASTELLA_BLOCK_GRANTED_FULL_REWARD_ZONE               = 100000;                        /* size of block (bytes) after which reward for block calculated using block size */
     const size_t   PASTELLA_BLOCK_GRANTED_FULL_REWARD_ZONE_V2            = 20000;

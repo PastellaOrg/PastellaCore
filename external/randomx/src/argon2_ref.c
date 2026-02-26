@@ -117,13 +117,7 @@ void randomx_argon2_fill_segment_ref(const argon2_instance_t *instance,
 	uint32_t starting_index;
 	uint32_t i;
 
-	printf("[RX_DEBUG] randomx_argon2_fill_segment_ref: ENTER, instance=%p, pass=%u, lane=%u, slice=%u\n",
-	       (void*)instance, position.pass, position.lane, position.slice);
-	fflush(stdout);
-
 	if (instance == NULL) {
-		printf("[RX_DEBUG] randomx_argon2_fill_segment_ref: ERROR - instance is NULL\n");
-		fflush(stdout);
 		return;
 	}
 
@@ -133,16 +127,9 @@ void randomx_argon2_fill_segment_ref(const argon2_instance_t *instance,
 		starting_index = 2; /* we have already generated the first two blocks */
 	}
 
-	printf("[RX_DEBUG] randomx_argon2_fill_segment_ref: starting_index=%u, lane_length=%u, segment_length=%u\n",
-	       starting_index, instance->lane_length, instance->segment_length);
-	fflush(stdout);
-
 	/* Offset of the current block */
 	curr_offset = position.lane * instance->lane_length +
 		position.slice * instance->segment_length + starting_index;
-
-	printf("[RX_DEBUG] randomx_argon2_fill_segment_ref: curr_offset=%u\n", curr_offset);
-	fflush(stdout);
 
 	if (0 == curr_offset % instance->lane_length) {
 		/* Last block in this lane */
@@ -153,17 +140,8 @@ void randomx_argon2_fill_segment_ref(const argon2_instance_t *instance,
 		prev_offset = curr_offset - 1;
 	}
 
-	printf("[RX_DEBUG] randomx_argon2_fill_segment_ref: prev_offset=%u, memory ptr=%p\n",
-	       prev_offset, (void*)instance->memory);
-	fflush(stdout);
-
 	for (i = starting_index; i < instance->segment_length;
 		++i, ++curr_offset, ++prev_offset) {
-		if (i == starting_index) {
-			printf("[RX_DEBUG] randomx_argon2_fill_segment_ref: First iteration i=%u, about to access memory[%u]\n",
-			       i, prev_offset);
-			fflush(stdout);
-		}
 		/*1.1 Rotating prev_offset if needed */
 		if (curr_offset % instance->lane_length == 1) {
 			prev_offset = curr_offset - 1;
@@ -171,11 +149,6 @@ void randomx_argon2_fill_segment_ref(const argon2_instance_t *instance,
 
 		/* 1.2 Computing the index of the reference block */
 		/* 1.2.1 Taking pseudo-random value from the previous block */
-		if (i == starting_index) {
-			printf("[RX_DEBUG] randomx_argon2_fill_segment_ref: Accessing &instance->memory[%u].v[0] = %p\n",
-			       prev_offset, (void*)&instance->memory[prev_offset].v[0]);
-			fflush(stdout);
-		}
 		pseudo_rand = instance->memory[prev_offset].v[0];
 
 		/* 1.2.2 Computing the lane of the reference block */
