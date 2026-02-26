@@ -36,7 +36,6 @@ build-debian-x64:
       - build/release/x86_64-linux-gnu/src/Pastella-Wallet
       - build/release/x86_64-linux-gnu/src/Pastella-Wallet-API
     expire_in: 1 week
-  when: manual
 
 # ============================================
 # Debian ARM64 Build
@@ -72,7 +71,6 @@ build-debian-arm64:
       - build/release/arm64-linux/src/Pastella-Wallet
       - build/release/arm64-linux/src/Pastella-Wallet-API
     expire_in: 1 week
-  when: manual
 
 # ============================================
 # Windows x86_64 Build (Cross-compile from Linux)
@@ -107,7 +105,6 @@ build-windows-x64:
       - build/release/x86_64-w64-mingw32/src/Pastella-Wallet.exe
       - build/release/x86_64-w64-mingw32/src/Pastella-Wallet-API.exe
     expire_in: 1 week
-  when: manual
 
 # ============================================
 # Arch Linux x86_64 Build
@@ -147,7 +144,6 @@ build-arch-x64:
       - build/release/x86_64-linux-gnu/src/Pastella-Wallet
       - build/release/x86_64-linux-gnu/src/Pastella-Wallet-API
     expire_in: 1 week
-  when: manual
 
 # ============================================
 # macOS x86_64 Build (Cross-compile from Linux)
@@ -219,6 +215,7 @@ build-macos-x64:
       - build/release/x86_64-apple-darwin/src/Pastella-Wallet
       - build/release/x86_64-apple-darwin/src/Pastella-Wallet-API
     expire_in: 1 week
+  when: manual
 
 # ============================================
 # macOS ARM64 Build (Cross-compile from Linux)
