@@ -176,22 +176,32 @@ build-macos-x64:
     # Build osxcross from scratch (cached for speed)
     - |
       if [ ! -d "/opt/osxcross-x64" ]; then
+        echo "=== osxcross not cached, starting fresh build ==="
         git clone https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-x64
         cd /tmp/osxcross-x64
-        # Download macOS SDK
+        echo "=== Downloading macOS SDK ==="
         mkdir -p tarballs
         curl -L -o tarballs/MacOSX10.15.sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
-        # Build osxcross unattended (no interactive prompts)
-        TARGET_DIR=/opt/osxcross-x64 UNATTENDED=1 ENABLE_ARCHS="x86_64" ./build.sh
-        # Build libc++ (required for C++ standard library headers)
+        echo "=== Building osxcross base toolchain (using libstdc++) ==="
+        TARGET_DIR=/opt/osxcross-x64 UNATTENDED=1 ENABLE_ARCHS="x86_64" OSXCROSS_LIBCXX=stdc++ ./build.sh
+        echo "=== Building libc++ for C++ standard library headers ==="
+        cd /tmp/osxcross-x64
         TARGET_DIR=/opt/osxcross-x64 ./build_libcxx.sh
+        echo "=== Cleaning up osxcross source ==="
         cd /
         rm -rf /tmp/osxcross-x64
+        echo "=== osxcross build complete ==="
+      else
+        echo "=== Using cached osxcross toolchain ==="
       fi
+    - echo "=== Setting up osxcross PATH ==="
     - export PATH="/opt/osxcross-x64/bin:$PATH"
+    - echo "=== Verifying osxcross compiler ==="
     - x86_64-apple-darwin19-clang --version || echo "Compiler check"
   script:
+    - echo "=== Building PastellaCore for macOS x86_64 ==="
     - make release-static-mac-x86_64 -j8
+    - echo "=== PastellaCore macOS x86_64 build complete ==="
   artifacts:
     name: "macos-x64-$CI_COMMIT_SHORT_SHA"
     paths:
