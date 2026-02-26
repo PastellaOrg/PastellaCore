@@ -163,15 +163,16 @@ build-macos-x64:
       git
       python3
       curl
-      libxml2-utils
+      libxml2-dev
       libssl-dev
-      lzip
-      xz-utils
-      clang
-      llvm
-      libbz2-dev
       liblzma-dev
+      libbz2-dev
+      xz-utils
       zlib1g-dev
+      cpio
+      clang
+      llvm-dev
+      bash
     # Build osxcross from scratch (cached for speed)
     - |
       if [ ! -d "/opt/osxcross-x64" ]; then
@@ -180,30 +181,12 @@ build-macos-x64:
         # Download macOS SDK
         mkdir -p tarballs
         curl -L -o tarballs/MacOSX10.15.sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
-        tar -xf tarballs/MacOSX10.15.sdk.tar.xz -C tarballs/
-        export XCODE_DIR=$(pwd)/tarballs/MacOSX10.15.sdk
-        # Install expect for handling interactive prompts
-        apt-get install -y expect
-        # Create expect script to handle prompts
-        cat > /tmp/build_clang.exp << 'EOF'
-        set timeout 600
-        spawn TARGET=x86_64-apple-darwin15 ./build_clang.sh
-        expect "Perform two stage build"
-        send "Y\r"
-        expect "Press enter"
-        send "\r"
-        expect
-        wait
-        exit
-        EOF
-        # Run the expect script
-        expect /tmp/build_clang.exp
-        ./build_libcxx.sh
-        mv target /opt/osxcross-x64
+        # Build osxcross unattended (no interactive prompts)
+        TARGET_DIR=/opt/osxcross-x64 UNATTENDED=1 ENABLE_ARCHS="x86_64" ./build.sh
         cd /
         rm -rf /tmp/osxcross-x64
       fi
-    - export PATH="/opt/osxcross-x64/target/bin:$PATH"
+    - export PATH="/opt/osxcross-x64/bin:$PATH"
     - x86_64-apple-darwin15-clang --version || echo "Compiler check"
   script:
     - make release-static-mac-x86_64 -j8
