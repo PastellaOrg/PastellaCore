@@ -177,15 +177,25 @@ build-macos-x64:
       if [ ! -d "/opt/osxcross-x64" ]; then
         git clone https://github.com/tpoechtrager/osxcross.git /tmp/osxcross-x64
         cd /tmp/osxcross-x64
-        # Download macOS SDK (using a mirror since Apple requires authentication)
+        # Download macOS SDK
         mkdir -p tarballs
         curl -L -o tarballs/MacOSX10.15.sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
         tar -xf tarballs/MacOSX10.15.sdk.tar.xz -C tarballs/
         export XCODE_DIR=$(pwd)/tarballs/MacOSX10.15.sdk
-        # Build clang for x86_64-apple-darwin - disable bootstrap to simplify
-        # Still need to handle the "press enter" prompt
-        (echo "" | TARGET=x86_64-apple-darwin15 ENABLE_BOOTSTRAP=0 ./build_clang.sh 2>&1 | tee build.log || \
-         (cat build.log && false))
+        # Install expect for handling interactive prompts
+        apt-get install -y expect
+        # Use expect to automate the prompts
+        expect << 'EOF'
+        set timeout 600
+        spawn TARGET=x86_64-apple-darwin15 ./build_clang.sh
+        expect "Perform two stage build"
+        send "Y\r"
+        expect "Press enter"
+        send "\r"
+        expect
+        wait
+        exit
+        EOF
         ./build_libcxx.sh
         mv target /opt/osxcross-x64
         cd /
