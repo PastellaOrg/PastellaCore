@@ -174,29 +174,25 @@ build-macos-x64:
     - docker create --name osx-tools crazymax/osxcross:latest-ubuntu sleep infinity
     - docker cp osx-tools:/osxcross ./osxcross
     - docker rm osx-tools
-    - echo "osxcross directory structure:"
-    - find ./osxcross -type d | head -20
-    - echo "Looking for bin directory:"
-    - find ./osxcross -name "bin" -type d
-    - echo "Looking for compilers:"
-    - find ./osxcross -name "*clang*" -o -name "*gcc*" 2>/dev/null | head -10
+    - echo "Full osxcross directory structure:"
+    - find ./osxcross -type d
+    - echo "Looking for ALL files (not just dirs):"
+    - find ./osxcross -type f | head -30
+    - echo "Checking if /usr/bin has osxcross tools:"
+    - ls -la ./osxcross/ 2>/dev/null || echo "No files in osxcross root"
+    - ls -la ./osxcross/bin/ 2>/dev/null || echo "No bin directory"
   script:
     - echo "Building macOS x64 static binary..."
-    - echo "osxcross directory structure:"
-    - find ./osxcross -type d | head -20
-    - echo "Looking for compilers:"
-    - find ./osxcross -name "*clang*" -type f 2>/dev/null | head -10
-    - OSX_BIN=$(find ./osxcross -type d -name "bin" | head -1)
-    - echo "Found bin directory $OSX_BIN"
-    - export PATH="$OSX_BIN:$PATH"
-    - export CC=$(find $OSX_BIN -name "*x86_64*apple*clang" -o -name "*x64*apple*clang" | head -1)
-    - export CXX=$(find $OSX_BIN -name "*x86_64*apple*clang*" -o -name "*x64*apple*clang*" | head -1)
-    - test -z "$CC" && export CC=$(find $OSX_BIN -name "o32-clang" | head -1) || true
-    - test -z "$CXX" && export CXX=$(find $OSX_BIN -name "o32-clang*" | head -1) || true
-    - echo "Using CC $CC"
-    - echo "Using CXX $CXX"
-    - test -n "$CC" && test -n "$CXX" || (echo "Compilers not found!" && exit 1)
-    - make release-static-mac-x86_64 -j8
+    - echo "Full osxcross directory structure:"
+    - find ./osxcross -type d
+    - echo "All files in osxcross:"
+    - find ./osxcross -type f -name "*" | head -50
+    - echo "Looking for clang in entire osxcross tree:"
+    - find ./osxcross -name "*clang*" -o -name "*gcc*" 2>/dev/null
+    - echo "Trying to list what's in osxcross root:"
+    - ls -la ./osxcross/ | head -20
+    - echo "Trying to find bin directory anywhere:"
+    - find ./osxcross -type d -name "*bin*"
   artifacts:
     name: "macos-x64-$CI_COMMIT_SHORT_SHA"
     paths:
