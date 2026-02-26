@@ -184,8 +184,8 @@ build-macos-x64:
         export XCODE_DIR=$(pwd)/tarballs/MacOSX10.15.sdk
         # Install expect for handling interactive prompts
         apt-get install -y expect
-        # Use expect to automate the prompts
-        expect << 'EOF'
+        # Create expect script to handle prompts
+        cat > /tmp/build_clang.exp << 'EOF'
         set timeout 600
         spawn TARGET=x86_64-apple-darwin15 ./build_clang.sh
         expect "Perform two stage build"
@@ -196,6 +196,8 @@ build-macos-x64:
         wait
         exit
         EOF
+        # Run the expect script
+        expect /tmp/build_clang.exp
         ./build_libcxx.sh
         mv target /opt/osxcross-x64
         cd /
