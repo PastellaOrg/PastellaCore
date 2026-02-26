@@ -183,17 +183,15 @@ build-macos-x64:
         curl -L -o tarballs/MacOSX10.15.sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
         # Build osxcross unattended (no interactive prompts)
         TARGET_DIR=/opt/osxcross-x64 UNATTENDED=1 ENABLE_ARCHS="x86_64" ./build.sh
+        # Build libc++ (required for C++ standard library headers)
+        TARGET_DIR=/opt/osxcross-x64 ./build_libcxx.sh
         cd /
         rm -rf /tmp/osxcross-x64
       fi
     - export PATH="/opt/osxcross-x64/bin:$PATH"
-    - x86_64-apple-darwin15-clang --version || echo "Compiler check"
+    - x86_64-apple-darwin19-clang --version || echo "Compiler check"
   script:
     - make release-static-mac-x86_64 -j8
-  cache:
-    paths:
-      - /opt/osxcross-x64
-    key: "$CI_JOB_NAME-osxcross"
   artifacts:
     name: "macos-x64-$CI_COMMIT_SHORT_SHA"
     paths:
