@@ -173,6 +173,11 @@ build-macos-x64:
       clang
       llvm-dev
       bash
+      gcc
+      g++
+      libmpc-dev
+      libmpfr-dev
+      libgmp-dev
     # Build osxcross from scratch (cached for speed)
     - |
       if [ ! -d "/opt/osxcross-x64" ]; then
@@ -182,14 +187,10 @@ build-macos-x64:
         echo "=== Downloading macOS SDK ==="
         mkdir -p tarballs
         curl -L -o tarballs/MacOSX10.15.sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
-        echo "=== Patching build.sh to skip libc++ validation ==="
-        # Patch the script to not exit on missing libc++ headers
-        sed -i '/osxcross: error: cannot find libc++ headers/,+1{ s/exit 1/return 0/; }' ./build.sh
-        sed -i 's/exiting with abnormal exit code (1)/exiting with code 0 (libc++ headers will be built separately)/' ./build.sh
         echo "=== Building osxcross base toolchain ==="
         TARGET_DIR=/opt/osxcross-x64 UNATTENDED=1 ENABLE_ARCHS="x86_64" ./build.sh || true
-        echo "=== Building libc++ for C++ standard library headers ==="
-        TARGET_DIR=/opt/osxcross-x64 ./build_libcxx.sh
+        echo "=== Building GCC cross-compiler (uses libstdc++, no libc++ needed) ==="
+        TARGET_DIR=/opt/osxcross-x64 ./build_gcc.sh
         echo "=== Cleaning up osxcross source ==="
         cd /
         rm -rf /tmp/osxcross-x64
