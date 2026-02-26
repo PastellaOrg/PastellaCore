@@ -171,6 +171,7 @@ build-macos-x64:
       zlib1g-dev
       cpio
       clang
+      lld
       llvm-dev
       bash
     # Build osxcross from scratch (cached for speed)
