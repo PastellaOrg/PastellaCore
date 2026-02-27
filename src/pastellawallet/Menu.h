@@ -119,7 +119,7 @@ template<typename T> void printCommands(const std::vector<T> &commands, size_t o
     for (const auto &command : commands)
     {
         std::cout << InformationMsg(" ") << InformationMsg(i) << "\t"
-                  << SuccessMsg(command.commandName, 25) /* Pad to 25 chars */
+                  << MagentaMsg(command.commandName, 25) /* Pad to 25 chars */
                   << command.description << std::endl;
 
         i++;

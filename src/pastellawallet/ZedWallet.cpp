@@ -78,7 +78,7 @@ int main(int argc, char **argv)
 
     Logger::logger.setLogLevel(config.logLevel);
 
-    std::cout << NormalMsg(Pastella::getProjectCLIHeaderWallet()) << std::endl;
+    std::cout << MagentaMsg(Pastella::getProjectCLIHeaderWallet()) << std::endl;
 
     /* Declare outside the try/catch, so if an exception is thrown, it doesn't
        cause the threads to go out of scope, calling std::terminate

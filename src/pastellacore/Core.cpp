@@ -4290,7 +4290,7 @@ namespace Pastella
         details.lastTxTimestamp = 0;
         details.totalTransactions = 0;
 
-        logger(Logging::INFO) << "Building wallet details for address: " << address.substr(0, 10) << "...";
+        logger(Logging::DEBUGGING) << "Building wallet details for address: " << address.substr(0, 10) << "...";
 
         /* Temporary structure to collect transaction data before grouping */
         struct TransactionData
@@ -4949,8 +4949,8 @@ namespace Pastella
         details.totalBalance = currentBalance;
         details.totalTransactions = allTransactions.size();
 
-        logger(Logging::INFO) << "Found " << allTransactions.size() << " transactions for address " << address.substr(0, 10) << "...";
-        logger(Logging::INFO) << "Final balance: " << (currentBalance / 100000000.0) << " " << WalletConfig::ticker;
+        logger(Logging::DEBUGGING) << "Found " << allTransactions.size() << " transactions for address " << address.substr(0, 10) << "...";
+        logger(Logging::DEBUGGING) << "Final balance: " << (currentBalance / 100000000.0) << " " << WalletConfig::ticker;
 
         /* Sort transactions by block number (newest first) */
         std::sort(allTransactions.begin(), allTransactions.end(),
