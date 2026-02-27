@@ -2068,23 +2068,12 @@ namespace Pastella
     std::vector<uint32_t>
         DatabaseBlockchainCache::getRandomOutsByAmount(uint64_t amount, size_t count, uint32_t blockIndex) const
     {
-        /* GLOBAL INDEX TRACKING REMOVED - Random output selection for ring signatures removed
-         *
-         * In the transparent system, we don't use ring signatures or decoy outputs.
-         * This function was used to select random outputs for mixing.
-         *
-         * In a transparent system:
-         * - No ring signatures needed (transactions use direct addressing)
-         * - No need to select random decoy outputs
-         * - Reference counting is done via transaction hash, not global index
-         *
-         * Return empty vector to indicate no random outputs available.
-         * This is correct for transparent system where privacy features are removed. */
+        /* Random output selection for ring signatures removed in transparent system */
         (void)amount;
         (void)count;
         (void)blockIndex;
 
-        logger(Logging::DEBUGGING) << "getRandomOutsByAmount: Ring signature mixing not used in transparent system";
+        logger(Logging::DEBUGGING) << "getRandomOutsByAmount: Ring signatures not used in transparent system";
         return std::vector<uint32_t>();
     }
 

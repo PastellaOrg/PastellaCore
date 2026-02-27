@@ -1579,7 +1579,7 @@ namespace Pastella
                                      << Common::makeContainerFormatter(transactionParameters.sourceAddresses) << ", to "
                                      << WalletOrderListFormatter(m_currency, transactionParameters.destinations)
                                      << ", change address '" << transactionParameters.changeDestination << '\''
-                                     << ", mixin " << transactionParameters.mixIn << ", unlockTimestamp "
+                                     << ", unlockTimestamp "
                                      << transactionParameters.unlockTimestamp;
 
         id = doTransfer(transactionParameters);
@@ -1608,7 +1608,6 @@ namespace Pastella
         std::vector<WalletOuts> &&wallets,
         const std::vector<WalletOrder> &orders,
         WalletTypes::FeeType fee,
-        uint16_t mixIn,
         const std::string &extra,
         uint64_t unlockTimestamp,
         const DonationSettings &donation,
@@ -1638,7 +1637,7 @@ namespace Pastella
 
             uint64_t foundMoney = selectTransfers(
                 preparedTransaction.neededMoney,
-                mixIn == 0,
+                true, /* Always allow dust in transparent system */
                 m_currency.defaultDustThreshold(m_node.getLastKnownBlockHeight()),
                 std::move(wallets),
                 selectedTransfers);
@@ -1651,15 +1650,8 @@ namespace Pastella
                 throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Not enough money");
             }
 
-            std::vector<RandomOuts> mixinResult;
-
-            if (mixIn != 0)
-            {
-                requestMixinOuts(selectedTransfers, mixIn, mixinResult);
-            }
-
             std::vector<InputInfo> keysInfo;
-            prepareInputs(selectedTransfers, mixinResult, mixIn, keysInfo);
+            prepareInputs(selectedTransfers, keysInfo);
 
             preparedTransaction.changeAmount = foundMoney - preparedTransaction.neededMoney;
 
@@ -1699,7 +1691,6 @@ namespace Pastella
                         [](const uint64_t accumulator, const auto output) { return accumulator + output.amounts.size(); });
 
                     const size_t transactionSize = Utilities::estimateTransactionSize(
-                        mixIn,
                         keysInfo.size(),
                         numOutputs,
                         extra.size()
@@ -1821,20 +1812,6 @@ namespace Pastella
             m_logger(ERROR) << "Source address isn't belong to the container: " << *badAddr;
             throw std::system_error(
                 make_error_code(error::BAD_ADDRESS), "Source address must belong to current container: " + *badAddr);
-        }
-    }
-
-    void WalletGreen::checkIfEnoughMixins(std::vector<RandomOuts> &mixinResult, uint16_t mixIn) const
-    {
-        assert(mixIn != 0);
-
-        auto notEnoughIt = std::find_if(
-            mixinResult.begin(), mixinResult.end(), [mixIn](const auto ofa) { return ofa.outs.size() < mixIn; });
-
-        if (notEnoughIt != mixinResult.end())
-        {
-            m_logger(ERROR) << "Input count is too big: " << mixIn;
-            throw std::system_error(make_error_code(Pastella::error::MIXIN_COUNT_TOO_BIG));
         }
     }
 
@@ -2073,7 +2050,6 @@ namespace Pastella
             std::move(wallets),
             transactionParameters.destinations,
             transactionParameters.fee,
-            transactionParameters.mixIn,
             transactionParameters.extra,
             transactionParameters.unlockTimestamp,
             transactionParameters.donation,
@@ -2119,7 +2095,6 @@ namespace Pastella
             std::move(wallets),
             sendingTransaction.destinations,
             sendingTransaction.fee,
-            sendingTransaction.mixIn,
             sendingTransaction.extra,
             sendingTransaction.unlockTimestamp,
             sendingTransaction.donation,
@@ -2154,8 +2129,8 @@ namespace Pastella
         m_logger(INFO) << "makeTransaction"
                                      << ", from " << Common::makeContainerFormatter(sendingTransaction.sourceAddresses)
                                      << ", to " << WalletOrderListFormatter(m_currency, sendingTransaction.destinations)
-                                     << ", change address '" << sendingTransaction.changeDestination << '\'' << ", mixin "
-                                     << sendingTransaction.mixIn << ", unlockTimestamp "
+                                     << ", change address '" << sendingTransaction.changeDestination << '\''
+                                     << ", unlockTimestamp "
                                      << sendingTransaction.unlockTimestamp;
 
         validateTransactionParameters(sendingTransaction);
@@ -2178,7 +2153,6 @@ namespace Pastella
             std::move(wallets),
             sendingTransaction.destinations,
             sendingTransaction.fee,
-            sendingTransaction.mixIn,
             sendingTransaction.extra,
             sendingTransaction.unlockTimestamp,
             sendingTransaction.donation,
@@ -2913,51 +2887,6 @@ namespace Pastella
         return keys;
     }
 
-    void WalletGreen::requestMixinOuts(
-        const std::vector<OutputToTransfer> &selectedTransfers,
-        uint16_t mixIn,
-        std::vector<Pastella::RandomOuts> &mixinResult)
-    {
-        std::vector<uint64_t> amounts;
-        for (const auto &out : selectedTransfers)
-        {
-            amounts.push_back(out.out.amount);
-        }
-
-        System::Event requestFinished(m_dispatcher);
-        std::error_code mixinError;
-
-        throwIfStopped();
-
-        uint16_t requestMixinCount = mixIn + 1; //+1 to allow to skip real output
-
-        m_logger(DEBUGGING) << "Requesting random outputs";
-        System::RemoteContext<void> getOutputsContext(
-            m_dispatcher, [this, amounts, requestMixinCount, &mixinResult, &requestFinished, &mixinError]() mutable {
-                m_node.getRandomOutsByAmounts(
-                    std::move(amounts),
-                    requestMixinCount,
-                    mixinResult,
-                    [&requestFinished, &mixinError, this](std::error_code ec) mutable {
-                        mixinError = ec;
-                        m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
-                    });
-            });
-        getOutputsContext.get();
-        requestFinished.wait();
-
-        checkIfEnoughMixins(mixinResult, requestMixinCount);
-
-        if (mixinError)
-        {
-            m_logger(ERROR) << "Failed to get inputs: " << mixinError << ", "
-                                        << mixinError.message();
-            throw std::system_error(mixinError);
-        }
-
-        m_logger(DEBUGGING) << "Random outputs received";
-    }
-
     uint64_t WalletGreen::selectTransfers(
         uint64_t neededMoney,
         bool dust,
@@ -3093,8 +3022,6 @@ namespace Pastella
 
     void WalletGreen::prepareInputs(
         const std::vector<OutputToTransfer> &selectedTransfers,
-        std::vector<Pastella::RandomOuts> &mixinResult,
-        uint16_t mixIn,
         std::vector<InputInfo> &keysInfo)
     {
         size_t i = 0;
@@ -3103,44 +3030,15 @@ namespace Pastella
             TransactionTypes::InputKeyInfo keyInfo;
             keyInfo.amount = input.out.amount;
 
-            if (mixinResult.size())
-            {
-                std::sort(mixinResult[i].outs.begin(), mixinResult[i].outs.end(), [](const auto &a, const auto &b) {
-                    return a.global_amount_index < b.global_amount_index;
-                });
-                for (auto &fakeOut : mixinResult[i].outs)
-                {
-                    if (input.out.globalOutputIndex == fakeOut.global_amount_index)
-                    {
-                        continue;
-                    }
-
-                    TransactionTypes::GlobalOutput globalOutput;
-                    globalOutput.outputIndex = static_cast<uint32_t>(fakeOut.global_amount_index);
-                    globalOutput.targetKey = reinterpret_cast<PublicKey &>(fakeOut.out_key);
-                    keyInfo.outputs.push_back(std::move(globalOutput));
-                    if (keyInfo.outputs.size() >= mixIn)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            // paste real transaction to the random index
-            auto insertIn = std::find_if(
-                keyInfo.outputs.begin(), keyInfo.outputs.end(), [&](const TransactionTypes::GlobalOutput &a) {
-                    return a.outputIndex >= input.out.globalOutputIndex;
-                });
-
+            /* Add the real output */
             TransactionTypes::GlobalOutput realOutput;
             realOutput.outputIndex = input.out.globalOutputIndex;
             realOutput.targetKey = reinterpret_cast<const PublicKey &>(input.out.outputKey);
-
-            auto insertedIn = keyInfo.outputs.insert(insertIn, realOutput);
+            keyInfo.outputs.push_back(std::move(realOutput));
 
             keyInfo.realOutput.transactionPublicKey =
                 reinterpret_cast<const PublicKey &>(input.out.transactionPublicKey);
-            keyInfo.realOutput.transactionIndex = static_cast<size_t>(insertedIn - keyInfo.outputs.begin());
+            keyInfo.realOutput.transactionIndex = 0; /* Always index 0 in transparent system */
             keyInfo.realOutput.outputInTransaction = input.out.outputInTransaction;
 
             // Important! outputs in selectedTransfers and in keysInfo must have the same order!

@@ -1967,9 +1967,6 @@ namespace Pastella
         return addBlock(cachedBlock, std::move(rawBlock));
     }
 
-    /* GLOBAL INDEX TRACKING REMOVED - getTransactionGlobalIndexes, getRandomOutputs, getGlobalIndexesForRange removed
-     * These methods are no longer needed in the transparent system as ring signature mixing is not used */
-
     std::tuple<bool, std::string> Core::addTransactionToPool(const BinaryArray &transactionBinaryArray)
     {
         throwIfNotInitialized();
@@ -3752,7 +3749,6 @@ namespace Pastella
                 transactionDetails.unlockTime = 0;
                 transactionDetails.totalOutputsAmount = 0;
                 transactionDetails.totalInputsAmount = 0;
-                transactionDetails.mixin = 0;
                 
                 transactionDetails.extra = TransactionExtraDetails{};
 
@@ -3798,23 +3794,6 @@ namespace Pastella
         transactionDetails.totalOutputsAmount = transaction->getOutputTotalAmount();
         transactionDetails.totalInputsAmount = transaction->getInputTotalAmount();
 
-        transactionDetails.mixin = 0;
-        for (size_t i = 0; i < transaction->getInputCount(); ++i)
-        {
-            if (transaction->getInputType(i) != TransactionTypes::InputType::Key)
-            {
-                continue;
-            }
-
-            KeyInput input;
-            transaction->getInput(i, input);
-            uint64_t currentMixin = input.outputIndexes.size();
-            if (currentMixin > transactionDetails.mixin)
-            {
-                transactionDetails.mixin = currentMixin;
-            }
-        }
-
         
         transactionDetails.extra.publicKey = transaction->getTransactionPublicKey();
         transaction->getExtraNonce(transactionDetails.extra.nonce);
@@ -3847,7 +3826,6 @@ namespace Pastella
                  *
                  * We MUST copy these to KeyInputDetails so RPC and wallet code can
                  * look up the sender address! */
-                txInToKeyDetails.mixin = 0; /* No mixins in transparent system */
                 txInToKeyDetails.output.number = txInToKeyDetails.input.outputIndex;
                 txInToKeyDetails.output.transactionHash = txInToKeyDetails.input.transactionHash;
 
@@ -3859,8 +3837,7 @@ namespace Pastella
         }
 
         transactionDetails.outputs.reserve(transaction->getOutputCount());
-        /* GLOBAL INDEX TRACKING REMOVED - Using simple output indices instead of global indexes
-         * In transparent system, outputs are referenced by (transactionHash, outputIndex) */
+        /* In transparent system, outputs are referenced by (transactionHash, outputIndex) */
         std::vector<uint32_t> globalIndexes;
         globalIndexes.reserve(transaction->getOutputCount());
         for (size_t i = 0; i < transaction->getOutputCount(); ++i)

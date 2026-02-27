@@ -256,9 +256,7 @@ namespace Pastella
             uint64_t signatureSize = getSignaturesCount(tx.inputs[i]);
             if (signaturesNotExpected)
             {
-                /* TRANSPARENT SYSTEM: In transparent mode, outputIndexes.size() == 1 (no mixins)
-                 * This means signatureSize == 1, but we don't expect ring signatures.
-                 * We treat this as a transparent transaction with no signatures needed. */
+                /* Transparent mode: outputIndexes.size() == 1, signatureSize == 1 */
                 if (signatureSize == 0 || (signatureSize == 1 && tx.inputs[i].type() == typeid(KeyInput)))
                 {
                     continue;
@@ -271,11 +269,9 @@ namespace Pastella
 
             if (serializer.type() == ISerializer::OUTPUT)
             {
-                /* TRANSPARENT SYSTEM: In transparent mode with no mixins (signatureSize == 1),
-                 * we DO serialize the ONE Ed25519 signature if present */
+                /* Transparent mode: serialize signature if present */
                 if (signatureSize == 1 && tx.signatures[i].size() == 0 && tx.inputs[i].type() == typeid(KeyInput))
                 {
-                    /* Transparent mode - no signatures to serialize (legacy transactions) */
                     continue;
                 }
 
@@ -291,11 +287,9 @@ namespace Pastella
             }
             else
             {
-                /* TRANSPARENT SYSTEM: In transparent mode with no mixins (signatureSize == 1),
-                 * we DO expect to read ONE signature from the data (Ed25519 signature) */
+                /* Transparent mode: read one signature if needed */
                 if (signatureSize == 1 && tx.inputs[i].type() == typeid(KeyInput))
                 {
-                    /* Transparent mode - read one Ed25519 signature */
                     std::vector<Crypto::Signature> signatures(1);
                     serializePod(signatures[0], "", serializer);
                     tx.signatures[i] = std::move(signatures);

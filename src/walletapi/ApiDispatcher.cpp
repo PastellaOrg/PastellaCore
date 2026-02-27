@@ -654,19 +654,6 @@ std::tuple<Error, uint16_t> ApiDispatcher::makeAdvancedTransaction(
         destinations.emplace_back(address, amount);
     }
 
-    uint64_t mixin = 0; /* Always 0 in transparent system */
-
-    /* Ignore mixin parameter if provided in request */
-    /* if (body.find("mixin") != body.end()) */
-    /* { */
-    /*     mixin = getJsonValue<uint64_t>(body, "mixin"); */
-    /* } */
-    /* else */
-    /* { */
-    /*     /\* In transparent system, mixins are disabled *\/ */
-    /*     mixin = 0; */
-    /* } */
-
     auto fee = WalletTypes::FeeType::MinimumFee();
 
     if (body.find("fee") != body.end())

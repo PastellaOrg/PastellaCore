@@ -103,7 +103,6 @@ namespace Pastella
     void serialize(KeyInputDetails &inputToKey, ISerializer &serializer)
     {
         serializer(inputToKey.input, "input");
-        serializer(inputToKey.mixin, "mixin");
         serializer(inputToKey.output, "output");
     }
 
@@ -141,7 +140,6 @@ namespace Pastella
         serializer(transaction.fee, "fee");
         serializer(transaction.totalInputsAmount, "totalInputsAmount");
         serializer(transaction.totalOutputsAmount, "totalOutputsAmount");
-        serializer(transaction.mixin, "mixin");
         serializer(transaction.unlockTime, "unlockTime");
         serializer(transaction.timestamp, "timestamp");
         

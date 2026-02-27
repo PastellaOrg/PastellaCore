@@ -121,12 +121,8 @@ class RpcServer
     std::tuple<Error, uint16_t>
         sendTransaction(const httplib::Request &req, httplib::Response &res, const rapidjson::Document &body);
 
-    /* GLOBAL INDEX TRACKING REMOVED - getRandomOuts removed - Ring signature mixing not used in transparent system */
-
     std::tuple<Error, uint16_t>
         getWalletSyncData(const httplib::Request &req, httplib::Response &res, const rapidjson::Document &body);
-
-    /* GLOBAL INDEX TRACKING REMOVED - getGlobalIndexes and getGlobalIndexesDeprecated removed - Global indexes not tracked */
 
     std::tuple<Error, uint16_t>
         queryBlocksLite(const httplib::Request &req, httplib::Response &res, const rapidjson::Document &body);
@@ -139,8 +135,6 @@ class RpcServer
 
     std::tuple<Error, uint16_t>
         queryBlocksDetailed(const httplib::Request &req, httplib::Response &res, const rapidjson::Document &body);
-
-    /* GLOBAL INDEX TRACKING REMOVED - getGlobalIndexesDeprecated removed */
 
     std::tuple<Error, uint16_t>
         getRawBlocks(const httplib::Request &req, httplib::Response &res, const rapidjson::Document &body);

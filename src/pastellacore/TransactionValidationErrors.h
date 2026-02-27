@@ -38,7 +38,6 @@ namespace Pastella
             OUTPUTS_AMOUNT_OVERFLOW,
             WRONG_AMOUNT,
             WRONG_TRANSACTION_UNLOCK_TIME,
-            INVALID_MIXIN,
             EXTRA_TOO_LARGE,
             BASE_INVALID_SIGNATURES_COUNT,
             INPUT_INVALID_SIGNATURES_COUNT,
@@ -117,8 +116,6 @@ namespace Pastella
                         return "Transaction wrong amount";
                     case TransactionValidationError::WRONG_TRANSACTION_UNLOCK_TIME:
                         return "Transaction has wrong unlock time";
-                    case TransactionValidationError::INVALID_MIXIN:
-                        return "Mixin too large or too small";
                     case TransactionValidationError::EXTRA_TOO_LARGE:
                         return "Transaction extra too large";
                     case TransactionValidationError::BASE_INVALID_SIGNATURES_COUNT:

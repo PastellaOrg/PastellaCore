@@ -654,22 +654,13 @@ namespace Pastella
         const Crypto::Hash &transactionHash,
         std::vector<uint32_t> &outsGlobalIndices)
     {
-        /* GLOBAL INDEX TRACKING REMOVED - Transparent system doesn't use global indexes
-         *
-         * In a transparent cryptocurrency:
-         * - UTXOs are identified by (transactionHash, outputIndex) directly
-         * - No ring signature mixing = no need for global output indexes
-         * - Wallet sync works without global indexes
-         *
-         * This method now returns success with empty indexes to maintain compatibility
-         * with wallet sync code that expects this interface. */
+        /* Transparent system: UTXOs are identified by (transactionHash, outputIndex) directly
+         * This method returns success with empty indexes for compatibility */
 
         m_logger(TRACE) << "get_o_indexes called for tx " << transactionHash
-                        << " - NOT requesting from daemon (global indexes removed in transparent system)";
+                        << " - NOT requesting from daemon (global indexes removed)";
 
-        /* Return success with empty index vector - wallet sync will work without global indexes */
         outsGlobalIndices.clear();
-
         return std::error_code();
     }
 
@@ -678,21 +669,12 @@ namespace Pastella
         const uint64_t endHeight,
         std::unordered_map<Crypto::Hash, std::vector<uint64_t>> &indexes)
     {
-        /* GLOBAL INDEX TRACKING REMOVED - Transparent system doesn't use global indexes
-         *
-         * In a transparent cryptocurrency:
-         * - UTXOs are identified by (transactionHash, outputIndex) directly
-         * - No ring signature mixing = no need for global output indexes
-         * - Wallet sync works without global indexes
-         *
-         * This method now returns success with empty indexes to maintain compatibility
-         * with wallet sync code that expects this interface. */
+        /* Transparent system: UTXOs are identified by (transactionHash, outputIndex) directly
+         * This method returns success with empty indexes for compatibility */
 
-        m_logger(TRACE) << "get_global_indexes_for_range called - NOT requesting from daemon (global indexes removed in transparent system)";
+        m_logger(TRACE) << "get_global_indexes_for_range called - NOT requesting from daemon (global indexes removed)";
 
-        /* Return success with empty index map - wallet sync will work without global indexes */
         indexes.clear();
-
         return std::error_code();
     }
 

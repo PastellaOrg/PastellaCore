@@ -2450,9 +2450,6 @@ std::tuple<Error, uint16_t> RpcServer::getTransactionDetailsByHash(
             writer.Key("fee");
             writer.Uint64(txDetails.fee);
 
-            /* writer.Key("mixin");
-             * writer.Uint64(txDetails.mixin); */
-
             writer.Key("size");
             writer.Uint64(txDetails.size);
 
@@ -3294,10 +3291,6 @@ std::tuple<Error, uint16_t> RpcServer::getTransactionsInPool(
                 }
                 writer.EndArray();
 
-                /* Mixin count (always 0 in transparent system) */
-                writer.Key("mixin");
-                writer.Uint(0);
-
                 writer.EndObject();
             }
         }
@@ -3998,9 +3991,6 @@ std::tuple<Error, uint16_t> RpcServer::queryBlocksDetailed(
                                                 }
                                                 writer.EndObject();
 
-                                                /* writer.Key("mixin");
-                                                 * writer.Uint64(in.mixin); */
-
                                                 writer.Key("output");
                                                 writer.StartObject();
                                                 {
@@ -4019,9 +4009,6 @@ std::tuple<Error, uint16_t> RpcServer::queryBlocksDetailed(
                                 }
                             }
                             writer.EndArray();
-
-                            /* writer.Key("mixin");
-                             * writer.Uint64(tx.mixin); */
 
                             writer.Key("outputs");
                             writer.StartArray();

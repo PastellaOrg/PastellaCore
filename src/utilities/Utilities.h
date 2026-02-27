@@ -46,15 +46,13 @@ namespace Utilities
         const uint64_t height);
 
     size_t estimateTransactionSize(
-        const uint64_t mixin,
         const size_t numInputs,
         const size_t numOutputs,
         const size_t extraDataSize);
 
     size_t getApproximateMaximumInputCount(
         const size_t transactionSize,
-        const size_t outputCount,
-        const size_t mixinCount);
+        const size_t outputCount);
 
     /* Verify that a + b will not overflow when added. */
     /* 2 positive numbers - should always get greater (or equal) when summed. */

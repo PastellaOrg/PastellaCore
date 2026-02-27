@@ -53,9 +53,6 @@ namespace WalletConfig
     /* The minimum amount allowed to be sent - usually 1 (in ATOMIC units!) */
     const uint64_t minimumSend = 1;
 
-    /* Is a mixin of zero disabled on your network? */
-    const bool mixinZeroDisabled = false;
-
     /**
      * Max size of a post body response - 10MB
      * Will decrease the amount of blocks requested from the daemon if this

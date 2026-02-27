@@ -20,7 +20,6 @@ namespace Pastella
             WRONG_STATE,
             WRONG_PASSWORD,
             INTERNAL_WALLET_ERROR,
-            MIXIN_COUNT_TOO_BIG,
             BAD_ADDRESS,
             TRANSACTION_SIZE_TOO_BIG,
             WRONG_AMOUNT,
@@ -43,8 +42,6 @@ namespace Pastella
             DESTINATION_ADDRESS_REQUIRED,
             DESTINATION_ADDRESS_NOT_FOUND,
             BAD_TRANSACTION_EXTRA,
-            MIXIN_BELOW_THRESHOLD,
-            MIXIN_ABOVE_THRESHOLD,
             EXTRA_TOO_LARGE,
             EXCESSIVE_OUTPUTS
         };
@@ -77,8 +74,6 @@ namespace Pastella
                         return "The object is already initialized";
                     case INTERNAL_WALLET_ERROR:
                         return "Internal error occurred";
-                    case MIXIN_COUNT_TOO_BIG:
-                        return "MixIn count is too big";
                     case BAD_ADDRESS:
                         return "Bad address";
                     case TRANSACTION_SIZE_TOO_BIG:
@@ -123,10 +118,6 @@ namespace Pastella
                         return "Destination address not found";
                     case BAD_TRANSACTION_EXTRA:
                         return "Wrong transaction extra format";
-                    case MIXIN_BELOW_THRESHOLD:
-                        return "Mixin below minimum allowed threshold";
-                    case MIXIN_ABOVE_THRESHOLD:
-                        return "Mixin above maximum allowed threshold";
                     case EXTRA_TOO_LARGE:
                         return "Transaction extra too large";
                     case EXCESSIVE_OUTPUTS:

@@ -113,8 +113,6 @@ namespace Pastella
                 CachedTransaction transaction = transactionPool->getTransaction(hash);
                 std::vector<CachedTransaction> transactions;
                 transactions.emplace_back(transaction);
-
-                /* Mixin validation removed - transparent system does not use mixins */
             }
 
             cleanRecentlyDeletedTransactions(currentTime);

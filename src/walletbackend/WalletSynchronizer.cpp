@@ -233,14 +233,8 @@ void WalletSynchronizer::blockProcessingThread()
                 {
                     if (!input.globalOutputIndex)
                     {
-                        /* GLOBAL INDEX TRACKING REMOVED - Transparent system doesn't use global indexes
-                         *
-                         * In a transparent cryptocurrency:
-                         * - UTXOs are identified by (transactionHash, outputIndex) directly
-                         * - No ring signature mixing = no need for global output indexes
-                         * - We use the transactionIndex directly as the output index
-                         *
-                         * Skip global index fetching and use transactionIndex instead */
+                        /* Transparent system: UTXOs are identified by (transactionHash, outputIndex) directly
+                         * Use transactionIndex as the output index */
 
                         Logger::logger.log(
                             "[WALLET_SYNC] Skipping global index fetch for transparent UTXO at tx "
@@ -249,7 +243,6 @@ void WalletSynchronizer::blockProcessingThread()
                             Logger::TRACE,
                             {Logger::SYNC});
 
-                        /* In transparent system, UTXO index = transaction output index */
                         input.globalOutputIndex = input.transactionIndex;
                     }
                 }

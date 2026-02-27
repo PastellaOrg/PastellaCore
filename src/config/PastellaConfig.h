@@ -126,7 +126,7 @@ namespace Pastella
 
     /* Genesis coinbase transaction hex */
     const char GENESIS_COINBASE_TX_HEX[] =
-      "010001ff00018080d49ca7981202004a339087cd0d26f4923abe48fac9a50f948b5e4b96d4c05ebfb4d18adb0a232101adc26f2449801fe5ac287736ac47cb489871048e87c7f477e5c4de66b9129bde";
+      "010001ff00018080d49ca7981202004a339087cd0d26f4923abe48fac9a50f948b5e4b96d4c05ebfb4d18adb0a232101c18acd318998cdff799152afa2fd8a17c9b77cc4cc0eaed27e7dfe58e4143f09";
 
     static_assert(sizeof(GENESIS_COINBASE_TX_HEX) / sizeof(*GENESIS_COINBASE_TX_HEX) != 1, "GENESIS_COINBASE_TX_HEX must not be empty.");
     static_assert(sizeof(GENESIS_RECIPIENT_ADDRESS) / sizeof(*GENESIS_RECIPIENT_ADDRESS) != 1, "GENESIS_RECIPIENT_ADDRESS must not be empty.");
@@ -185,8 +185,8 @@ namespace Pastella
     const uint64_t MAX_EXTRA_SIZE_V2                                       = 1024;
     const uint64_t MAX_EXTRA_SIZE_V2_HEIGHT                                = 0;
 
-    /* 30,000,000 PAS -> Max supply / mixin+1 outputs                 */
-    /* This is enforced on the daemon side. An output > 30,000,000 causes an invalid block.   */
+    /* 30,000,000 PAS -> Max supply per output
+     * This is enforced on the daemon side. An output > 30,000,000 causes an invalid block. */
     const uint64_t MAX_OUTPUT_SIZE_NODE                                    = 30'000'000'00000000;
 
     /* 500,000 PAS */

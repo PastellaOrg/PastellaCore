@@ -11,13 +11,6 @@
 
 namespace Pastella
 {
-    uint64_t getDefaultMixinByHeight(const uint64_t height)
-    {
-        /* In transparent system, mixins are disabled - always return 0 */
-        (void)height;
-        return 0;
-    }
-
     void throwIfKeysMismatch(
         const Crypto::SecretKey &secretKey,
         const Crypto::PublicKey &expectedPublicKey,

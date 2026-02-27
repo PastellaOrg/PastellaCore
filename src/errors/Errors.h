@@ -79,33 +79,6 @@ enum ErrorCode
     /* One of the destination parameters has an amount given of zero. */
     AMOUNT_IS_ZERO = 19,
 
-    /* Something went wrong creating the ring signatures. Probably a programmer
-       error */
-    FAILED_TO_CREATE_RING_SIGNATURE = 20,
-
-    /* The mixin given is too low for the current height known by the wallet */
-    MIXIN_TOO_SMALL = 21,
-
-    /* The mixin given is too large for the current height known by the wallet */
-    MIXIN_TOO_BIG = 22,
-
-    /* Can't get mixin/fake outputs from the daemon, and mixin is not zero */
-    CANT_GET_FAKE_OUTPUTS = 27,
-
-    /* We got mixin/fake outputs from the daemon, but not enough. E.g. using a
-       mixin of 3, we only got one fake output -> can't form transaction.
-       This is most likely to be encountered on new networks, where not
-       enough outputs have been created, or if you have a very large output
-       that not enough have been created of.
-
-       Try resending the transaction with a mixin of zero, if that is an option
-       on your network. */
-    NOT_ENOUGH_FAKE_OUTPUTS = 28,
-
-    /* The key image generated was not valid. This is most likely a programmer
-       error. */
-    INVALID_GENERATED_KEYIMAGE = 29,
-
     /* Could not contact the daemon to complete the request. Ensure it is
        online and not frozen */
     DAEMON_OFFLINE = 30,

@@ -42,7 +42,6 @@ namespace Pastella
     struct KeyInputDetails
     {
         KeyInput input;
-        uint64_t mixin; /* Kept for API compatibility - always 0 in transparent system */
         TransactionOutputReferenceDetails output;
     };
 
@@ -62,7 +61,6 @@ namespace Pastella
         uint64_t fee = 0;
         uint64_t totalInputsAmount = 0;
         uint64_t totalOutputsAmount = 0;
-        uint64_t mixin = 0; /* Kept for API compatibility - always 0 in transparent system */
         uint64_t unlockTime = 0;
         uint64_t timestamp = 0;
         

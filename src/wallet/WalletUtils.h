@@ -13,8 +13,6 @@
 
 namespace Pastella
 {
-    uint64_t getDefaultMixinByHeight(const uint64_t height);
-
     void throwIfKeysMismatch(
         const Crypto::SecretKey &secretKey,
         const Crypto::PublicKey &expectedPublicKey,

@@ -672,15 +672,7 @@ namespace Pastella
     }
 
     /* GLOBAL INDEX TRACKING REMOVED - insertKeyOutputToGlobalIndex() function removed
-     *
-     * In the transparent system, we no longer maintain global output indexes.
-     * This function was used to track key outputs by amount across the blockchain,
-     * which is necessary for the ring signature mixing in CryptoNote.
-     *
-     * In the transparent system:
-     * - Outputs are tracked by their actual addresses, not by global index
-     * - Ring signatures are not used (no need for decoy outputs)
-     * - Reference counting is done via transaction hash, not global index */
+     * In the transparent system, outputs are tracked by their actual addresses */
 
     bool BlockchainCache::checkIfSpent(const Crypto::PublicKey &keyImage, uint32_t blockIndex) const
     {

@@ -151,9 +151,6 @@ namespace Pastella
 
         virtual std::error_code submitBlock(const BinaryArray &rawBlockTemplate) override;
 
-        /* GLOBAL INDEX TRACKING REMOVED - getTransactionGlobalIndexes, getRandomOutputs, getGlobalIndexesForRange removed
-         * Ring signature mixing and global index tracking not used in transparent system */
-
         virtual std::tuple<bool, std::string> addTransactionToPool(const BinaryArray &transactionBinaryArray) override;
 
         virtual std::vector<Crypto::Hash> getPoolTransactionHashes() const override;

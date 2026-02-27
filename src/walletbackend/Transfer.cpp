@@ -27,7 +27,7 @@ namespace SendTransaction
 {
 
     /* A basic send transaction, the most common transaction, one destination,
-       default fee, default mixin, default change address
+       default fee, default change address
 
        WARNING: This is NOT suitable for multi wallet containers, as the change
        will be returned to the primary subwallet address.
@@ -165,7 +165,6 @@ namespace SendTransaction
                 if (!fee.isFixedFee)
                 {
                     const size_t transactionSize = Utilities::estimateTransactionSize(
-                        0, /* No mixins in transparent system */
                         ourInputs.size(),
                         destinations.size(),
                         extraData.size()
@@ -624,7 +623,8 @@ namespace SendTransaction
         const std::shared_ptr<Nigel> daemon,
         const std::vector<WalletTypes::TxInputAndOwner> sources)
     {
-        /* In transparent system, no ring participants needed - mixins disabled */
+        (void)daemon;
+        (void)sources;
         return {SUCCESS, {}};
     }
 
@@ -655,12 +655,7 @@ namespace SendTransaction
 
             /* STEALTH ADDRESS REMOVAL: keyImage and privateEphemeral fields removed from ObscuredInput */
 
-            /* TRANSPARENT SYSTEM: Add the real output being spent
-             * In transparent system, we don't have fake outputs/mixins.
-             * However, we STILL need to populate 'outputs' with the real output!
-             * This is required for transaction validation - KeyInput needs outputIndexes.
-             * With no mixins, outputs contains just ONE entry - the real output. */
-
+            /* Add the real output being spent - required for transaction validation */
             if (walletAmount.input.globalOutputIndex)
             {
                 WalletTypes::GlobalIndexKey realOutput;
@@ -670,7 +665,7 @@ namespace SendTransaction
 
                 obscuredInput.outputs.push_back(realOutput);
 
-                /* In transparent system with no mixins, realOutput is always at index 0 */
+                /* Real output is always at index 0 in transparent system */
                 obscuredInput.realOutput = 0;
             }
             else
@@ -970,14 +965,14 @@ namespace SendTransaction
         const uint64_t unlockTime,
         const std::vector<uint8_t> extraData)
     {
-        /* Prepare our inputs for the transparent system (no mixins) */
-        const auto [mixinError, inputsAndFakes] = prepareRingParticipants(ourInputs, daemon);
+        /* Prepare our inputs for the transaction */
+        const auto [prepareError, inputsAndFakes] = prepareRingParticipants(ourInputs, daemon);
 
         WalletTypes::TransactionResult result;
 
-        if (mixinError)
+        if (prepareError)
         {
-            result.error = mixinError;
+            result.error = prepareError;
             return result;
         }
 

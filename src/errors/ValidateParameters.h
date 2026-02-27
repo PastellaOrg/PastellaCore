@@ -24,8 +24,6 @@ Error validatePrivateKey(const Crypto::SecretKey &privateKey);
 
 Error validatePublicKey(const Crypto::PublicKey &publicKey);
 
-Error validateMixin(const uint64_t mixin, const uint64_t height);
-
 Error validateAmount(
     const std::vector<std::pair<std::string, uint64_t>> destinations,
     const WalletTypes::FeeType fee,

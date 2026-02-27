@@ -106,37 +106,6 @@ std::string Error::getErrorMessage() const
             return "One of the destination parameters has an amount given of "
                    "zero.";
         }
-        case FAILED_TO_CREATE_RING_SIGNATURE:
-        {
-            return "Failed to create ring signature - probably a programmer "
-                   "error, or a corrupted wallet.";
-        }
-        case MIXIN_TOO_SMALL:
-        {
-            return "The mixin value given is too low to be accepted by the "
-                   "network (based on the current height known by the wallet)";
-        }
-        case MIXIN_TOO_BIG:
-        {
-            return "The mixin value given is too high to be accepted by the "
-                   "network (based on the current height known by the wallet)";
-        }
-        case CANT_GET_FAKE_OUTPUTS:
-        {
-            return "Failed to get fake outputs from the daemon to obscure "
-                   "our transaction, and mixin is not zero.";
-        }
-        case NOT_ENOUGH_FAKE_OUTPUTS:
-        {
-            return "We could not get enough fake outputs for this transaction "
-                   "to complete. If possible, try lowering the mixin value "
-                   "used, or decrease the amount you are sending.";
-        }
-        case INVALID_GENERATED_KEYIMAGE:
-        {
-            return "The key image we generated is invalid - probably a "
-                   "programmer error, or a corrupted wallet.";
-        }
         case DAEMON_OFFLINE:
         {
             return "We were not able to submit our request to the daemon. "

@@ -243,7 +243,6 @@ namespace Utilities
     }
 
     size_t estimateTransactionSize(
-        const uint64_t mixin,
         const size_t numInputs,
         const size_t numOutputs,
         const size_t extraDataSize)
@@ -270,15 +269,14 @@ namespace Utilities
                                 + EXTRA_TAG_SIZE
                                 + EXTRA_DATA_SIZE
                                 + PUBLIC_KEY_SIZE;
-        
+
         /* The size of each transaction input */
         const size_t inputSize = INPUT_TAG_SIZE
                                + AMOUNT_SIZE
                                + KEY_IMAGE_SIZE
                                + SIGNATURE_SIZE
                                + GLOBAL_INDEXES_VECTOR_SIZE_SIZE
-                               + GLOBAL_INDEXES_INITIAL_VALUE_SIZE
-                               + mixin * SIGNATURE_SIZE;
+                               + GLOBAL_INDEXES_INITIAL_VALUE_SIZE;
 
         const size_t inputsSize = inputSize * numInputs;
 
@@ -293,7 +291,7 @@ namespace Utilities
     }
 
     size_t
-        getApproximateMaximumInputCount(const size_t transactionSize, const size_t outputCount, const size_t mixinCount)
+        getApproximateMaximumInputCount(const size_t transactionSize, const size_t outputCount)
     {
         /* STEALTH ADDRESS REMOVAL: Changed KeyImage to PublicKey */
         const size_t KEY_IMAGE_SIZE = sizeof(Crypto::PublicKey);
@@ -314,8 +312,7 @@ namespace Utilities
         const size_t headerSize =
             TRANSACTION_VERSION_SIZE + TRANSACTION_UNLOCK_TIME_SIZE + EXTRA_TAG_SIZE + PUBLIC_KEY_SIZE;
         const size_t inputSize = INPUT_TAG_SIZE + AMOUNT_SIZE + KEY_IMAGE_SIZE + SIGNATURE_SIZE
-                                 + GLOBAL_INDEXES_VECTOR_SIZE_SIZE + GLOBAL_INDEXES_INITIAL_VALUE_SIZE
-                                 + mixinCount * (GLOBAL_INDEXES_DIFFERENCE_SIZE + SIGNATURE_SIZE);
+                                 + GLOBAL_INDEXES_VECTOR_SIZE_SIZE + GLOBAL_INDEXES_INITIAL_VALUE_SIZE;
 
         return (transactionSize - headerSize - outputsSize) / inputSize;
     }

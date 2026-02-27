@@ -341,7 +341,6 @@ namespace Pastella
             std::vector<WalletOuts> &&wallets,
             const std::vector<WalletOrder> &orders,
             WalletTypes::FeeType fee,
-            uint16_t mixIn,
             const std::string &extra,
             uint64_t unlockTimestamp,
             const DonationSettings &donation,
@@ -349,8 +348,6 @@ namespace Pastella
             PreparedTransaction &preparedTransaction);
 
         size_t doTransfer(const TransactionParameters &transactionParameters);
-
-        void checkIfEnoughMixins(std::vector<Pastella::RandomOuts> &mixinResult, uint16_t mixIn) const;
 
         std::vector<WalletTransfer> convertOrdersToTransfers(const std::vector<WalletOrder> &orders) const;
 
@@ -376,15 +373,8 @@ namespace Pastella
 
         void validateTransactionParameters(const TransactionParameters &transactionParameters) const;
 
-        void requestMixinOuts(
-            const std::vector<OutputToTransfer> &selectedTransfers,
-            uint16_t mixIn,
-            std::vector<Pastella::RandomOuts> &mixinResult);
-
         void prepareInputs(
             const std::vector<OutputToTransfer> &selectedTransfers,
-            std::vector<Pastella::RandomOuts> &mixinResult,
-            uint16_t mixIn,
             std::vector<InputInfo> &keysInfo);
 
         uint64_t selectTransfers(
