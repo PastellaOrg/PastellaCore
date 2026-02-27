@@ -73,7 +73,7 @@ build-debian-arm64:
     expire_in: 1 week
 
 # ============================================
-# Windows x86_64 Build (Cross-compile from Linux)
+# Windows x86_64 Build
 # ============================================
 build-windows-x64:
   stage: build
@@ -146,7 +146,7 @@ build-arch-x64:
     expire_in: 1 week
 
 # ============================================
-# macOS x86_64 Build (Cross-compile from Linux)
+# macOS x86_64 Build
 # ============================================
 build-macos-x64:
   stage: build
@@ -218,7 +218,7 @@ build-macos-x64:
   when: manual
 
 # ============================================
-# macOS ARM64 Build (Cross-compile from Linux)
+# macOS ARM64 Build
 # ============================================
 build-macos-arm64:
   stage: build
@@ -385,6 +385,7 @@ package-macos-x64:
   only:
     - tags
     - main
+  when: manual
 
 # ============================================
 # Release Package (macOS ARM64)
@@ -408,3 +409,4 @@ package-macos-arm64:
   only:
     - tags
     - main
+  when: manual
