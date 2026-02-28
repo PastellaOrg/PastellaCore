@@ -10,9 +10,9 @@
 #include "pastellacore/PastellaBasicImpl.h"
 #include "pastellacore/PastellaFormatUtils.h"
 #include "pastellacore/TransactionApi.h"
+#include "logger/Logger.h"
 
 #include <functional>
-#include <iostream>
 #include <sstream>
 #include <unordered_set>
 
@@ -593,21 +593,29 @@ namespace Pastella
             CompleteBlock completeBlock;
             completeBlock.blockHash = block.blockHash;
 
-            std::cout << "[SYNC] Processing block, hasBlock: " << (block.hasBlock ? "YES" : "NO") << std::endl << std::flush;
+            std::stringstream stream;
+            stream << "[SYNC] Processing block, hasBlock: " << (block.hasBlock ? "YES" : "NO");
+            Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
 
             if (block.hasBlock)
             {
                 completeBlock.block = std::move(block.block);
 
-                std::cout << "[SYNC] Coinbase transaction outputs: " << completeBlock.block->baseTransaction.outputs.size() << std::endl << std::flush;
+                std::stringstream coinbaseStream;
+                coinbaseStream << "[SYNC] Coinbase transaction outputs: " << completeBlock.block->baseTransaction.outputs.size();
+                Logger::logger.log(coinbaseStream.str(), Logger::DEBUG, {Logger::SYNC});
 
                 completeBlock.transactions.push_back(createTransactionPrefix(completeBlock.block->baseTransaction));
 
-                std::cout << "[SYNC] Added coinbase to transactions, total: " << completeBlock.transactions.size() << std::endl << std::flush;
+                std::stringstream addedStream;
+                addedStream << "[SYNC] Added coinbase to transactions, total: " << completeBlock.transactions.size();
+                Logger::logger.log(addedStream.str(), Logger::DEBUG, {Logger::SYNC});
 
                 try
                 {
-                    std::cout << "[SYNC] Processing " << block.txsShortInfo.size() << " regular transactions" << std::endl << std::flush;
+                    std::stringstream regularStream;
+                    regularStream << "[SYNC] Processing " << block.txsShortInfo.size() << " regular transactions";
+                    Logger::logger.log(regularStream.str(), Logger::DEBUG, {Logger::SYNC});
 
                     for (const auto &txShortInfo : block.txsShortInfo)
                     {
@@ -615,11 +623,15 @@ namespace Pastella
                             txShortInfo.txPrefix, reinterpret_cast<const Hash &>(txShortInfo.txId)));
                     }
 
-                    std::cout << "[SYNC] Total transactions after adding regular txs: " << completeBlock.transactions.size() << std::endl << std::flush;
+                    std::stringstream totalStream;
+                    totalStream << "[SYNC] Total transactions after adding regular txs: " << completeBlock.transactions.size();
+                    Logger::logger.log(totalStream.str(), Logger::DEBUG, {Logger::SYNC});
                 }
                 catch (const std::exception &e)
                 {
-                    std::cout << "[SYNC] EXCEPTION: " << e.what() << std::endl << std::flush;
+                    std::stringstream exceptStream;
+                    exceptStream << "[SYNC] EXCEPTION: " << e.what();
+                    Logger::logger.log(exceptStream.str(), Logger::DEBUG, {Logger::SYNC});
                     m_logger(ERROR) << "Failed to process blocks: " << e.what();
                     setFutureStateIf(State::idle, [this] { return m_futureState != State::stopped; });
                     m_observerManager.notify(
@@ -630,10 +642,12 @@ namespace Pastella
             }
             else
             {
-                std::cout << "[SYNC] WARNING: block.hasBlock is FALSE!" << std::endl << std::flush;
+                Logger::logger.log("[SYNC] WARNING: block.hasBlock is FALSE!", Logger::DEBUG, {Logger::SYNC});
             }
 
-            std::cout << "[SYNC] Final transaction count for block: " << completeBlock.transactions.size() << std::endl << std::flush;
+            std::stringstream finalStream;
+            finalStream << "[SYNC] Final transaction count for block: " << completeBlock.transactions.size();
+            Logger::logger.log(finalStream.str(), Logger::DEBUG, {Logger::SYNC});
 
             interval.blocks.push_back(completeBlock.blockHash);
             blocks.push_back(std::move(completeBlock));

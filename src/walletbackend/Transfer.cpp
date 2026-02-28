@@ -670,7 +670,7 @@ namespace SendTransaction
             }
             else
             {
-                std::cout << "[ERROR] prepareRingParticipants: Missing globalOutputIndex for input!" << std::endl;
+                Logger::logger.log("[ERROR] prepareRingParticipants: Missing globalOutputIndex for input!", Logger::WARNING, {Logger::TRANSACTIONS});
             }
 
             result.push_back(obscuredInput);

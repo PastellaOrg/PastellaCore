@@ -8,8 +8,9 @@
 #include "PastellaFormatUtils.h"
 #include "common/TransactionExtra.h"
 #include "crypto/crypto.h"
+#include "logger/Logger.h"
 
-#include <iostream>
+#include <sstream>
 #include <unordered_set>
 
 using namespace Crypto;
@@ -155,7 +156,9 @@ namespace Pastella
          * No key derivation needed - just compare keys directly! */
 
         /* DEBUG: Log what we're scanning */
-        std::cout << "[WALLET DEBUG] Scanning transaction with " << transaction.outputs.size() << " outputs" << std::endl;
+        std::stringstream stream;
+        stream << "[WALLET DEBUG] Scanning transaction with " << transaction.outputs.size() << " outputs";
+        Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
 
         amount = 0;
         uint32_t outputIndex = 0;
@@ -168,11 +171,16 @@ namespace Pastella
                 const auto &keyOutput = boost::get<KeyOutput>(o.target);
 
                 /* DEBUG: Log each output */
-                std::cout << "[WALLET DEBUG] Output #" << outputIndex << " key: " << Common::podToHex(keyOutput.key) << std::endl;
+                std::stringstream outStream;
+                outStream << "[WALLET DEBUG] Output #" << outputIndex << " key: " << Common::podToHex(keyOutput.key);
+                Logger::logger.log(outStream.str(), Logger::DEBUG, {Logger::SYNC});
+
                 if (keyOutput.key == addr.publicKey)
                 {
-                    std::cout << "[WALLET DEBUG] MATCH FOUND! Output #" << outputIndex << " belongs to this wallet!" << std::endl;
-                    std::cout << "[WALLET DEBUG] Amount: " << o.amount << " atomic units" << std::endl;
+                    std::stringstream matchStream;
+                    matchStream << "[WALLET DEBUG] MATCH FOUND! Output #" << outputIndex << " belongs to this wallet!\n"
+                               << "[WALLET DEBUG] Amount: " << o.amount << " atomic units";
+                    Logger::logger.log(matchStream.str(), Logger::DEBUG, {Logger::SYNC});
 
                     out.push_back(outputIndex);
                     amount += o.amount;
@@ -182,8 +190,9 @@ namespace Pastella
             }
         }
 
-        std::cout << "[WALLET DEBUG] Total outputs found: " << out.size() << ", Total amount: " << amount << std::endl;
-        std::cout << "[WALLET DEBUG] ==============================" << std::endl;
+        std::stringstream totalStream;
+        totalStream << "[WALLET DEBUG] Total outputs found: " << out.size() << ", Total amount: " << amount;
+        Logger::logger.log(totalStream.str(), Logger::DEBUG, {Logger::SYNC});
 
         return true;
     }

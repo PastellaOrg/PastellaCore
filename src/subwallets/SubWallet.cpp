@@ -241,8 +241,12 @@ Crypto::SecretKey SubWallet::privateKey() const
 
 void SubWallet::markInputAsSpent(const Crypto::Hash parentTransactionHash, const uint64_t transactionIndex, const uint64_t spendHeight)
 {
-    std::cout << "[markInputAsSpent] Called with parentTx=" << parentTransactionHash
-              << " index=" << transactionIndex << " height=" << spendHeight << std::endl;
+    std::stringstream stream;
+
+    stream << "[markInputAsSpent] Called with parentTx=" << parentTransactionHash
+          << " index=" << transactionIndex << " height=" << spendHeight;
+
+    Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
 
     /* TRANSPARENT SYSTEM: Find the input by (parentTransactionHash, transactionIndex) NOT by key!
      * This is necessary because multiple outputs can have the same key! */
@@ -271,7 +275,11 @@ void SubWallet::markInputAsSpent(const Crypto::Hash parentTransactionHash, const
 
     if (it != m_unspentInputs.end())
     {
-        std::cout << "[markInputAsSpent] Found in m_unspentInputs: amount=" << it->amount << std::endl;
+        std::stringstream stream;
+
+        stream << "[markInputAsSpent] Found in m_unspentInputs: amount=" << it->amount;
+
+        Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
 
         /* Set the spend height */
         it->spendHeight = spendHeight;
@@ -297,7 +305,11 @@ void SubWallet::markInputAsSpent(const Crypto::Hash parentTransactionHash, const
         });
     if (it != m_lockedInputs.end())
     {
-        std::cout << "[markInputAsSpent] Found in m_lockedInputs: amount=" << it->amount << std::endl;
+        std::stringstream stream;
+
+        stream << "[markInputAsSpent] Found in m_lockedInputs: amount=" << it->amount;
+
+        Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
 
         /* Set the spend height */
         it->spendHeight = spendHeight;
@@ -471,9 +483,13 @@ void SubWallet::removeCancelledTransactions(const std::unordered_set<Crypto::Has
     auto it = std::remove_if(m_lockedInputs.begin(), m_lockedInputs.end(), [&cancelledTransactions, this](auto &input) {
         if (cancelledTransactions.find(input.parentTransactionHash) != cancelledTransactions.end())
         {
-            std::cout << "[removeCancelledTransactions] Moving input back to unspent: amount="
-                      << input.amount << " key=" << input.key << " parentTx="
-                      << input.parentTransactionHash << std::endl;
+            std::stringstream stream;
+
+            stream << "[removeCancelledTransactions] Moving input back to unspent: amount="
+                   << input.amount << " key=" << input.key << " parentTx="
+                   << input.parentTransactionHash;
+
+            Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
 
             input.spendHeight = 0;
 

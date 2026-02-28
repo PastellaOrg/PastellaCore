@@ -14,11 +14,12 @@
 #include "pastellacore/PastellaBasicImpl.h"
 #include "pastellacore/PastellaFormatUtils.h"
 #include "pastellacore/TransactionApi.h"
+#include "logger/Logger.h"
 
 #include <config/Constants.h>
 #include <future>
 #include <numeric>
-#include <iostream>
+#include <sstream>
 
 using namespace Crypto;
 using namespace Logging;
@@ -61,16 +62,21 @@ namespace
 
         size_t outputCount = tx.getOutputCount();
 
-        std::cout << "[TRANSFER CONSUMER] ===========================================" << std::endl << std::flush;
-        std::cout << "[TRANSFER CONSUMER] findMyOutputs called" << std::endl << std::flush;
-        std::cout << "[TRANSFER CONSUMER] Transaction has " << outputCount << " outputs" << std::endl << std::flush;
+        std::stringstream stream;
+
+        stream << "[TRANSFER CONSUMER] findMyOutputs called" << "\n"
+               << "[TRANSFER CONSUMER] Transaction has " << outputCount << " outputs";
+
+        Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
 
         for (const auto &key : keys)
         {
-            std::cout << "[TRANSFER CONSUMER]   - " << Common::podToHex(key) << std::endl << std::flush;
+            std::stringstream keyStream;
+            keyStream << "[TRANSFER CONSUMER]   - " << Common::podToHex(key);
+            Logger::logger.log(keyStream.str(), Logger::DEBUG, {Logger::SYNC});
         }
 
-        std::cout << "[TRANSFER CONSUMER] Scanning outputs:" << std::endl << std::flush;
+        Logger::logger.log("[TRANSFER CONSUMER] Scanning outputs:", Logger::DEBUG, {Logger::SYNC});
 
         for (size_t idx = 0; idx < outputCount; ++idx)
         {
@@ -85,21 +91,27 @@ namespace
                 std::string outKeyHex = Common::podToHex(out.key);
                 bool isMine = keys.find(out.key) != keys.end();
 
-                std::cout << "[TRANSFER CONSUMER]   Output #" << idx << ":" << std::endl << std::flush;
-                std::cout << "[TRANSFER CONSUMER]     Key:    " << outKeyHex << std::endl << std::flush;
-                std::cout << "[TRANSFER CONSUMER]     Amount: " << amount << " atomic units" << std::endl << std::flush;
-                std::cout << "[TRANSFER CONSUMER]     Mine:   " << (isMine ? "YES ✓✓✓" : "NO ✗") << std::endl << std::flush;
+                std::stringstream outStream;
+                outStream << "[TRANSFER CONSUMER]   Output #" << idx << ":\n"
+                          << "[TRANSFER CONSUMER]     Key:    " << outKeyHex << "\n"
+                          << "[TRANSFER CONSUMER]     Amount: " << amount << " atomic units\n"
+                          << "[TRANSFER CONSUMER]     Mine:   " << (isMine ? "YES" : "NO");
+
+                Logger::logger.log(outStream.str(), Logger::DEBUG, {Logger::SYNC});
 
                 if (isMine)
                 {
-                    std::cout << "[TRANSFER CONSUMER]     ✓✓✓ MATCH FOUND! Output belongs to wallet!" << std::endl << std::flush;
+                    std::stringstream matchStream;
+                    matchStream << "[TRANSFER CONSUMER] MATCH FOUND! Output #" << idx << " belongs to wallet!";
+                    Logger::logger.log(matchStream.str(), Logger::DEBUG, {Logger::SYNC});
                     outputs[out.key].push_back(static_cast<uint32_t>(idx));
                 }
             }
         }
 
-        std::cout << "[TRANSFER CONSUMER] Total outputs found: " << outputs.size() << std::endl << std::flush;
-        std::cout << "[TRANSFER CONSUMER] ===========================================" << std::endl << std::flush;
+        std::stringstream totalStream;
+        totalStream << "[TRANSFER CONSUMER] Total outputs found: " << outputs.size();
+        Logger::logger.log(totalStream.str(), Logger::DEBUG, {Logger::SYNC});
     }
 
     std::vector<Crypto::Hash> getBlockHashes(const Pastella::CompleteBlock *blocks, size_t count)
@@ -235,11 +247,11 @@ namespace Pastella
         assert(count > 0);
 
         /* COMPREHENSIVE DEBUG LOGGING */
-        std::cout << "\n[TRANSFER CONSUMER] =======================================" << std::endl << std::flush;
-        std::cout << "[TRANSFER CONSUMER] onNewBlocks called!" << std::endl << std::flush;
-        std::cout << "[TRANSFER CONSUMER] Start height: " << startHeight << std::endl << std::flush;
-        std::cout << "[TRANSFER CONSUMER] Block count: " << count << std::endl << std::flush;
-        std::cout << "[TRANSFER CONSUMER] =======================================" << std::endl << std::flush;
+        std::stringstream stream;
+        stream << "\n[TRANSFER CONSUMER] onNewBlocks called!\n"
+               << "[TRANSFER CONSUMER] Start height: " << startHeight << "\n"
+               << "[TRANSFER CONSUMER] Block count: " << count;
+        Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
 
         struct Tx
         {
@@ -273,7 +285,9 @@ namespace Pastella
 
                 if (!block.is_initialized())
                 {
-                    std::cout << "[TRANSFER CONSUMER] Block #" << (startHeight + i) << " not initialized!" << std::endl << std::flush;
+                    std::stringstream stream;
+                    stream << "[TRANSFER CONSUMER] Block #" << (startHeight + i) << " not initialized!";
+                    Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
                     ++emptyBlockCount;
                     continue;
                 }
@@ -290,13 +304,18 @@ namespace Pastella
                 blockInfo.timestamp = block->timestamp;
                 blockInfo.transactionIndex = 0; // position in block
 
-                std::cout << "[TRANSFER CONSUMER] Processing block #" << blockInfo.height
-                          << " with " << blocks[i].transactions.size() << " transactions" << std::endl << std::flush;
+                std::stringstream blockStream;
+                blockStream << "[TRANSFER CONSUMER] Processing block #" << blockInfo.height
+                           << " with " << blocks[i].transactions.size() << " transactions";
+                Logger::logger.log(blockStream.str(), Logger::DEBUG, {Logger::SYNC});
 
                 if (blocks[i].transactions.size() == 0)
                 {
-                    std::cout << "[TRANSFER CONSUMER] WARNING: Block has NO transactions!" << std::endl << std::flush;
-                    std::cout << "[TRANSFER CONSUMER] Block template has coinbase: " << (block->baseTransaction.outputs.size() > 0 ? "YES" : "NO") << std::endl << std::flush;
+                    std::stringstream warnStream;
+                    warnStream << "[TRANSFER CONSUMER] WARNING: Block has NO transactions!\n"
+                              << "[TRANSFER CONSUMER] Block template has coinbase: "
+                              << (block->baseTransaction.outputs.size() > 0 ? "YES" : "NO");
+                    Logger::logger.log(warnStream.str(), Logger::DEBUG, {Logger::SYNC});
                 }
 
                 for (const auto &tx : blocks[i].transactions)
@@ -304,9 +323,11 @@ namespace Pastella
                     auto pubKey = tx->getTransactionPublicKey();
                     bool isLastTransactionInBlock = blockInfo.transactionIndex + 1 == blocks[i].transactions.size();
 
-                    std::cout << "[TRANSFER CONSUMER]   Transaction #" << blockInfo.transactionIndex
-                              << " hash: " << Common::podToHex(tx->getTransactionHash()) << std::endl << std::flush;
-                    std::cout << "[TRANSFER CONSUMER]   Outputs: " << tx->getOutputCount() << std::endl << std::flush;
+                    std::stringstream txStream;
+                    txStream << "[TRANSFER CONSUMER]   Transaction #" << blockInfo.transactionIndex
+                            << " hash: " << Common::podToHex(tx->getTransactionHash()) << "\n"
+                            << "[TRANSFER CONSUMER]   Outputs: " << tx->getOutputCount();
+                    Logger::logger.log(txStream.str(), Logger::DEBUG, {Logger::SYNC});
 
                     /* Need to ensure we add the last tx in the block even if it
                      * has a null pub key, as we use this to indicate when we
@@ -602,8 +623,10 @@ namespace Pastella
     {
         std::unordered_map<PublicKey, std::vector<uint32_t>> outputs;
 
-        std::cout << "[TRANSFER CONSUMER] preprocessOutputs called for tx: "
-                  << Common::podToHex(tx.getTransactionHash()) << std::endl << std::flush;
+        std::stringstream stream;
+        stream << "[TRANSFER CONSUMER] preprocessOutputs called for tx: "
+               << Common::podToHex(tx.getTransactionHash());
+        Logger::logger.log(stream.str(), Logger::DEBUG, {Logger::SYNC});
 
         try
         {
@@ -611,7 +634,9 @@ namespace Pastella
         }
         catch (const std::exception &e)
         {
-            std::cout << "[TRANSFER CONSUMER] EXCEPTION in findMyOutputs: " << e.what() << std::endl;
+            std::stringstream exceptStream;
+            exceptStream << "[TRANSFER CONSUMER] EXCEPTION in findMyOutputs: " << e.what();
+            Logger::logger.log(exceptStream.str(), Logger::DEBUG, {Logger::SYNC});
             m_logger(WARNING) << "Failed to process transaction: " << e.what() << ", transaction hash "
                                           << Common::podToHex(tx.getTransactionHash());
             return std::error_code();
@@ -619,11 +644,13 @@ namespace Pastella
 
         if (outputs.empty())
         {
-            std::cout << "[TRANSFER CONSUMER] No outputs found for this wallet" << std::endl;
+            Logger::logger.log("[TRANSFER CONSUMER] No outputs found for this wallet", Logger::DEBUG, {Logger::SYNC});
             return std::error_code();
         }
 
-        std::cout << "[TRANSFER CONSUMER] FOUND " << outputs.size() << " outputs belonging to wallet!" << std::endl;
+        std::stringstream foundStream;
+        foundStream << "[TRANSFER CONSUMER] FOUND " << outputs.size() << " outputs belonging to wallet!";
+        Logger::logger.log(foundStream.str(), Logger::DEBUG, {Logger::SYNC});
 
         std::error_code errorCode;
         auto txHash = tx.getTransactionHash();

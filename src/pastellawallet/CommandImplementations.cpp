@@ -121,7 +121,9 @@ void balance(const std::shared_ptr<WalletBackend> walletBackend)
     std::cout << "Locked balance:       " << WarningMsg(Utilities::formatAmount(adjustedLockedBalance))
               << "\nTotal balance:        " << InformationMsg(Utilities::formatAmount(totalBalance)) << "\n";
 
-    std::cout << "[DEBUG] Locked (unconfirmed) balance: " << WarningMsg(Utilities::formatAmount(lockedBalance)) << "\n";
+    std::stringstream debugStream;
+    debugStream << "[DEBUG] Locked (unconfirmed) balance: " << lockedBalance;
+    Logger::logger.log(debugStream.str(), Logger::DEBUG, {Logger::SYNC});
     /* View wallet warning message removed - not applicable in transparent system */
 
     const auto [walletBlockCount, localDaemonBlockCount, networkBlockCount] = walletBackend->getSyncStatus();
@@ -628,9 +630,9 @@ void stake(const std::shared_ptr<WalletBackend> walletBackend)
     std::cout << InformationMsg("Staking address: ") << SuccessMsg(address) << std::endl;
 
     /* Debug information */
-    std::cout << std::endl << "[DEBUG] Using primary address: " << address << std::endl;
-    std::cout << "[DEBUG] Amount in atomic units: " << amount << std::endl;
-    std::cout << "[DEBUG] Lock duration in days: " << lockDays << std::endl;
+    std::stringstream debugStream1;
+    debugStream1 << "[DEBUG] Using primary address: " << address << ", Amount in atomic units: " << amount << ", Lock duration in days: " << lockDays;
+    Logger::logger.log(debugStream1.str(), Logger::DEBUG, {Logger::TRANSACTIONS});
 
     /* Calculate estimated rewards */
     uint32_t ratePerDay = 0;
@@ -650,8 +652,9 @@ void stake(const std::shared_ptr<WalletBackend> walletBackend)
         std::cout << InformationMsg("Estimated yearly reward: ") << SuccessMsg(Utilities::formatAmount(static_cast<uint64_t>(yearlyReward)) + " " + WalletConfig::ticker) << std::endl;
         std::cout << InformationMsg("APY: ") << SuccessMsg(std::to_string(ratePerDay) + "%") << std::endl;
 
-        std::cout << "[DEBUG] Daily rate (decimal): " << dailyRateDecimal << std::endl;
-        std::cout << "[DEBUG] Daily reward (atomic): " << static_cast<uint64_t>(dailyReward) << std::endl;
+        std::stringstream debugStream2;
+        debugStream2 << "[DEBUG] Daily rate (decimal): " << dailyRateDecimal << ", Daily reward (atomic): " << static_cast<uint64_t>(dailyReward);
+        Logger::logger.log(debugStream2.str(), Logger::DEBUG, {Logger::TRANSACTIONS});
     }
 
     /* Confirmation */
@@ -667,14 +670,18 @@ void stake(const std::shared_ptr<WalletBackend> walletBackend)
     }
 
     std::cout << std::endl << InformationMsg("Creating staking transaction...") << std::endl;
-    std::cout << "[DEBUG] Calling walletBackend->stake()..." << std::endl;
+
+    Logger::logger.log("[DEBUG] Calling walletBackend->stake()...", Logger::DEBUG, {Logger::TRANSACTIONS});
 
     /* Call wallet backend staking function */
     const auto [error, hash, preparedTransaction, rewardAddress] = walletBackend->stake(amount, lockDays, address);
 
     if (error) {
         std::cout << WarningMsg("Failed to create staking transaction: ") << error << std::endl;
-        std::cout << "[DEBUG] Error details: " << error << std::endl;
+
+        std::stringstream errorStream;
+        errorStream << "[DEBUG] Error details: " << error;
+        Logger::logger.log(errorStream.str(), Logger::DEBUG, {Logger::TRANSACTIONS});
         return;
     }
 
