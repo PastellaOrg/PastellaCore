@@ -1,13 +1,12 @@
-## 🚀 Release %RELEASE_VERSION%
+# Pastella vx.x.x Release Notes
 
-### Highlights
-- Major feature one
-- Major feature two
+## Code Category
 
-### What's Changed
-- **Fixed:** Bug fix description
-- **Added:** New feature description
-- **Improved:** Improvement description
+### Fixed this and that
+Explanation
 
-### 📋 Full Changelog
-- %COMMITS%
+---
+
+## Commits
+
+- [`0000000`](https://github.com/PastellaOrg/PastellaCore/commit/0000000) - This is a commit comment
