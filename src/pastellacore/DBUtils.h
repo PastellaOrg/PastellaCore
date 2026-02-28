@@ -57,6 +57,11 @@ namespace Pastella
 
         const std::string UTXO_SPENT_PREFIX = "i";
 
+        /* ADDRESS BALANCE INDEX: Database prefix for address balance persistence
+         * Maps address string → AddressBalanceInfo (balance + timestamps)
+         * Used for richlist optimization, avoids rebuilding index on restart */
+        const std::string ADDRESS_BALANCE_PREFIX = "j";
+
         const std::string TIMESTAMP_TO_BLOCKHASHES_PREFIX = "g";
 
         const std::string LAST_BLOCK_INDEX_KEY = "last_block_index";

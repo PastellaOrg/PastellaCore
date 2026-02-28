@@ -217,6 +217,18 @@ namespace Pastella
         virtual std::vector<RawBlock>
             getNonEmptyBlocks(const uint64_t startHeight, const size_t blockCount) const override;
 
+        /* ADDRESS BALANCE INDEX: Database operations for address balance persistence
+         *
+         * These methods allow Core to read/write address balances directly to the database
+         * without going through the full blockchain cache state mechanism */
+
+        /* Write address balances to database */
+        std::error_code writeAddressBalances(
+            const std::unordered_map<std::string, AddressBalanceInfo> &balances);
+
+        /* Read all address balances from database */
+        std::unordered_map<std::string, AddressBalanceInfo> readAddressBalances();
+
       private:
         const Currency &currency;
 

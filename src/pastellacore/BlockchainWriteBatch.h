@@ -10,6 +10,8 @@
 #include "DatabaseCacheData.h"
 #include "IWriteBatch.h"
 
+#include <string>
+
 namespace Pastella
 {
     class BlockchainWriteBatch : public IWriteBatch
@@ -95,6 +97,13 @@ namespace Pastella
         BlockchainWriteBatch &removeSpentUtxo(
             const Crypto::Hash &transactionHash,
             uint32_t outputIndex);
+
+        /* ADDRESS BALANCE INDEX: Database write operations for address balance persistence */
+        BlockchainWriteBatch &insertAddressBalance(
+            const std::string &address,
+            const AddressBalanceInfo &balanceInfo);
+
+        BlockchainWriteBatch &removeAddressBalance(const std::string &address);
 
         std::vector<std::pair<std::string, std::string>> extractRawDataToInsert() override;
 

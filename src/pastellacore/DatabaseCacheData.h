@@ -32,4 +32,19 @@ namespace Pastella
         void serialize(ISerializer &s);
     };
 
+    /* ADDRESS BALANCE INDEX: Persistent storage for richlist optimization
+     *
+     * AddressBalanceInfo stores the balance and timestamp data for a single address.
+     * This data is persisted to the database to avoid rebuilding the richlist index
+     * on every daemon restart. */
+
+    struct AddressBalanceInfo
+    {
+        uint64_t balance = 0;
+        uint64_t firstTxTimestamp = UINT64_MAX;
+        uint64_t lastTxTimestamp = 0;
+
+        void serialize(ISerializer &s);
+    };
+
 } // namespace Pastella

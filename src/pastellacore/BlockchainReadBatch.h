@@ -91,6 +91,9 @@ namespace Pastella
         /* Flag to request all UTXOs from database (used by /getutxos RPC endpoint) */
         bool requestAllUtxosFlag = false;
 
+        /* ADDRESS BALANCE INDEX: Map of address → balance info loaded from database */
+        std::unordered_map<std::string, AddressBalanceInfo> addressBalances;
+
         std::pair<uint32_t, bool> lastBlockIndex = {0, false};
 
         std::pair<uint32_t, bool> keyOutputAmountsCount = {{}, false};

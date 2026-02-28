@@ -24,4 +24,11 @@ namespace Pastella
         s(outputIndex, "output_index");
     }
 
+    void AddressBalanceInfo::serialize(ISerializer &s)
+    {
+        s(balance, "balance");
+        s(firstTxTimestamp, "first_tx_timestamp");
+        s(lastTxTimestamp, "last_tx_timestamp");
+    }
+
 } // namespace Pastella

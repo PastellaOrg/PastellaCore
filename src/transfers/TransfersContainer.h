@@ -159,7 +159,7 @@ namespace Pastella
         Spent
     };
 
-    struct KeyOutputInfo
+    struct KeyOutputStateInfo
     {
         KeyImageState state;
         size_t count;

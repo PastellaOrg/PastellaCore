@@ -14,10 +14,13 @@
 #include <common/TransactionExtra.h>
 #include <config/Constants.h>
 #include <config/WalletConfig.h>
+#include <fstream>
+#include <sstream>
 #include <pastellacore/BlockchainCache.h>
 #include <pastellacore/BlockchainStorage.h>
 #include <pastellacore/BlockchainUtils.h>
 #include <pastellacore/Core.h>
+#include <pastellacore/DatabaseBlockchainCache.h>
 #include <pastellacore/CoreErrors.h>
 #include <pastellacore/PastellaFormatUtils.h>
 #include <pastellacore/GovernanceSystem.h>
@@ -276,6 +279,8 @@ namespace Pastella
 
         governanceManager = std::make_unique<GovernanceManager>(currency, logger);
         governanceManager->initialize();
+
+        m_addressIndexBuilt = false;
     }
 
     Core::~Core()
@@ -1540,6 +1545,20 @@ namespace Pastella
                        be in the pool that would now be considered invalid */
                     checkAndRemoveInvalidPoolTransactions(validatorState);
 
+                    /* Update address balance index for richlist */
+                    {
+                        std::lock_guard<std::mutex> lock(m_addressBalancesMutex);
+                        updateAddressBalancesForBlock(blockTemplate, blockIndex, transactions);
+                    }
+
+                    /* Write address balances to database periodically (every 100 blocks)
+                     * Note: This uses the cache's database write mechanism
+                     * For full integration, address balances should be added to the cache's write batch */
+                    if ((blockIndex + 1) % 100 == 0)
+                    {
+                        writeAddressBalancesToDatabase();
+                    }
+
                     ret = error::AddBlockErrorCode::ADDED_TO_MAIN;
                     LoggerRef loggerBlockchain(logger.getLogger(), "Core.Blockchain");
                     loggerBlockchain(Logging::DEBUGGING) << "Block " << blockStr << " added to main chain.";
@@ -2604,6 +2623,9 @@ namespace Pastella
         deleteAlternativeChains();
         mergeMainChainSegments();
         chainsLeaves[0]->save();
+
+        /* Write address balances to database on shutdown */
+        writeAddressBalancesToDatabase();
     }
 
     void Core::load()
@@ -2670,6 +2692,13 @@ namespace Pastella
                                                 << Pastella::parameters::staking::STAKING_ENABLE_HEIGHT
                                                 << ", skipping staking pool restore";
         }
+
+        /* LOAD ADDRESS BALANCE INDEX: Try to load from disk
+         *
+         * This loads the address balance index that was saved on previous shutdown.
+         * If the file doesn't exist or is corrupted, the index will be rebuilt
+         * on the first richlist API call. */
+        loadAddressBalancesFromDatabase();
 
         initialized = true;
     }
@@ -4087,172 +4116,181 @@ namespace Pastella
         return maturedRewards;
     }
 
-    std::vector<Pastella::RichListEntry> Core::getRichList(size_t count) const
+    /* ========================================================================= */
+    /* Address Balance Index for RichList                                         */
+    /* ========================================================================= */
+
+    void Core::buildAddressBalanceIndex()
     {
         throwIfNotInitialized();
 
-        /* Structure to track address information */
-        struct AddressInfo
-        {
-            uint64_t balance = 0;
-            uint64_t firstTxTimestamp = UINT64_MAX;
-            uint64_t lastTxTimestamp = 0;
-        };
+        LoggerRef loggerIndex(logger.getLogger(), "Core.AddressIndex");
+        loggerIndex(Logging::INFO) << "Building address balance index...";
 
-        /* Map: address -> balance and timestamps */
-        std::unordered_map<std::string, AddressInfo> addressMap;
+        std::lock_guard<std::mutex> lock(m_addressBalancesMutex);
+        m_addressBalances.clear();
 
-        /* Get current blockchain height */
         const uint32_t topHeight = getTopBlockIndex();
 
-        /* Scan all blocks and transactions */
         for (uint32_t height = 0; height <= topHeight; height++)
         {
             if (height % 1000 == 0)
             {
-                logger(Logging::DEBUGGING) << "Scanning block " << height << " of " << topHeight;
+                loggerIndex(Logging::DEBUGGING) << "Scanning block " << height << " of " << topHeight;
             }
 
             try
             {
-                /* Get block */
                 const Crypto::Hash blockHash = getBlockHashByIndex(height);
                 const BlockTemplate block = getBlockByHash(blockHash);
 
-                /* Process coinbase transaction */
-                Transaction coinbaseTx = block.baseTransaction;
-
-                /* Iterate through all coinbase outputs and derive addresses from output keys */
-                for (const auto &output : coinbaseTx.outputs)
-                {
-                    if (output.target.type() == typeid(Pastella::KeyOutput))
-                    {
-                        const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
-                        /* Convert output key to address */
-                        const std::string address = Utilities::publicKeyToAddress(keyOutput.key);
-
-                        /* Add output amount to this address's balance */
-                        addressMap[address].balance += output.amount;
-                        addressMap[address].firstTxTimestamp = std::min(addressMap[address].firstTxTimestamp, block.timestamp);
-                        addressMap[address].lastTxTimestamp = std::max(addressMap[address].lastTxTimestamp, block.timestamp);
-                    }
-                }
-
-                /* Process regular transactions */
+                /* Get transactions for this block */
+                std::vector<CachedTransaction> transactions;
                 for (const Crypto::Hash &txHash : block.transactionHashes)
                 {
-                    /* Get transaction */
                     auto txRaw = getTransaction(txHash);
-                    if (!txRaw.has_value())
+                    if (txRaw.has_value())
                     {
-                        continue;
-                    }
-
-                    Transaction transaction;
-                    fromBinaryArray(transaction, txRaw.value());
-
-                    /* Process outputs (add to recipient balances) */
-                    /* Iterate through all transaction outputs and derive addresses from output keys */
-                    for (const auto &output : transaction.outputs)
-                    {
-                        if (output.target.type() == typeid(Pastella::KeyOutput))
-                        {
-                            const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
-                            /* Convert output key to address */
-                            const std::string address = Utilities::publicKeyToAddress(keyOutput.key);
-
-                            /* Add output amount to this address's balance */
-                            addressMap[address].balance += output.amount;
-                            addressMap[address].firstTxTimestamp = std::min(addressMap[address].firstTxTimestamp, block.timestamp);
-                            addressMap[address].lastTxTimestamp = std::max(addressMap[address].lastTxTimestamp, block.timestamp);
-                        }
-                    }
-
-                    /* Process inputs (subtract from sender balances) */
-                    TransactionDetails txDetails;
-                    try
-                    {
-                        txDetails = getTransactionDetails(txHash);
-
-                        for (const auto &inputDetails : txDetails.inputs)
-                        {
-                            if (inputDetails.type() == typeid(Pastella::KeyInputDetails))
-                            {
-                                const auto &keyInputDetails = boost::get<Pastella::KeyInputDetails>(inputDetails);
-
-                                /* Look up previous transaction to find the sender */
-                                if (keyInputDetails.output.transactionHash != Crypto::Hash())
-                                {
-                                    try
-                                    {
-                                        const auto prevTxDetails = getTransactionDetails(keyInputDetails.output.transactionHash);
-                                        Transaction prevTx;
-                                        const auto prevTxRaw = getTransaction(keyInputDetails.output.transactionHash);
-
-                                        if (prevTxRaw.has_value())
-                                        {
-                                            fromBinaryArray(prevTx, prevTxRaw.value());
-
-                                            /* Get the output being spent */
-                                            if (keyInputDetails.output.number < prevTx.outputs.size())
-                                            {
-                                                const auto &prevOutput = prevTx.outputs[keyInputDetails.output.number];
-
-                                                if (prevOutput.target.type() == typeid(Pastella::KeyOutput))
-                                                {
-                                                    const auto &prevKeyOutput = boost::get<Pastella::KeyOutput>(prevOutput.target);
-
-                                                    /* Convert output key to address */
-                                                    const std::string address = Utilities::publicKeyToAddress(prevKeyOutput.key);
-
-                                                    /* Subtract from balance (this output was spent) */
-                                                    const KeyInput &keyInput = keyInputDetails.input;
-                                                    addressMap[address].balance -= keyInput.amount;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    catch (const std::exception &e)
-                                    {
-                                        logger(Logging::WARNING) << "Error looking up previous transaction for input: " << e.what();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch (const std::exception &e)
-                    {
-                        logger(Logging::WARNING) << "Error getting transaction details for rich list: " << e.what();
+                        transactions.emplace_back(txRaw.value());
                     }
                 }
+
+                updateAddressBalancesForBlock(block, height, transactions);
             }
             catch (const std::exception &e)
             {
-                logger(Logging::WARNING) << "Error processing block " << height << " for rich list: " << e.what();
+                loggerIndex(Logging::WARNING) << "Error processing block " << height << " for address index: " << e.what();
             }
         }
 
+        m_addressIndexBuilt = true;
+        loggerIndex(Logging::INFO) << "Address balance index built. Total addresses: " << m_addressBalances.size();
+    }
+
+    void Core::updateAddressBalancesForBlock(
+        const BlockTemplate &block,
+        uint32_t blockIndex,
+        const std::vector<CachedTransaction> &transactions)
+    {
+        /* NOTE: This function should be called WITH m_addressBalancesMutex already locked!
+         * The caller is responsible for locking to avoid deadlocks. */
+
+        /* Track addresses changed in this block */
+        std::unordered_set<std::string> addressesChangedInBlock;
+
+        /* Process coinbase transaction outputs */
+        for (const auto &output : block.baseTransaction.outputs)
+        {
+            if (output.target.type() == typeid(Pastella::KeyOutput))
+            {
+                const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
+                const std::string address = Utilities::publicKeyToAddress(keyOutput.key);
+
+                m_addressBalances[address].balance += output.amount;
+                m_addressBalances[address].firstTxTimestamp = std::min(m_addressBalances[address].firstTxTimestamp, block.timestamp);
+                m_addressBalances[address].lastTxTimestamp = std::max(m_addressBalances[address].lastTxTimestamp, block.timestamp);
+
+                addressesChangedInBlock.insert(address);
+            }
+        }
+
+        /* Process regular transactions */
+        for (const auto &cachedTransaction : transactions)
+        {
+            const Transaction &transaction = cachedTransaction.getTransaction();
+
+            /* Process outputs (add to recipient balances) */
+            for (const auto &output : transaction.outputs)
+            {
+                if (output.target.type() == typeid(Pastella::KeyOutput))
+                {
+                    const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
+                    const std::string address = Utilities::publicKeyToAddress(keyOutput.key);
+
+                    m_addressBalances[address].balance += output.amount;
+                    m_addressBalances[address].firstTxTimestamp = std::min(m_addressBalances[address].firstTxTimestamp, block.timestamp);
+                    m_addressBalances[address].lastTxTimestamp = std::max(m_addressBalances[address].lastTxTimestamp, block.timestamp);
+
+                    addressesChangedInBlock.insert(address);
+                }
+            }
+
+            /* Process inputs (subtract from sender balances) */
+            for (const auto &input : transaction.inputs)
+            {
+                if (input.type() == typeid(KeyInput))
+                {
+                    const KeyInput &keyInput = boost::get<KeyInput>(input);
+
+                    /* Look up the previous transaction to find the sender */
+                    auto prevTxRaw = getTransaction(keyInput.transactionHash);
+                    if (prevTxRaw.has_value())
+                    {
+                        Transaction prevTx;
+                        fromBinaryArray(prevTx, prevTxRaw.value());
+
+                        if (keyInput.outputIndex < prevTx.outputs.size())
+                        {
+                            const auto &prevOutput = prevTx.outputs[keyInput.outputIndex];
+                            if (prevOutput.target.type() == typeid(Pastella::KeyOutput))
+                            {
+                                const auto &prevKeyOutput = boost::get<Pastella::KeyOutput>(prevOutput.target);
+                                const std::string address = Utilities::publicKeyToAddress(prevKeyOutput.key);
+
+                                /* Subtract from balance (this output was spent) */
+                                m_addressBalances[address].balance -= keyInput.amount;
+
+                                addressesChangedInBlock.insert(address);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /* Add changed addresses to the global list for database write */
+        for (const auto &address : addressesChangedInBlock)
+        {
+            m_addressesChangedSinceLastWrite.push_back(address);
+        }
+    }
+
+    std::vector<Pastella::RichListEntry> Core::getRichList(size_t count) const
+    {
+        throwIfNotInitialized();
+
+        /* Build index if not already built */
+        if (!m_addressIndexBuilt)
+        {
+            const_cast<Core*>(this)->buildAddressBalanceIndex();
+        }
+
         /* Get total supply */
+        const uint32_t topHeight = getTopBlockIndex();
         BlockDetails topBlock = getBlockDetails(getBlockHashByIndex(topHeight));
         const uint64_t totalSupply = topBlock.alreadyGeneratedCoins;
 
-        /* Convert map to vector for sorting */
+        /* Convert cached map to vector for sorting */
         std::vector<Pastella::RichListEntry> richList;
-        richList.reserve(addressMap.size());
 
-        for (const auto &[address, info] : addressMap)
         {
-            /* Only include addresses with non-zero balance */
-            if (info.balance > 0)
-            {
-                Pastella::RichListEntry entry;
-                entry.address = address;
-                entry.balance = info.balance;
-                entry.percentage = (totalSupply > 0) ? (info.balance * 100.0 / totalSupply) : 0.0;
-                entry.firstTxTimestamp = (info.firstTxTimestamp != UINT64_MAX) ? info.firstTxTimestamp : 0;
-                entry.lastTxTimestamp = info.lastTxTimestamp;
+            std::lock_guard<std::mutex> lock(m_addressBalancesMutex);
+            richList.reserve(m_addressBalances.size());
 
-                richList.push_back(entry);
+            for (const auto &[address, info] : m_addressBalances)
+            {
+                /* Only include addresses with non-zero balance */
+                if (info.balance > 0)
+                {
+                    Pastella::RichListEntry entry;
+                    entry.address = address;
+                    entry.balance = info.balance;
+                    entry.percentage = (totalSupply > 0) ? (info.balance * 100.0 / totalSupply) : 0.0;
+                    entry.firstTxTimestamp = (info.firstTxTimestamp != UINT64_MAX) ? info.firstTxTimestamp : 0;
+                    entry.lastTxTimestamp = info.lastTxTimestamp;
+
+                    richList.push_back(entry);
+                }
             }
         }
 
@@ -4270,6 +4308,107 @@ namespace Pastella
         }
 
         return richList;
+    }
+
+    void Core::loadAddressBalancesFromDatabase()
+    {
+        LoggerRef loggerIndex(logger.getLogger(), "Core.AddressIndex");
+
+        /* Load address balances from the database */
+        try
+        {
+            IBlockchainCache *cache = chainsLeaves[0];
+            auto *dbCache = dynamic_cast<DatabaseBlockchainCache *>(cache);
+
+            if (!dbCache)
+            {
+                loggerIndex(Logging::INFO) << "Cache is not DatabaseBlockchainCache, building index on first use";
+                return;
+            }
+
+            /* Try to read from database */
+            auto balances = dbCache->readAddressBalances();
+
+            if (!balances.empty())
+            {
+                std::lock_guard<std::mutex> lock(m_addressBalancesMutex);
+                m_addressBalances = std::move(balances);
+                m_addressIndexBuilt = true;
+                loggerIndex(Logging::INFO) << "Loaded " << m_addressBalances.size()
+                                          << " address balances from database";
+            }
+            else
+            {
+                loggerIndex(Logging::INFO) << "No address balances in database, will build on first use";
+            }
+        }
+        catch (const std::exception &e)
+        {
+            loggerIndex(Logging::WARNING) << "Failed to load address balances from database: " << e.what();
+            m_addressIndexBuilt = false;
+        }
+    }
+
+    void Core::writeAddressBalancesToDatabase()
+    {
+        LoggerRef loggerIndex(logger.getLogger(), "Core.AddressIndex");
+
+        if (m_addressesChangedSinceLastWrite.empty())
+        {
+            return;
+        }
+
+        try
+        {
+            /* Get the main chain cache */
+            IBlockchainCache *cache = chainsLeaves[0];
+            auto *dbCache = dynamic_cast<DatabaseBlockchainCache *>(cache);
+
+            if (!dbCache)
+            {
+                loggerIndex(Logging::WARNING) << "Cannot write address balances: not a database cache";
+                m_addressesChangedSinceLastWrite.clear();
+                return;
+            }
+
+            /* Build map of changed addresses to their balance info */
+            std::unordered_map<std::string, Pastella::AddressBalanceInfo> balancesToWrite;
+
+            {
+                std::lock_guard<std::mutex> lock(m_addressBalancesMutex);
+                for (const auto &address : m_addressesChangedSinceLastWrite)
+                {
+                    auto it = m_addressBalances.find(address);
+                    if (it != m_addressBalances.end())
+                    {
+                        balancesToWrite[address] = it->second;
+                    }
+                }
+            }
+
+            /* Write to database through the cache */
+            if (!balancesToWrite.empty())
+            {
+                auto error = dbCache->writeAddressBalances(balancesToWrite);
+                if (error)
+                {
+                    loggerIndex(Logging::WARNING) << "Failed to write address balances to database: " << error.message();
+                }
+                else
+                {
+                    loggerIndex(Logging::DEBUGGING) << "Wrote " << balancesToWrite.size()
+                                                  << " address balances to database";
+                }
+            }
+
+            /* Clear the list of changed addresses */
+            m_addressesChangedSinceLastWrite.clear();
+        }
+        catch (const std::exception &e)
+        {
+            loggerIndex(Logging::WARNING) << "Failed to write address balances to database: " << e.what();
+            m_addressesChangedSinceLastWrite.clear();
+        }
     }
 
     Pastella::WalletDetails Core::getWalletDetails(

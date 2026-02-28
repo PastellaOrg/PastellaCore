@@ -11,6 +11,7 @@
 #include "CachedTransaction.h"
 #include "Checkpoints.h"
 #include "Currency.h"
+#include "DatabaseCacheData.h"
 #include "IBlockchainCache.h"
 #include "IBlockchainCacheFactory.h"
 #include "ICore.h"
@@ -434,6 +435,25 @@ namespace Pastella
         void switchMainChainStorage(uint32_t splitBlockIndex, IBlockchainCache &newChain);
 
         std::mutex m_submitBlockMutex;
+
+        /* Address Balance Index for RichList */
+        mutable std::unordered_map<std::string, Pastella::AddressBalanceInfo> m_addressBalances;
+        mutable std::mutex m_addressBalancesMutex;
+        mutable bool m_addressIndexBuilt = false;
+
+        void buildAddressBalanceIndex();
+
+        void updateAddressBalancesForBlock(
+            const BlockTemplate &block,
+            uint32_t blockIndex,
+            const std::vector<CachedTransaction> &transactions);
+
+        void loadAddressBalancesFromDatabase();
+
+        void writeAddressBalancesToDatabase();
+
+        /* Track addresses that changed since last database write */
+        std::vector<std::string> m_addressesChangedSinceLastWrite;
     };
 
 } // namespace Pastella

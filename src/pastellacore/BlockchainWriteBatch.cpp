@@ -293,6 +293,26 @@ BlockchainWriteBatch &BlockchainWriteBatch::removeSpentUtxo(
     return *this;
 }
 
+/* ADDRESS BALANCE INDEX: Insert or update an address balance in database
+ *
+ * Called when blocks are added to persist the address balance index */
+BlockchainWriteBatch &BlockchainWriteBatch::insertAddressBalance(
+    const std::string &address,
+    const AddressBalanceInfo &balanceInfo)
+{
+    rawDataToInsert.emplace_back(DB::serialize(DB::ADDRESS_BALANCE_PREFIX, address, balanceInfo));
+    return *this;
+}
+
+/* ADDRESS BALANCE INDEX: Remove an address balance from database
+ *
+ * Called during reorg handling when removing addresses from old chain */
+BlockchainWriteBatch &BlockchainWriteBatch::removeAddressBalance(const std::string &address)
+{
+    rawKeysToRemove.emplace_back(DB::serializeKey(DB::ADDRESS_BALANCE_PREFIX, address));
+    return *this;
+}
+
 std::vector<std::pair<std::string, std::string>> BlockchainWriteBatch::extractRawDataToInsert()
 {
     return std::move(rawDataToInsert);

@@ -326,12 +326,12 @@ void SubWallet::markInputAsSpent(const Crypto::Hash parentTransactionHash, const
         return;
     }
 
-    std::stringstream stream;
+    std::stringstream warningStream;
 
-    stream << "Could not find input with parentTx " << parentTransactionHash << " index " << transactionIndex << " to mark as spent. Ignoring.";
+    warningStream << "Could not find input with parentTx " << parentTransactionHash << " index " << transactionIndex << " to mark as spent. Ignoring.";
 
     Logger::logger.log(
-        stream.str(),
+        warningStream.str(),
         Logger::WARNING,
         { Logger::SYNC }
     );
