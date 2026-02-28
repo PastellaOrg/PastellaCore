@@ -4220,7 +4220,7 @@ namespace Pastella
                 txRef.timestamp = block.timestamp;
                 txRef.amount = amount;
                 txRef.blockHeight = blockIndex;
-                txRef.type = 2; /* Stake reward (coinbase) */
+                txRef.type = 0; /* MINING (coinbase mining reward) */
                 txRef.fromAddresses.push_back("COINBASE");
                 txRef.toAddresses.push_back(address);
 
@@ -4301,7 +4301,7 @@ namespace Pastella
                 txRef.timestamp = block.timestamp;
                 txRef.amount = amount;
                 txRef.blockHeight = blockIndex;
-                txRef.type = 0; /* Incoming */
+                txRef.type = 2; /* INCOMING */
 
                 /* fromAddresses = senders (outgoing addresses) */
                 for (const auto &[senderAddr, _] : outgoingAddresses)
@@ -4324,7 +4324,7 @@ namespace Pastella
                 txRef.timestamp = block.timestamp;
                 txRef.amount = amount;
                 txRef.blockHeight = blockIndex;
-                txRef.type = isStakeDeposit ? 3 : 1; /* Stake deposit or regular outgoing */
+                txRef.type = isStakeDeposit ? 4 : 3; /* STAKE_DEPOSIT or OUTGOING */
 
                 /* fromAddresses = this address (sender) */
                 txRef.fromAddresses.push_back(address);
@@ -4617,26 +4617,30 @@ namespace Pastella
                 uint64_t fee = txDetails.fee;
 
                 /* Map stored type to TransactionType enum
-                 * Stored types: 0=Incoming, 1=Outgoing, 2=Stake Reward, 3=Stake Deposit
-                 * Enum values: MINING=0, STAKE_REWARD=1, INCOMING=2, OUTGOING=3, STAKE_DEPOSIT=4 */
+                 * Stored types now match enum values: 0=MINING, 1=STAKE_REWARD, 2=INCOMING, 3=OUTGOING, 4=STAKE_DEPOSIT */
                 switch (txRef.type)
                 {
-                    case 0: /* Incoming */
-                        txType = Pastella::TransactionType::INCOMING;
+                    case 0: /* MINING */
+                        txType = Pastella::TransactionType::MINING;
                         fee = 0;
                         break;
 
-                    case 1: /* Outgoing */
-                        txType = Pastella::TransactionType::OUTGOING;
-                        break;
-
-                    case 2: /* Stake Reward */
+                    case 1: /* STAKE_REWARD */
                         txType = Pastella::TransactionType::STAKE_REWARD;
                         fee = 0;
                         details.totalIncomingStakingRewards += txRef.amount;
                         break;
 
-                    case 3: /* Stake Deposit */
+                    case 2: /* INCOMING */
+                        txType = Pastella::TransactionType::INCOMING;
+                        fee = 0;
+                        break;
+
+                    case 3: /* OUTGOING */
+                        txType = Pastella::TransactionType::OUTGOING;
+                        break;
+
+                    case 4: /* STAKE_DEPOSIT */
                         txType = Pastella::TransactionType::STAKE_DEPOSIT;
                         details.totalOutgoingStakes += txRef.amount;
                         break;
@@ -4674,9 +4678,15 @@ namespace Pastella
                 walletTx.balanceAfter = currentBalance;
 
                 /* Update statistics */
-                if (txType == Pastella::TransactionType::STAKE_REWARD)
+                if (txType == Pastella::TransactionType::MINING)
+                {
+                    /* Mining rewards are incoming but NOT staking rewards */
+                    details.totalIncoming += displayAmount;
+                }
+                else if (txType == Pastella::TransactionType::STAKE_REWARD)
                 {
                     details.totalIncoming += displayAmount;
+                    /* totalIncomingStakingRewards already updated above */
                 }
                 else if (txType == Pastella::TransactionType::INCOMING)
                 {
