@@ -397,6 +397,67 @@ void SubWallet::markInputAsLocked(const Crypto::Hash parentTransactionHash, cons
     m_unspentInputs.erase(it);
 }
 
+void SubWallet::unlockInput(const Crypto::Hash parentTransactionHash, const uint64_t transactionIndex)
+{
+    std::stringstream ss;
+    ss << "unlockInput: parentTx=" << parentTransactionHash
+       << " index=" << transactionIndex;
+
+    Logger::logger.log(ss.str(), Logger::TRACE, {Logger::SYNC});
+
+    /* Find the input in locked inputs */
+    auto it = std::find_if(
+        m_lockedInputs.begin(), m_lockedInputs.end(),
+        [&parentTransactionHash, &transactionIndex](const auto x) {
+            return x.parentTransactionHash == parentTransactionHash && x.transactionIndex == transactionIndex;
+        });
+
+    if (it == m_lockedInputs.end())
+    {
+        std::stringstream stream;
+
+        stream << "Could not find locked input with parentTx " << parentTransactionHash
+               << " index " << transactionIndex << " to unlock. Ignoring.";
+
+        Logger::logger.log(
+            stream.str(),
+            Logger::WARNING,
+            { Logger::SYNC }
+        );
+
+        return;
+    }
+
+    /* Check if this input is already in unspentInputs */
+    bool inUnspent = std::find_if(
+        m_unspentInputs.begin(), m_unspentInputs.end(),
+        [&parentTransactionHash, &transactionIndex](const auto x) {
+            return x.parentTransactionHash == parentTransactionHash && x.transactionIndex == transactionIndex;
+        }) != m_unspentInputs.end();
+
+    if (!inUnspent)
+    {
+        /* Move back to the unspent inputs vector */
+        m_unspentInputs.push_back(*it);
+    }
+    else
+    {
+        std::stringstream stream;
+
+        stream << "Input with parentTx " << parentTransactionHash << " index " << transactionIndex
+               << " being unlocked is already present in unspent inputs vector.";
+
+        Logger::logger.log(
+            stream.str(),
+            Logger::WARNING,
+            { Logger::SYNC }
+        );
+    }
+
+    /* Remove from the locked vector */
+    m_lockedInputs.erase(it);
+}
+
 std::vector<Crypto::PublicKey> SubWallet::removeForkedInputs(const uint64_t forkHeight)
 {
     /* This will get resolved by the wallet in time */
@@ -525,17 +586,32 @@ bool SubWallet::haveSpendableInput(
     const WalletTypes::TransactionInput& input,
     const uint64_t height) const
 {
+    /* First check unspent inputs - match by (parentTransactionHash, transactionIndex)
+     * NOT by key, because multiple outputs can have the same key! */
     for (const auto i : m_unspentInputs)
     {
-        /* Checking for .key to support view wallets */
-        if (input.key == i.key || input.key == i.key)
+        /* Match by unique identifier (parentTransactionHash + transactionIndex) */
+        if (input.parentTransactionHash == i.parentTransactionHash &&
+            input.transactionIndex == i.transactionIndex)
         {
-            /* Only gonna be one input that matches so can early return false
-             * if the input is locked */
+            /* Found the input - check if it's unlocked */
             return Utilities::isInputUnlocked(i.unlockTime, height);
         }
     }
 
+    /* Also check locked inputs - they're still spendable, just locked by this wallet */
+    for (const auto i : m_lockedInputs)
+    {
+        /* Match by unique identifier (parentTransactionHash + transactionIndex) */
+        if (input.parentTransactionHash == i.parentTransactionHash &&
+            input.transactionIndex == i.transactionIndex)
+        {
+            /* Found the input in locked - check if it's unlocked */
+            return Utilities::isInputUnlocked(i.unlockTime, height);
+        }
+    }
+
+    /* Input not found in unspent or locked inputs - it was probably spent */
     return false;
 }
 

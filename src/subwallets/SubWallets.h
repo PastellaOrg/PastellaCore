@@ -129,6 +129,12 @@ class SubWallets
         const Crypto::Hash parentTransactionHash,
         const uint64_t transactionIndex);
 
+    /* Unlock a previously locked input (move from locked back to unspent) */
+    void unlockInput(
+        const Crypto::PublicKey publicKey,
+        const Crypto::Hash parentTransactionHash,
+        const uint64_t transactionIndex);
+
     std::unordered_set<Crypto::Hash> getLockedTransactionsHashes() const;
 
     void removeCancelledTransactions(const std::unordered_set<Crypto::Hash> cancelledTransactions);

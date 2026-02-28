@@ -304,6 +304,13 @@ namespace SendTransaction
         txInfo.changeRequired = changeRequired;
         txInfo.tx = txResult;
 
+        /* CRITICAL FIX: Lock inputs immediately upon preparation to prevent them
+         * from being spent by another transaction between preparation and sending */
+        for (const auto input : ourInputs)
+        {
+            subWallets->markInputAsLocked(input.publicKey, input.input.parentTransactionHash, input.input.transactionIndex);
+        }
+
         if (sendTransaction)
         {
             const auto [sendError, txHash] = relayTransaction(txResult.transaction, daemon);

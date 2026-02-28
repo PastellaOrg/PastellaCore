@@ -586,6 +586,17 @@ void SubWallets::markInputAsLocked(
     m_subWallets.at(publicKey).markInputAsLocked(parentTransactionHash, transactionIndex);
 }
 
+/* Unlock a previously locked input (move from locked back to unspent) */
+void SubWallets::unlockInput(
+    const Crypto::PublicKey publicKey,
+    const Crypto::Hash parentTransactionHash,
+    const uint64_t transactionIndex)
+{
+    std::scoped_lock lock(m_mutex);
+
+    m_subWallets.at(publicKey).unlockInput(parentTransactionHash, transactionIndex);
+}
+
 /* Remove transactions and key images that occured on a forked chain */
 void SubWallets::removeForkedTransactions(const uint64_t forkHeight)
 {

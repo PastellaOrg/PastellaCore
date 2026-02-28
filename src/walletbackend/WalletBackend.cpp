@@ -713,6 +713,16 @@ std::tuple<Error, Crypto::Hash> WalletBackend::sendPreparedTransaction(
      * valid */
     if (error == PREPARED_TRANSACTION_EXPIRED || !error)
     {
+        /* If the transaction failed (expired), unlock the inputs
+         * If it succeeded, inputs remain locked (will be marked as spent) */
+        if (error == PREPARED_TRANSACTION_EXPIRED)
+        {
+            for (const auto &input : preparedTransaction.inputs)
+            {
+                m_subWallets->unlockInput(input.publicKey, input.input.parentTransactionHash, input.input.transactionIndex);
+            }
+        }
+
         removePreparedTransaction(preparedTransaction.transactionHash);
     }
 
