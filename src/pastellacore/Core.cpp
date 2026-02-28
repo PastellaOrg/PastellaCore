@@ -4125,7 +4125,7 @@ namespace Pastella
         throwIfNotInitialized();
 
         LoggerRef loggerIndex(logger.getLogger(), "Core.AddressIndex");
-        loggerIndex(Logging::INFO) << "Building address balance index...";
+        loggerIndex(Logging::INFO) << "Building address balance index with transaction history...";
 
         std::lock_guard<std::mutex> lock(m_addressBalancesMutex);
         m_addressBalances.clear();
@@ -4178,18 +4178,53 @@ namespace Pastella
         /* Track addresses changed in this block */
         std::unordered_set<std::string> addressesChangedInBlock;
 
-        /* Process coinbase transaction outputs */
-        for (const auto &output : block.baseTransaction.outputs)
+        /* Process coinbase transaction */
         {
-            if (output.target.type() == typeid(Pastella::KeyOutput))
+            const Crypto::Hash coinbaseTxHash = getObjectHash(block.baseTransaction);
+            std::unordered_set<std::string> coinbaseRecipients;
+
+            for (const auto &output : block.baseTransaction.outputs)
             {
-                const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
-                const std::string address = Utilities::publicKeyToAddress(keyOutput.key);
+                if (output.target.type() == typeid(Pastella::KeyOutput))
+                {
+                    const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
+                    const std::string address = Utilities::publicKeyToAddress(keyOutput.key);
+                    coinbaseRecipients.insert(address);
 
-                m_addressBalances[address].balance += output.amount;
-                m_addressBalances[address].firstTxTimestamp = std::min(m_addressBalances[address].firstTxTimestamp, block.timestamp);
-                m_addressBalances[address].lastTxTimestamp = std::max(m_addressBalances[address].lastTxTimestamp, block.timestamp);
+                    /* Update balance */
+                    m_addressBalances[address].balanceInfo.balance += output.amount;
+                    m_addressBalances[address].balanceInfo.firstTxTimestamp = std::min(m_addressBalances[address].balanceInfo.firstTxTimestamp, block.timestamp);
+                    m_addressBalances[address].balanceInfo.lastTxTimestamp = std::max(m_addressBalances[address].balanceInfo.lastTxTimestamp, block.timestamp);
+                }
+            }
 
+            /* Add transaction reference for each recipient */
+            for (const auto &address : coinbaseRecipients)
+            {
+                /* Find the amount for this address */
+                uint64_t amount = 0;
+                for (const auto &output : block.baseTransaction.outputs)
+                {
+                    if (output.target.type() == typeid(Pastella::KeyOutput))
+                    {
+                        const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
+                        if (Utilities::publicKeyToAddress(keyOutput.key) == address)
+                        {
+                            amount += output.amount;
+                        }
+                    }
+                }
+
+                Pastella::TransactionReference txRef;
+                txRef.txHash = coinbaseTxHash;
+                txRef.timestamp = block.timestamp;
+                txRef.amount = amount;
+                txRef.blockHeight = blockIndex;
+                txRef.type = 2; /* Stake reward (coinbase) */
+                txRef.fromAddresses.push_back("COINBASE");
+                txRef.toAddresses.push_back(address);
+
+                m_addressBalances[address].transactions.push_back(txRef);
                 addressesChangedInBlock.insert(address);
             }
         }
@@ -4198,6 +4233,12 @@ namespace Pastella
         for (const auto &cachedTransaction : transactions)
         {
             const Transaction &transaction = cachedTransaction.getTransaction();
+            const Crypto::Hash txHash = getObjectHash(transaction);
+
+            /* Track which addresses are involved in this transaction */
+            std::unordered_map<std::string, uint64_t> incomingAddresses; /* address -> amount */
+            std::unordered_map<std::string, uint64_t> outgoingAddresses; /* address -> amount */
+            std::vector<std::string> allToAddresses; /* All recipient addresses for fromAddresses list */
 
             /* Process outputs (add to recipient balances) */
             for (const auto &output : transaction.outputs)
@@ -4207,11 +4248,13 @@ namespace Pastella
                     const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
                     const std::string address = Utilities::publicKeyToAddress(keyOutput.key);
 
-                    m_addressBalances[address].balance += output.amount;
-                    m_addressBalances[address].firstTxTimestamp = std::min(m_addressBalances[address].firstTxTimestamp, block.timestamp);
-                    m_addressBalances[address].lastTxTimestamp = std::max(m_addressBalances[address].lastTxTimestamp, block.timestamp);
+                    /* Update balance */
+                    m_addressBalances[address].balanceInfo.balance += output.amount;
+                    m_addressBalances[address].balanceInfo.firstTxTimestamp = std::min(m_addressBalances[address].balanceInfo.firstTxTimestamp, block.timestamp);
+                    m_addressBalances[address].balanceInfo.lastTxTimestamp = std::max(m_addressBalances[address].balanceInfo.lastTxTimestamp, block.timestamp);
 
-                    addressesChangedInBlock.insert(address);
+                    incomingAddresses[address] += output.amount;
+                    allToAddresses.push_back(address);
                 }
             }
 
@@ -4238,13 +4281,65 @@ namespace Pastella
                                 const std::string address = Utilities::publicKeyToAddress(prevKeyOutput.key);
 
                                 /* Subtract from balance (this output was spent) */
-                                m_addressBalances[address].balance -= keyInput.amount;
+                                m_addressBalances[address].balanceInfo.balance -= keyInput.amount;
 
-                                addressesChangedInBlock.insert(address);
+                                outgoingAddresses[address] += keyInput.amount;
                             }
                         }
                     }
                 }
+            }
+
+            /* Check if this is a staking transaction */
+            const bool isStakeDeposit = Pastella::isStakingTransaction(transaction.extra);
+
+            /* Add transaction references for all incoming addresses */
+            for (const auto &[address, amount] : incomingAddresses)
+            {
+                Pastella::TransactionReference txRef;
+                txRef.txHash = txHash;
+                txRef.timestamp = block.timestamp;
+                txRef.amount = amount;
+                txRef.blockHeight = blockIndex;
+                txRef.type = 0; /* Incoming */
+
+                /* fromAddresses = senders (outgoing addresses) */
+                for (const auto &[senderAddr, _] : outgoingAddresses)
+                {
+                    txRef.fromAddresses.push_back(senderAddr);
+                }
+
+                /* toAddresses = this address only (receives this amount) */
+                txRef.toAddresses.push_back(address);
+
+                m_addressBalances[address].transactions.push_back(txRef);
+                addressesChangedInBlock.insert(address);
+            }
+
+            /* Add transaction references for all outgoing addresses */
+            for (const auto &[address, amount] : outgoingAddresses)
+            {
+                Pastella::TransactionReference txRef;
+                txRef.txHash = txHash;
+                txRef.timestamp = block.timestamp;
+                txRef.amount = amount;
+                txRef.blockHeight = blockIndex;
+                txRef.type = isStakeDeposit ? 3 : 1; /* Stake deposit or regular outgoing */
+
+                /* fromAddresses = this address (sender) */
+                txRef.fromAddresses.push_back(address);
+
+                /* toAddresses = recipients (excluding this address - it's change) */
+                for (const auto &recipientAddr : allToAddresses)
+                {
+                    if (recipientAddr != address)
+                    {
+                        txRef.toAddresses.push_back(recipientAddr);
+                    }
+                }
+
+                m_addressBalances[address].transactions.push_back(txRef);
+                addressesChangedInBlock.insert(address);
             }
         }
 
@@ -4280,14 +4375,14 @@ namespace Pastella
             for (const auto &[address, info] : m_addressBalances)
             {
                 /* Only include addresses with non-zero balance */
-                if (info.balance > 0)
+                if (info.balanceInfo.balance > 0)
                 {
                     Pastella::RichListEntry entry;
                     entry.address = address;
-                    entry.balance = info.balance;
-                    entry.percentage = (totalSupply > 0) ? (info.balance * 100.0 / totalSupply) : 0.0;
-                    entry.firstTxTimestamp = (info.firstTxTimestamp != UINT64_MAX) ? info.firstTxTimestamp : 0;
-                    entry.lastTxTimestamp = info.lastTxTimestamp;
+                    entry.balance = info.balanceInfo.balance;
+                    entry.percentage = (totalSupply > 0) ? (info.balanceInfo.balance * 100.0 / totalSupply) : 0.0;
+                    entry.firstTxTimestamp = (info.balanceInfo.firstTxTimestamp != UINT64_MAX) ? info.balanceInfo.firstTxTimestamp : 0;
+                    entry.lastTxTimestamp = info.balanceInfo.lastTxTimestamp;
 
                     richList.push_back(entry);
                 }
@@ -4332,10 +4427,19 @@ namespace Pastella
             if (!balances.empty())
             {
                 std::lock_guard<std::mutex> lock(m_addressBalancesMutex);
-                m_addressBalances = std::move(balances);
+
+                /* Wrap loaded balance info in AddressInfoExtended (transactions will be added as blocks are processed) */
+                for (auto &[address, balanceInfo] : balances)
+                {
+                    Pastella::AddressInfoExtended extendedInfo;
+                    extendedInfo.balanceInfo = balanceInfo;
+                    // transactions list starts empty
+                    m_addressBalances[address] = std::move(extendedInfo);
+                }
+
                 m_addressIndexBuilt = true;
                 loggerIndex(Logging::INFO) << "Loaded " << m_addressBalances.size()
-                                          << " address balances from database";
+                                          << " address balances from database (transaction history will be rebuilt as blocks are processed)";
             }
             else
             {
@@ -4371,7 +4475,7 @@ namespace Pastella
                 return;
             }
 
-            /* Build map of changed addresses to their balance info */
+            /* Build map of changed addresses to their balance info (extract from AddressInfoExtended) */
             std::unordered_map<std::string, Pastella::AddressBalanceInfo> balancesToWrite;
 
             {
@@ -4381,7 +4485,9 @@ namespace Pastella
                     auto it = m_addressBalances.find(address);
                     if (it != m_addressBalances.end())
                     {
-                        balancesToWrite[address] = it->second;
+                        /* Extract just the balance info for database persistence
+                         * Transaction history is kept in-memory only and rebuilt on restart */
+                        balancesToWrite[address] = it->second.balanceInfo;
                     }
                 }
             }
@@ -4431,698 +4537,165 @@ namespace Pastella
 
         logger(Logging::DEBUGGING) << "Building wallet details for address: " << address.substr(0, 10) << "...";
 
-        /* Temporary structure to collect transaction data before grouping */
-        struct TransactionData
+        /* Build index if not already built */
+        if (!m_addressIndexBuilt)
         {
-            Crypto::Hash txHash;
-            uint32_t blockNumber;
-            Crypto::Hash blockHash;
-            uint64_t timestamp;
-            uint64_t unlockTime;
-            bool isStaking;         /* True for STAKE_DEPOSIT (outgoing) OR STAKE_REWARD (incoming coinbase) */
-            bool isStakeReward;     /* True ONLY for STAKE_REWARD (incoming from coinbase) */
-            bool isCoinbase;
-            uint64_t totalIncoming;      /* All outputs TO this address (including change) */
-            uint64_t totalOutgoing;      /* All inputs FROM this address */
-            uint64_t totalToOthers;      /* Outputs to OTHER addresses (actual transfer amount) */
-            uint64_t fee;                /* Transaction fee (0 for coinbase) */
-            std::vector<std::string> fromAddresses;
-            std::vector<std::string> toAddresses;
-        };
-
-        /* Map: txHash -> transaction data */
-        std::unordered_map<std::string, TransactionData> txMap;
-
-        /* Vector to maintain transaction order for balance calculation */
-        std::vector<TransactionData> orderedTransactions;
-
-        /* Get current blockchain height */
-        const uint32_t topHeight = getTopBlockIndex();
-
-        /* Scan all blocks and transactions */
-        for (uint32_t height = 0; height <= topHeight; height++)
-        {
-            try
-            {
-                /* Get block */
-                const Crypto::Hash blockHash = getBlockHashByIndex(height);
-                const BlockTemplate block = getBlockByHash(blockHash);
-
-                /* Process coinbase transaction */
-                Transaction coinbaseTx = block.baseTransaction;
-                const Crypto::Hash coinbaseTxHash = getObjectHash(coinbaseTx);
-
-                bool foundInCoinbase = false;
-                uint64_t coinbaseAmount = 0;
-
-                /* Iterate through all coinbase outputs and check if any belong to this address */
-                for (const auto &output : coinbaseTx.outputs)
-                {
-                    if (output.target.type() == typeid(Pastella::KeyOutput))
-                    {
-                        const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
-                        /* Convert output key to address */
-                        const std::string outputAddress = Utilities::publicKeyToAddress(keyOutput.key);
-
-                        if (outputAddress == address)
-                        {
-                            foundInCoinbase = true;
-                            coinbaseAmount += output.amount;
-                        }
-                    }
-                }
-
-                if (foundInCoinbase && coinbaseAmount > 0)
-                {
-                    /* Determine coinbase structure using amount-based heuristics (same as RPC server) */
-                    bool hasStakingRewards = false;
-                    bool isOldDenominationSplitting = false;
-
-                    if (coinbaseTx.outputs.size() == 2)
-                    {
-                        uint64_t amount0 = coinbaseTx.outputs[0].amount;
-                        uint64_t amount1 = coinbaseTx.outputs[1].amount;
-
-                        /* Old denomination splitting: one very small (fee), one large (block reward) */
-                        if (amount0 < 1000000 && amount1 >= 100000000)
-                        {
-                            isOldDenominationSplitting = true;
-                        }
-                        /* New structure with staking: large block reward + smaller staking reward */
-                        else if (amount0 >= 100000000 && amount1 < amount0)
-                        {
-                            hasStakingRewards = true;
-                        }
-                    }
-
-                    /* NEW STRUCTURE: Check if coinbase has exactly 2 outputs AND has staking rewards */
-                    if (coinbaseTx.outputs.size() == 2 && hasStakingRewards)
-                    {
-                        /* Split into 2 separate transaction entries (NEW structure with staking) */
-                        const uint64_t miningReward = coinbaseTx.outputs[0].amount;
-                        const uint64_t stakingReward = coinbaseTx.outputs[1].amount;
-
-                        /* Check which outputs belong to this address */
-                        bool receivesMining = false;
-                        bool receivesStaking = false;
-
-                        /* Check output 0 (mining reward) */
-                        if (coinbaseTx.outputs[0].target.type() == typeid(Pastella::KeyOutput))
-                        {
-                            const auto &keyOutput0 = boost::get<Pastella::KeyOutput>(coinbaseTx.outputs[0].target);
-                            if (Utilities::publicKeyToAddress(keyOutput0.key) == address)
-                            {
-                                receivesMining = true;
-                            }
-                        }
-
-                        /* Check output 1 (staking reward) */
-                        if (coinbaseTx.outputs[1].target.type() == typeid(Pastella::KeyOutput))
-                        {
-                            const auto &keyOutput1 = boost::get<Pastella::KeyOutput>(coinbaseTx.outputs[1].target);
-                            if (Utilities::publicKeyToAddress(keyOutput1.key) == address)
-                            {
-                                receivesStaking = true;
-                            }
-                        }
-
-                        /* Create mining reward entry if applicable */
-                        if (receivesMining && miningReward > 0)
-                        {
-                            const std::string miningTxHashStr = Common::podToHex(coinbaseTxHash) + "_mining";
-
-                            TransactionData miningTxData;
-                            miningTxData.txHash = coinbaseTxHash;
-                            miningTxData.blockNumber = height;
-                            miningTxData.blockHash = blockHash;
-                            miningTxData.timestamp = block.timestamp;
-                            miningTxData.unlockTime = coinbaseTx.unlockTime;
-                            miningTxData.isStaking = false;
-                            miningTxData.isStakeReward = false;  /* Explicitly set to false for mining reward */
-                            miningTxData.isCoinbase = true;
-                            miningTxData.totalIncoming = miningReward;
-                            miningTxData.toAddresses.push_back(address);
-
-                            orderedTransactions.push_back(miningTxData);
-                        }
-
-                        /* Create staking reward entry if applicable */
-                        if (receivesStaking && stakingReward > 0)
-                        {
-                            const std::string stakingTxHashStr = Common::podToHex(coinbaseTxHash) + "_staking";
-
-                            TransactionData stakingTxData;
-                            stakingTxData.txHash = coinbaseTxHash;
-                            stakingTxData.blockNumber = height;
-                            stakingTxData.blockHash = blockHash;
-                            stakingTxData.timestamp = block.timestamp;
-                            stakingTxData.unlockTime = coinbaseTx.unlockTime;
-                            stakingTxData.isStaking = false;   /* NOT a stake deposit */
-                            stakingTxData.isStakeReward = true; /* This IS a stake reward */
-                            stakingTxData.isCoinbase = true;
-                            stakingTxData.totalIncoming = stakingReward;
-                            stakingTxData.toAddresses.push_back(address);
-
-                            orderedTransactions.push_back(stakingTxData);
-
-                            /* Track staking rewards received from coinbase */
-                            details.totalIncomingStakingRewards += stakingReward;
-                        }
-                    }
-                    else if (coinbaseTx.outputs.size() == 2 && isOldDenominationSplitting)
-                    {
-                        /* OLD STRUCTURE: 2 outputs from denomination splitting (fee + block reward)
-                         * Treat as a single combined mining entry */
-                        logger(Logging::DEBUGGING) << "[WALLET_DETAILS] Block " << height << " has 2 outputs but no staking rewards - old denomination splitting structure";
-
-                        /* Fall through to the combined handling below */
-                        foundInCoinbase = true;
-                    }
-                    else
-                    {
-                        /* OLD STRUCTURE: Single combined entry for blocks with denomination splitting */
-                        const std::string txHashStr = Common::podToHex(coinbaseTxHash);
-
-                        TransactionData &txData = txMap[txHashStr];
-                        txData.txHash = coinbaseTxHash;
-                        txData.blockNumber = height;
-                        txData.blockHash = blockHash;
-                        txData.timestamp = block.timestamp;
-                        txData.unlockTime = coinbaseTx.unlockTime;
-                        txData.isStaking = false;
-                        txData.isCoinbase = true;
-                        txData.totalIncoming += coinbaseAmount;
-                        txData.toAddresses.push_back(address); // Coinbase to this address
-
-                        /* Add to ordered transactions vector if not already present */
-                        if (std::find_if(orderedTransactions.begin(), orderedTransactions.end(),
-                                        [&txHashStr](const TransactionData &td) { return Common::podToHex(td.txHash) == txHashStr; }) == orderedTransactions.end())
-                        {
-                            orderedTransactions.push_back(txData);
-                        }
-                    }
-                }
-
-                /* Process regular transactions */
-                for (const Crypto::Hash &txHash : block.transactionHashes)
-                {
-                    /* Get transaction */
-                    auto txRaw = getTransaction(txHash);
-                    if (!txRaw.has_value())
-                    {
-                        continue;
-                    }
-
-                    Transaction transaction;
-                    fromBinaryArray(transaction, txRaw.value());
-
-                    /* Check if staking transaction */
-                    const bool isStakingTx = Pastella::isStakingTransaction(transaction.extra);
-
-                    const std::string txHashStr = Common::podToHex(txHash);
-
-                    /* Initialize transaction data if not exists */
-                    if (txMap.find(txHashStr) == txMap.end())
-                    {
-                        TransactionData txData;
-                        txData.txHash = txHash;
-                        txData.blockNumber = height;
-                        txData.blockHash = blockHash;
-                        txData.timestamp = block.timestamp;
-                        txData.unlockTime = transaction.unlockTime;
-                        txData.isStaking = isStakingTx;
-                        txData.isStakeReward = false; /* Regular transactions are not stake rewards */
-                        txData.isCoinbase = false;
-                        txData.totalIncoming = 0;
-                        txData.totalOutgoing = 0;
-                        txData.totalToOthers = 0;
-                        txData.fee = 0; /* Will be set below */
-                        txMap[txHashStr] = txData;
-                    }
-
-                    TransactionData &txData = txMap[txHashStr];
-
-                    /* Calculate and store transaction fee
-                     * Fee = sum of input amounts - sum of output amounts
-                     * For coinbase transactions, fee = 0 */
-                    if (!txData.isCoinbase)
-                    {
-                        try
-                        {
-                            /* Get transaction fee from the transaction object */
-                            CachedTransaction cachedTx(transaction);
-                            txData.fee = cachedTx.getTransactionFee();
-                        }
-                        catch (const std::exception &e)
-                        {
-                            logger(Logging::WARNING) << "Error calculating fee for transaction " << txHashStr.substr(0, 10) << "...: " << e.what();
-                            txData.fee = 0;
-                        }
-                    }
-
-                    /* Process outputs (check if this address receives funds) */
-                    bool isRecipient = false;
-                    uint64_t receivedAmount = 0;
-
-                    /* Iterate through all transaction outputs and check if any belong to this address */
-                    for (const auto &output : transaction.outputs)
-                    {
-                        if (output.target.type() == typeid(Pastella::KeyOutput))
-                        {
-                            const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
-                            /* Convert output key to address */
-                            const std::string outputAddress = Utilities::publicKeyToAddress(keyOutput.key);
-
-                            if (outputAddress == address)
-                            {
-                                isRecipient = true;
-                                receivedAmount += output.amount;
-                            }
-                        }
-                    }
-
-                    if (isRecipient && receivedAmount > 0)
-                    {
-                        txData.totalIncoming += receivedAmount;
-
-                        /* Add to "to" addresses if not already there */
-                        if (std::find(txData.toAddresses.begin(), txData.toAddresses.end(), address) == txData.toAddresses.end())
-                        {
-                            txData.toAddresses.push_back(address);
-                        }
-
-                        /* NOTE: Staking rewards are ONLY tracked from coinbase transactions, NOT regular STAKING transactions */
-                    }
-
-                    /* Also track outputs going to OTHER addresses (actual transfers) */
-                    /* Iterate through all transaction outputs and track amounts to other addresses */
-                    for (const auto &output : transaction.outputs)
-                    {
-                        if (output.target.type() == typeid(Pastella::KeyOutput))
-                        {
-                            const auto &keyOutput = boost::get<Pastella::KeyOutput>(output.target);
-                            /* Convert output key to address */
-                            const std::string outputAddress = Utilities::publicKeyToAddress(keyOutput.key);
-
-                            if (outputAddress != address)
-                            {
-                                /* This output goes to a different address - track the transfer amount */
-                                /* Only track if this is actually a transfer (not dust or rounding errors) */
-                                if (output.amount >= 100) /* At least 0.00000100 PAS */
-                                {
-                                    txData.totalToOthers += output.amount;
-
-                                    /* Add recipient to "to" addresses if not already there */
-                                    if (std::find(txData.toAddresses.begin(), txData.toAddresses.end(), outputAddress) == txData.toAddresses.end())
-                                    {
-                                        txData.toAddresses.push_back(outputAddress);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    /* Process inputs (check if this address sends funds) */
-                    TransactionDetails txDetails;
-                    try
-                    {
-                        txDetails = getTransactionDetails(txHash);
-
-                        for (const auto &inputDetails : txDetails.inputs)
-                        {
-                            if (inputDetails.type() == typeid(Pastella::KeyInputDetails))
-                            {
-                                const auto &keyInputDetails = boost::get<Pastella::KeyInputDetails>(inputDetails);
-
-                                /* Look up previous transaction to find the sender */
-                                if (keyInputDetails.output.transactionHash != Crypto::Hash())
-                                {
-                                    try
-                                    {
-                                        Transaction prevTx;
-                                        const auto prevTxRaw = getTransaction(keyInputDetails.output.transactionHash);
-
-                                        if (prevTxRaw.has_value())
-                                        {
-                                            fromBinaryArray(prevTx, prevTxRaw.value());
-
-                                            /* Get the output being spent */
-                                            if (keyInputDetails.output.number < prevTx.outputs.size())
-                                            {
-                                                const auto &prevOutput = prevTx.outputs[keyInputDetails.output.number];
-
-                                                if (prevOutput.target.type() == typeid(Pastella::KeyOutput))
-                                                {
-                                                    const auto &prevKeyOutput = boost::get<Pastella::KeyOutput>(prevOutput.target);
-
-                                                    /* Convert output key to address */
-                                                    const std::string prevAddress = Utilities::publicKeyToAddress(prevKeyOutput.key);
-
-                                                    if (prevAddress == address)
-                                                    {
-                                                        /* This address is spending funds */
-                                                        const KeyInput &keyInput = keyInputDetails.input;
-                                                        const uint64_t spentAmount = keyInput.amount;
-
-                                                        txData.totalOutgoing += spentAmount;
-
-                                                        /* Track stakes (exclude fee inputs which are very small) */
-                                                        if (isStakingTx)
-                                                        {
-                                                            /* Only count amounts >= 1 PAS as staking (exclude fee payments) */
-                                                            if (spentAmount >= 100000000)
-                                                            {
-                                                                details.totalOutgoingStakes += spentAmount;
-                                                            }
-                                                        }
-                                                    }
-
-                                                    /* Always add the input owner to "from" addresses
-                                                     * This allows recipients to see who sent them funds */
-                                                    if (std::find(txData.fromAddresses.begin(), txData.fromAddresses.end(), prevAddress) == txData.fromAddresses.end())
-                                                    {
-                                                        txData.fromAddresses.push_back(prevAddress);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    catch (const std::exception &e)
-                                    {
-                                        logger(Logging::WARNING) << "Error looking up previous transaction for input: " << e.what();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch (const std::exception &e)
-                    {
-                        logger(Logging::WARNING) << "Error getting transaction details: " << e.what();
-                    }
-
-                    /* Add to ordered transactions vector if not already present */
-                    if (std::find_if(orderedTransactions.begin(), orderedTransactions.end(),
-                                    [&txHashStr](const TransactionData &td) { return Common::podToHex(td.txHash) == txHashStr; }) == orderedTransactions.end())
-                    {
-                        orderedTransactions.push_back(txData);
-                    }
-                }
-            }
-            catch (const std::exception &e)
-            {
-                logger(Logging::WARNING) << "Error processing block " << height << ": " << e.what();
-            }
+            const_cast<Core*>(this)->buildAddressBalanceIndex();
         }
 
-        /* Now process the transaction map to create consolidated wallet transactions */
-        std::vector<Pastella::WalletTransactionDetails> allTransactions;
-        uint64_t currentBalance = 0;
-
-        /* Sort transactions by block number and timestamp for correct balance calculation */
-        std::sort(orderedTransactions.begin(), orderedTransactions.end(),
-            [](const TransactionData &a, const TransactionData &b)
-            {
-                /* Sort by block number ascending */
-                if (a.blockNumber != b.blockNumber)
-                {
-                    return a.blockNumber < b.blockNumber;
-                }
-                /* If same block, sort by timestamp ascending */
-                return a.timestamp < b.timestamp;
-            });
-
-        for (const auto &txData : orderedTransactions)
+        /* Get address data from index (instant lookup!) */
+        std::lock_guard<std::mutex> lock(m_addressBalancesMutex);
+        auto it = m_addressBalances.find(address);
+        if (it == m_addressBalances.end())
         {
-            const std::string txHashStr = Common::podToHex(txData.txHash);
-            /* Determine transaction type based on net effect */
-            Pastella::TransactionType txType;
-            int64_t netAmount; /* Signed to handle negative values (losses) */
-            uint64_t amount;
-
-            if (txData.isCoinbase)
-            {
-                /* Check if this is a staking reward or mining reward */
-                if (txData.isStakeReward)
-                {
-                    txType = Pastella::TransactionType::STAKE_REWARD;
-                }
-                else
-                {
-                    txType = Pastella::TransactionType::MINING;
-                }
-                amount = txData.totalIncoming;
-                netAmount = amount;
-            }
-            else if (txData.totalIncoming > 0 && txData.totalOutgoing > 0)
-            {
-                /* Both incoming and outgoing - this is a transfer with change
-                 *
-                 * IMPORTANT: Classification should be based on whether you're sending
-                 * to OTHER addresses, not on the amounts!
-                 *
-                 * If totalToOthers > 0: You're sending funds externally = OUTGOING
-                 * If totalToOthers == 0 AND fee > 0 AND NOT staking: You're paying a fee to move funds = OUTGOING (net loss)
-                 * If totalToOthers == 0 AND fee == 0: Pure internal movement = INCOMING */
-                if (txData.totalToOthers > 0)
-                {
-                    /* Sending to external addresses - this is an OUTGOING transaction */
-                    txType = txData.isStaking ? Pastella::TransactionType::STAKE_DEPOSIT : Pastella::TransactionType::OUTGOING;
-                    amount = txData.totalToOthers; /* Show amount sent to others */
-                    netAmount = txData.totalIncoming - txData.totalOutgoing; /* Usually negative (you spent more than change received) */
-                }
-                else if (txData.fee > 0 && !txData.isStaking)
-                {
-                    /* No external recipients but paying a fee - this is a self-spend with fee cost
-                     * Net amount will be negative due to fee, so classify as OUTGOING
-                     * EXCEPTION: NOT for staking transactions, which should show the staked amount */
-                    txType = Pastella::TransactionType::OUTGOING;
-                    amount = txData.fee; /* Show the fee as the amount (net loss) */
-                    netAmount = txData.totalIncoming - txData.totalOutgoing - txData.fee; /* Negative (fee cost) */
-                }
-                else
-                {
-                    /* No external recipients and (no fee OR staking transaction)
-                     * This could be:
-                     * 1. You received funds (incoming)
-                     * 2. You're moving between your own addresses (internal, no cost)
-                     * 3. Staking transaction preparing inputs (show the full amount)
-                     * Treat as incoming since you're not losing funds externally */
-                    txType = txData.isStaking ? Pastella::TransactionType::STAKE_DEPOSIT : Pastella::TransactionType::INCOMING;
-                    amount = txData.totalIncoming; /* Show amount being received */
-                    netAmount = txData.totalIncoming - txData.totalOutgoing; /* Could be positive, negative, or zero */
-                }
-            }
-            else if (txData.totalIncoming > 0)
-            {
-                /* Only incoming */
-                if (txData.isStakeReward)
-                {
-                    txType = Pastella::TransactionType::STAKE_REWARD;
-                }
-                else
-                {
-                    txType = Pastella::TransactionType::INCOMING;
-                }
-                amount = txData.totalIncoming;
-                netAmount = amount;
-            }
-            else if (txData.totalOutgoing > 0)
-            {
-                /* Only outgoing */
-                if (txData.isStaking)
-                {
-                    txType = Pastella::TransactionType::STAKE_DEPOSIT;
-                }
-                else
-                {
-                    txType = Pastella::TransactionType::OUTGOING;
-                }
-                amount = txData.totalToOthers > 0 ? txData.totalToOthers : txData.totalOutgoing; /* Show amount sent to others (or total outgoing) */
-                netAmount = -(amount + txData.fee); /* Negative: includes both amount sent AND fee */
-            }
-            else
-            {
-                continue; /* Skip transactions with no involvement */
-            }
-
-            /* Create wallet transaction entry */
-            Pastella::WalletTransactionDetails walletTx;
-            walletTx.transactionHash = txData.txHash;
-            walletTx.blockNumber = txData.blockNumber;
-            walletTx.blockHash = txData.blockHash;
-            walletTx.amount = amount;
-            walletTx.type = txType;
-            walletTx.timestamp = txData.timestamp;
-            walletTx.unlockTime = txData.unlockTime;
-
-            /* Only show fee for transactions where this address paid it (OUTGOING/STAKE_DEPOSIT)
-             * Recipients should not see the fee as they didn't pay it */
-            if (txType == Pastella::TransactionType::OUTGOING || txType == Pastella::TransactionType::STAKE_DEPOSIT)
-            {
-                walletTx.fee = txData.fee;
-            }
-            else
-            {
-                walletTx.fee = 0;
-            }
-
-            /* Copy from/to addresses */
-            walletTx.fromAddresses = txData.fromAddresses;
-            walletTx.toAddresses = txData.toAddresses;
-
-            /* For coinbase transactions, set from to COINBASE */
-            if (txType == Pastella::TransactionType::MINING || txType == Pastella::TransactionType::STAKE_REWARD)
-            {
-                walletTx.fromAddresses.clear();
-                walletTx.fromAddresses.push_back("COINBASE");
-            }
-
-            /* For OUTGOING/STAKE_DEPOSIT transactions, ensure address lists are correct */
-            if (txType == Pastella::TransactionType::OUTGOING || txType == Pastella::TransactionType::STAKE_DEPOSIT)
-            {
-                /* For outgoing transactions, "from" should be the queried address (sender) */
-                /* Remove the queried address from "to" list since it receives change, not as a recipient */
-                walletTx.toAddresses.erase(
-                    std::remove(walletTx.toAddresses.begin(), walletTx.toAddresses.end(), address),
-                    walletTx.toAddresses.end()
-                );
-
-                /* Ensure "from" contains the queried address if it's not already there */
-                if (walletTx.fromAddresses.empty())
-                {
-                    walletTx.fromAddresses.push_back(address);
-                }
-            }
-
-            /* For INCOMING/STAKE_REWARD transactions, ensure address lists are correct */
-            if (txType == Pastella::TransactionType::INCOMING || txType == Pastella::TransactionType::STAKE_REWARD)
-            {
-                /* For incoming transactions, "to" should be the queried address (recipient) */
-                /* Clear "from" as it's already set correctly during input processing */
-            }
-
-            /* Update balance safely */
-            if (netAmount >= 0)
-            {
-                currentBalance += static_cast<uint64_t>(netAmount);
-            }
-            else
-            {
-                /* netAmount is negative - subtract from balance */
-                const uint64_t absNetAmount = static_cast<uint64_t>(-netAmount);
-                if (currentBalance >= absNetAmount)
-                {
-                    currentBalance -= absNetAmount;
-                }
-                else
-                {
-                    /* Balance would go negative - set to 0 and log warning */
-                    logger(Logging::WARNING) << "Balance would go negative for address " << address.substr(0, 10) << "... at block " << txData.blockNumber;
-                    currentBalance = 0;
-                }
-            }
-            walletTx.balanceAfter = currentBalance;
-
-            /* Update statistics based on transaction type and ACTUAL monetary flow
-             *
-             * CRITICAL: Statistics must track REAL monetary changes, not change.
-             *
-             * For transactions with both incoming and outgoing (mixed):
-             * - totalIncoming includes change YOU paid for (not real income!)
-             * - totalOutgoing includes total spent (including change returned)
-             * - netAmount = totalIncoming - totalOutgoing (actual gain/loss)
-             *
-             * The 'amount' variable is for DISPLAY and correctly handles change.
-             * For STATISTICS, we need to be more careful:
-             * - Pure INCOMING (no outgoing): All incoming is real income
-             * - Pure OUTGOING (no incoming): Use totalToOthers (excludes change)
-             * - MIXED (both): Use absolute value of netAmount for correct category
-             */
-
-            if (txType == Pastella::TransactionType::MINING)
-            {
-                /* Mining rewards - all incoming is real income (no outgoing possible) */
-                details.totalIncoming += amount; /* amount = totalIncoming for mining */
-            }
-            else if (txType == Pastella::TransactionType::STAKE_REWARD)
-            {
-                /* Stake rewards from coinbase - all incoming is real income (no outgoing possible) */
-                details.totalIncoming += amount; /* amount = totalIncoming for stake rewards */
-            }
-            else if (txType == Pastella::TransactionType::INCOMING)
-            {
-                /* Pure incoming (no outgoing) - all incoming is real income */
-                if (txData.totalOutgoing == 0)
-                {
-                    /* No outgoing - truly incoming transaction */
-                    details.totalIncoming += amount; /* amount = totalIncoming */
-                }
-                else
-                {
-                    /* Has outgoing - this is a mixed transaction classified as incoming
-                     * (incoming > outgoing, but outgoing exists)
-                     * In this case, only count the NET gain, not totalIncoming!
-                     * netAmount is positive here */
-                    details.totalIncoming += static_cast<uint64_t>(netAmount);
-                }
-            }
-            else if (txType == Pastella::TransactionType::OUTGOING ||
-                     txType == Pastella::TransactionType::STAKE_DEPOSIT)
-            {
-                /* Outgoing transactions - include both amount sent AND fee
-                 *
-                 * For OUTGOING transactions:
-                 * - amount = totalToOthers (amount sent to external addresses, excludes change)
-                 * - fee = transaction fee paid by sender
-                 * - Total outgoing = amount + fee (actual cost to sender) */
-                details.totalOutgoing += amount + txData.fee;
-            }
-
-            details.firstTxTimestamp = std::min(details.firstTxTimestamp, txData.timestamp);
-            details.lastTxTimestamp = std::max(details.lastTxTimestamp, txData.timestamp);
-
-            allTransactions.push_back(walletTx);
+            /* Address not found - return empty details */
+            logger(Logging::INFO) << "Address not found in index (has " << m_addressBalances.size() << " addresses indexed)";
+            return details;
         }
 
-        /* Set final balance */
-        details.totalBalance = currentBalance;
-        details.totalTransactions = allTransactions.size();
+        const auto &addressInfo = it->second;
 
-        logger(Logging::DEBUGGING) << "Found " << allTransactions.size() << " transactions for address " << address.substr(0, 10) << "...";
-        logger(Logging::DEBUGGING) << "Final balance: " << (currentBalance / 100000000.0) << " " << WalletConfig::ticker;
+        /* Basic info from index (instant!) */
+        details.totalBalance = addressInfo.balanceInfo.balance;
+        details.firstTxTimestamp = addressInfo.balanceInfo.firstTxTimestamp;
+        details.lastTxTimestamp = addressInfo.balanceInfo.lastTxTimestamp;
+        details.totalTransactions = addressInfo.transactions.size();
 
-        /* Sort transactions by block number (newest first) */
-        std::sort(allTransactions.begin(), allTransactions.end(),
-            [](const Pastella::WalletTransactionDetails &a, const Pastella::WalletTransactionDetails &b)
-            {
-                /* Sort by block number descending */
-                if (a.blockNumber != b.blockNumber)
-                {
-                    return a.blockNumber > b.blockNumber;
-                }
-                /* If same block, sort by timestamp descending */
-                return a.timestamp > b.timestamp;
-            });
+        /* Get transaction list from index - already sorted by block height during index build */
+        const auto &txRefs = addressInfo.transactions;
 
-        /* Apply pagination */
+        /* Apply pagination (transactions are in ascending order, show newest first) */
+        /* For display, we want newest first, so we need to reverse iterate */
+        size_t totalTxs = txRefs.size();
+
+        /* Calculate the range in reverse order (newest first) */
+        size_t startIdx, endIdx;
         if (limit > 0)
         {
-            /* Calculate offset */
-            const size_t offset = page * limit;
-
-            if (offset < allTransactions.size())
+            /* Calculate starting position from the end (newest) */
+            size_t offset = page * limit;
+            if (offset >= totalTxs)
             {
-                /* Get the page */
-                const size_t endIdx = std::min(offset + limit, allTransactions.size());
-                details.transactions.assign(allTransactions.begin() + offset, allTransactions.begin() + endIdx);
+                /* Page beyond available transactions */
+                logger(Logging::DEBUGGING) << "Page offset " << offset << " beyond total transactions " << totalTxs;
+                return details;
             }
-            /* else: offset beyond array size, return empty transactions */
+
+            /* Get the range from the end (newest first)
+             * For page 0: show last 'limit' transactions
+             * For page 1: show previous 'limit' transactions, etc. */
+            size_t fromEnd = offset;
+            size_t count = std::min(limit, totalTxs - offset);
+
+            startIdx = totalTxs - fromEnd - count;
+            endIdx = totalTxs - fromEnd;
         }
         else
         {
             /* No limit - return all transactions */
-            details.transactions = allTransactions;
+            startIdx = 0;
+            endIdx = totalTxs;
         }
+
+        /* Convert transaction references to full transaction details */
+        uint64_t currentBalance = details.totalBalance; /* Start with known final balance */
+
+        /* Process in reverse to calculate balance correctly (from newest to oldest) */
+        for (size_t idx = endIdx; idx > startIdx; idx--)
+        {
+            size_t i = idx - 1; /* Convert to zero-based index */
+            const auto &txRef = txRefs[i];
+
+            try
+            {
+                /* Get minimal transaction details (only for blockHash, unlockTime, fee) */
+                const TransactionDetails txDetails = getTransactionDetails(txRef.txHash);
+
+                /* Determine transaction type based on our stored type */
+                Pastella::TransactionType txType;
+                uint64_t displayAmount = txRef.amount;
+                uint64_t fee = txDetails.fee;
+
+                /* Map stored type to TransactionType enum
+                 * Stored types: 0=Incoming, 1=Outgoing, 2=Stake Reward, 3=Stake Deposit
+                 * Enum values: MINING=0, STAKE_REWARD=1, INCOMING=2, OUTGOING=3, STAKE_DEPOSIT=4 */
+                switch (txRef.type)
+                {
+                    case 0: /* Incoming */
+                        txType = Pastella::TransactionType::INCOMING;
+                        fee = 0;
+                        break;
+
+                    case 1: /* Outgoing */
+                        txType = Pastella::TransactionType::OUTGOING;
+                        break;
+
+                    case 2: /* Stake Reward */
+                        txType = Pastella::TransactionType::STAKE_REWARD;
+                        fee = 0;
+                        details.totalIncomingStakingRewards += txRef.amount;
+                        break;
+
+                    case 3: /* Stake Deposit */
+                        txType = Pastella::TransactionType::STAKE_DEPOSIT;
+                        details.totalOutgoingStakes += txRef.amount;
+                        break;
+
+                    default:
+                        txType = Pastella::TransactionType::INCOMING;
+                        fee = 0;
+                        break;
+                }
+
+                /* Create wallet transaction entry */
+                Pastella::WalletTransactionDetails walletTx;
+                walletTx.transactionHash = txRef.txHash;
+                walletTx.blockNumber = txRef.blockHeight;
+                walletTx.blockHash = txDetails.blockHash;
+                walletTx.amount = displayAmount;
+                walletTx.type = txType;
+                walletTx.timestamp = txRef.timestamp;
+                walletTx.unlockTime = txDetails.unlockTime;
+                walletTx.fee = fee;
+                walletTx.fromAddresses = txRef.fromAddresses;
+                walletTx.toAddresses = txRef.toAddresses;
+
+                /* Update running balance (subtract for outgoing, add for incoming) */
+                if (txType == Pastella::TransactionType::OUTGOING || txType == Pastella::TransactionType::STAKE_DEPOSIT)
+                {
+                    /* Outgoing - subtract amount + fee from balance */
+                    currentBalance += (displayAmount + fee);
+                }
+                else
+                {
+                    /* Incoming - add amount to balance */
+                    currentBalance -= displayAmount;
+                }
+                walletTx.balanceAfter = currentBalance;
+
+                /* Update statistics */
+                if (txType == Pastella::TransactionType::STAKE_REWARD)
+                {
+                    details.totalIncoming += displayAmount;
+                }
+                else if (txType == Pastella::TransactionType::INCOMING)
+                {
+                    details.totalIncoming += displayAmount;
+                }
+                else if (txType == Pastella::TransactionType::OUTGOING || txType == Pastella::TransactionType::STAKE_DEPOSIT)
+                {
+                    details.totalOutgoing += (displayAmount + fee);
+                }
+
+                details.transactions.push_back(walletTx);
+            }
+            catch (const std::exception &e)
+            {
+                logger(Logging::WARNING) << "Error getting details for transaction: " << e.what();
+            }
+        }
+
+        logger(Logging::DEBUGGING) << "Wallet details loaded: " << details.transactions.size() << " transactions (page " << page << ", total: " << totalTxs << ")";
 
         return details;
     }

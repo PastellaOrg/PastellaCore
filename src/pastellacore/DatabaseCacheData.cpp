@@ -31,4 +31,21 @@ namespace Pastella
         s(lastTxTimestamp, "last_tx_timestamp");
     }
 
+    void TransactionReference::serialize(ISerializer &s)
+    {
+        s(txHash, "tx_hash");
+        s(timestamp, "timestamp");
+        s(amount, "amount");
+        s(blockHeight, "block_height");
+        s(type, "type");
+        s(fromAddresses, "from_addresses");
+        s(toAddresses, "to_addresses");
+    }
+
+    void AddressInfoExtended::serialize(ISerializer &s)
+    {
+        s(balanceInfo, "balance_info");
+        s(transactions, "transactions");
+    }
+
 } // namespace Pastella

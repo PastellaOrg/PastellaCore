@@ -436,8 +436,8 @@ namespace Pastella
 
         std::mutex m_submitBlockMutex;
 
-        /* Address Balance Index for RichList */
-        mutable std::unordered_map<std::string, Pastella::AddressBalanceInfo> m_addressBalances;
+        /* Address Balance Index for RichList and Wallet Details */
+        mutable std::unordered_map<std::string, Pastella::AddressInfoExtended> m_addressBalances;
         mutable std::mutex m_addressBalancesMutex;
         mutable bool m_addressIndexBuilt = false;
 
