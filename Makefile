@@ -278,7 +278,7 @@ release-static-win64:
 		-D OPENSSL_SSL_LIBRARY=$(DEPS_WIN64_PREFIX)/lib/libssl.a \
 		-D CMAKE_CXX_FLAGS="$(WINDOWS_DEFINES) $(X86_SIMD_FLAGS) -isystem $(topdir)/src/platform/windows -I$(topdir)/src -I/usr/x86_64-w64-mingw32/include" \
 		-D CMAKE_C_FLAGS="$(WINDOWS_DEFINES) $(X86_SIMD_FLAGS) -isystem $(topdir)/src/platform/windows -I$(topdir)/src -I/usr/x86_64-w64-mingw32/include" \
-		-D CMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
+		-D CMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -static" \
 		$(topdir) && $(MAKE) --no-print-directory)
 
 debug-static-win64:
@@ -300,7 +300,7 @@ debug-static-win64:
 		-D OPENSSL_INCLUDE_DIR=$(DEPS_WIN64_PREFIX)/include \
 		-D OPENSSL_CRYPTO_LIBRARY=$(DEPS_WIN64_PREFIX)/lib/libcrypto.a \
 		-D OPENSSL_SSL_LIBRARY=$(DEPS_WIN64_PREFIX)/lib/libssl.a \
-		-D CMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
+		-D CMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -static" \
 		$(topdir) && $(MAKE) --no-print-directory)
 
 # =============================================================================
