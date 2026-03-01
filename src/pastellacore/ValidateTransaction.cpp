@@ -619,63 +619,30 @@ bool ValidateTransaction::validateTransactionInputsExpensive()
              *
              * CRITICAL SECURITY: Verify UTXO is unspent before allowing transaction
              *
-             * In transparent system, we must check:
+             * We must check BOTH pool transactions and block transactions:
              * 1. Does the UTXO exist? (output was created in a previous transaction)
              * 2. Is the UTXO unspent? (hasn't been spent by another transaction yet)
              *
-             * NOTE: For pool transactions (m_isPoolTransaction=true), we skip the database UTXO check
-             * because:
-             * - The transaction pool has its own double-spend detection
-             * - UTXOs spent by other pool transactions will be caught by pool validation
-             * - We only validate blockchain-spent UTXOs for transactions going into blocks */
-            if (!m_isPoolTransaction)
+             * Previously, pool transactions skipped this check, but that allowed
+             * invalid transactions (with non-existent UTXO references) to enter
+             * the mempool and propagate via P2P. Now we validate all transactions. */
+            try
             {
-                try
+                /* Check if UTXO is unspent in blockchain - this will verify:
+                 * 1. UTXO exists in blockchain
+                 * 2. UTXO is not already spent in a confirmed block */
+                if (!m_blockchainCache->isUtxoUnspent(referencedTxHash, outputIndex))
                 {
-                    /* DEBUG: Single line to verify rebuild */
-
-                    /* Check if UTXO is unspent in blockchain - this will verify:
-                     * 1. UTXO exists in blockchain
-                     * 2. UTXO is not already spent in a confirmed block */
-                    if (!m_blockchainCache->isUtxoUnspent(referencedTxHash, outputIndex))
-                    {
-                        /* UTXO double-spend detected! Reject transaction
-                         *
-                         * This means either:
-                         * 1. The UTXO doesn't exist (invalid output reference)
-                         * 2. The UTXO is already spent (double-spend attempt)
-                         *
-                         * Both cases are critical security violations - reject the transaction */
-                        std::stringstream errorMsg;
-                        errorMsg << "Double-spend detected! UTXO " << Common::podToHex(referencedTxHash)
-                                << ":" << outputIndex << " is either invalid or already spent in blockchain";
-
-                        setTransactionValidationResult(
-                            Pastella::error::TransactionValidationError::INPUT_INVALID_GLOBAL_INDEX,
-                            errorMsg.str());
-
-                        return false;
-                    }
-                }
-                catch (const std::exception &e)
-                {
-                    /* Exception during UTXO validation - reject transaction for safety */
+                    /* UTXO double-spend detected! Reject transaction
+                     *
+                     * This means either:
+                     * 1. The UTXO doesn't exist (invalid output reference)
+                     * 2. The UTXO is already spent (double-spend attempt)
+                     *
+                     * Both cases are critical security violations - reject the transaction */
                     std::stringstream errorMsg;
-                    errorMsg << "UTXO validation failed for " << Common::podToHex(referencedTxHash)
-                            << ":" << outputIndex << " - " << e.what();
-
-                    setTransactionValidationResult(
-                        Pastella::error::TransactionValidationError::INPUT_INVALID_GLOBAL_INDEX,
-                        errorMsg.str());
-
-                    return false;
-                }
-                catch (...)
-                {
-                    /* Unknown exception - reject transaction for safety */
-                    std::stringstream errorMsg;
-                    errorMsg << "UTXO validation failed with unknown exception for "
-                            << Common::podToHex(referencedTxHash) << ":" << outputIndex;
+                    errorMsg << "Double-spend detected! UTXO " << Common::podToHex(referencedTxHash)
+                            << ":" << outputIndex << " is either invalid or already spent in blockchain";
 
                     setTransactionValidationResult(
                         Pastella::error::TransactionValidationError::INPUT_INVALID_GLOBAL_INDEX,
@@ -684,7 +651,32 @@ bool ValidateTransaction::validateTransactionInputsExpensive()
                     return false;
                 }
             }
-            /* For pool transactions, skip UTXO check - pool handles double-spend detection */
+            catch (const std::exception &e)
+            {
+                /* Exception during UTXO validation - reject transaction for safety */
+                std::stringstream errorMsg;
+                errorMsg << "UTXO validation failed for " << Common::podToHex(referencedTxHash)
+                        << ":" << outputIndex << " - " << e.what();
+
+                setTransactionValidationResult(
+                    Pastella::error::TransactionValidationError::INPUT_INVALID_GLOBAL_INDEX,
+                    errorMsg.str());
+
+                return false;
+            }
+            catch (...)
+            {
+                /* Unknown exception - reject transaction for safety */
+                std::stringstream errorMsg;
+                errorMsg << "UTXO validation failed with unknown exception for "
+                        << Common::podToHex(referencedTxHash) << ":" << outputIndex;
+
+                setTransactionValidationResult(
+                    Pastella::error::TransactionValidationError::INPUT_INVALID_GLOBAL_INDEX,
+                    errorMsg.str());
+
+                return false;
+            }
 
             /* Get the transaction that contains the output we're spending
              *
