@@ -4392,54 +4392,6 @@ std::tuple<Error, uint16_t> RpcServer::getUserStakes(
         return nullptr;
     };
 
-    // Require staking_hashes parameter
-    const auto *hashesVal = getParamValue("staking_hashes");
-    if (!hashesVal)
-    {
-        writer.Key("status");
-        writer.String("ERROR");
-        writer.Key("message");
-        writer.String("Missing required parameter: staking_hashes");
-        res.body = sb.GetString();
-        return {SUCCESS, 400};
-    }
-
-    if (!hashesVal->IsArray())
-    {
-        writer.Key("status");
-        writer.String("ERROR");
-        writer.Key("message");
-        writer.String("staking_hashes must be an array");
-        res.body = sb.GetString();
-        return {SUCCESS, 400};
-    }
-
-    if (hashesVal->Size() == 0)
-    {
-        writer.Key("status");
-        writer.String("ERROR");
-        writer.Key("message");
-        writer.String("staking_hashes must contain at least one hash");
-        res.body = sb.GetString();
-        return {SUCCESS, 400};
-    }
-
-    std::vector<std::string> stakingHashes;
-    for (rapidjson::SizeType i = 0; i < hashesVal->Size(); i++)
-    {
-        const rapidjson::Value &hash = (*hashesVal)[i];
-        if (!hash.IsString())
-        {
-            writer.Key("status");
-            writer.String("ERROR");
-            writer.Key("message");
-            writer.String("All staking hashes must be strings");
-            res.body = sb.GetString();
-            return {SUCCESS, 400};
-        }
-        stakingHashes.push_back(std::string(hash.GetString()));
-    }
-
     auto stakingPool = m_core->getStakingPool();
     if (!stakingPool)
     {
@@ -4451,7 +4403,76 @@ std::tuple<Error, uint16_t> RpcServer::getUserStakes(
         return {SUCCESS, 200};
     }
 
-    std::vector<Pastella::StakingEntry> userStakes = stakingPool->getStakesByHashes(stakingHashes);
+    std::vector<Pastella::StakingEntry> userStakes;
+
+    /* Check for staking_hashes parameter (array of tx hashes) */
+    const auto *hashesVal = getParamValue("staking_hashes");
+    if (hashesVal)
+    {
+        if (!hashesVal->IsArray())
+        {
+            writer.Key("status");
+            writer.String("ERROR");
+            writer.Key("message");
+            writer.String("staking_hashes must be an array");
+            res.body = sb.GetString();
+            return {SUCCESS, 400};
+        }
+
+        if (hashesVal->Size() == 0)
+        {
+            writer.Key("status");
+            writer.String("ERROR");
+            writer.Key("message");
+            writer.String("staking_hashes must contain at least one hash");
+            res.body = sb.GetString();
+            return {SUCCESS, 400};
+        }
+
+        std::vector<std::string> stakingHashes;
+        for (rapidjson::SizeType i = 0; i < hashesVal->Size(); i++)
+        {
+            const rapidjson::Value &hash = (*hashesVal)[i];
+            if (!hash.IsString())
+            {
+                writer.Key("status");
+                writer.String("ERROR");
+                writer.Key("message");
+                writer.String("All staking hashes must be strings");
+                res.body = sb.GetString();
+                return {SUCCESS, 400};
+            }
+            stakingHashes.push_back(std::string(hash.GetString()));
+        }
+
+        userStakes = stakingPool->getStakesByHashes(stakingHashes);
+    }
+    /* Check for address parameter (wallet address string) */
+    else if (const auto *addressVal = getParamValue("address"))
+    {
+        if (!addressVal->IsString())
+        {
+            writer.Key("status");
+            writer.String("ERROR");
+            writer.Key("message");
+            writer.String("address must be a string");
+            res.body = sb.GetString();
+            return {SUCCESS, 400};
+        }
+
+        std::string address(addressVal->GetString());
+        userStakes = stakingPool->getStakesByAddress(address);
+    }
+    /* Neither parameter provided */
+    else
+    {
+        writer.Key("status");
+        writer.String("ERROR");
+        writer.Key("message");
+        writer.String("Missing required parameter: either staking_hashes (array) or address (string) must be provided");
+        res.body = sb.GetString();
+        return {SUCCESS, 400};
+    }
 
     /* Get current block height for reward calculations */
     uint64_t currentHeight = m_core->getTopBlockIndex() + 1;

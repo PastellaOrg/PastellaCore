@@ -95,6 +95,7 @@ namespace Pastella
         std::vector<StakingEntry> getActiveStakes() const;
         std::vector<StakingEntry> getInactiveStakes() const;
         std::vector<StakingEntry> getStakesByHashes(const std::vector<std::string> &stakingTxHashes) const;
+        std::vector<StakingEntry> getStakesByAddress(const std::string &stakerAddress) const;
 
         /* Phase 2: Stake lifecycle management */
         bool deactivateStake(const std::string &stakingTxHash);

@@ -369,7 +369,21 @@ namespace Pastella
         return result;
     }
 
-    
+    std::vector<StakingEntry> StakingPool::getStakesByAddress(const std::string &stakerAddress) const
+    {
+        std::vector<StakingEntry> result;
+        for (const auto &pair : activeStakes)
+        {
+            // Check if this stake belongs to the requested address
+            if (pair.second.stakerAddress == stakerAddress)
+            {
+                result.push_back(pair.second);
+            }
+        }
+        return result;
+    }
+
+
     bool StakingPool::validateLockDuration(uint32_t lockDurationDays) const
     {
         return isValidLockPeriod(lockDurationDays);
