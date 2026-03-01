@@ -188,6 +188,7 @@ namespace Pastella
             getBlockHashesByTimestamps(uint64_t timestampBegin, size_t secondsCount) const = 0;
 
         virtual StakingPool* getStakingPool() = 0;
+        virtual const StakingPool* getStakingPool() const = 0;
 
         /*!
          * \brief getRichList Get the top N richest addresses

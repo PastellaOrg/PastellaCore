@@ -215,6 +215,7 @@ namespace Pastella
 
         /* Staking pool access methods */
         virtual StakingPool* getStakingPool();
+        virtual const StakingPool* getStakingPool() const;
 
         /* Governance manager access methods */
         virtual GovernanceManager* getGovernanceManager();

@@ -3912,6 +3912,12 @@ namespace Pastella
         return stakingPool.get();
     }
 
+    const StakingPool* Core::getStakingPool() const
+    {
+        throwIfNotInitialized();
+        return stakingPool.get();
+    }
+
     GovernanceManager* Core::getGovernanceManager()
     {
         throwIfNotInitialized();
@@ -4290,39 +4296,79 @@ namespace Pastella
                 }
             }
 
+            /* Calculate transaction fee (sum of inputs - sum of outputs) */
+            uint64_t totalInputs = 0;
+            uint64_t totalOutputs = 0;
+            for (const auto &[_, amount] : outgoingAddresses)
+            {
+                totalInputs += amount;
+            }
+            for (const auto &output : transaction.outputs)
+            {
+                totalOutputs += output.amount;
+            }
+            uint64_t txFee = (totalInputs > totalOutputs) ? (totalInputs - totalOutputs) : 0;
+
             /* Check if this is a staking transaction */
             const bool isStakeDeposit = Pastella::isStakingTransaction(transaction.extra);
 
-            /* Add transaction references for all incoming addresses */
-            for (const auto &[address, amount] : incomingAddresses)
+            /* Identify addresses that are both sending and receiving (self-transactions with change) */
+            std::set<std::string> selfTransactionAddresses;
+            std::set<std::string> pureIncomingAddresses;
+            std::set<std::string> pureOutgoingAddresses;
+
+            for (const auto &[address, _] : incomingAddresses)
             {
-                Pastella::TransactionReference txRef;
-                txRef.txHash = txHash;
-                txRef.timestamp = block.timestamp;
-                txRef.amount = amount;
-                txRef.blockHeight = blockIndex;
-                txRef.type = 2; /* INCOMING */
-
-                /* fromAddresses = senders (outgoing addresses) */
-                for (const auto &[senderAddr, _] : outgoingAddresses)
+                if (outgoingAddresses.count(address) > 0)
                 {
-                    txRef.fromAddresses.push_back(senderAddr);
+                    selfTransactionAddresses.insert(address);
                 }
-
-                /* toAddresses = this address only (receives this amount) */
-                txRef.toAddresses.push_back(address);
-
-                m_addressBalances[address].transactions.push_back(txRef);
-                addressesChangedInBlock.insert(address);
+                else
+                {
+                    pureIncomingAddresses.insert(address);
+                }
             }
 
-            /* Add transaction references for all outgoing addresses */
-            for (const auto &[address, amount] : outgoingAddresses)
+            for (const auto &[address, _] : outgoingAddresses)
             {
+                if (incomingAddresses.count(address) == 0)
+                {
+                    pureOutgoingAddresses.insert(address);
+                }
+            }
+
+            /* Process self-transactions (addresses with both incoming and outgoing) */
+            /* Create a single OUTGOING entry that shows the net amount sent (excluding change) */
+            for (const auto &address : selfTransactionAddresses)
+            {
+                uint64_t outgoingAmount = outgoingAddresses.at(address);
+                uint64_t incomingAmount = incomingAddresses.at(address);
+
+                /* For STAKE_DEPOSIT: use the largest output as the staked amount
+                 * For regular OUTGOING: net amount = outgoingAmount - incomingAmount */
+                uint64_t displayAmount;
+                if (isStakeDeposit)
+                {
+                    /* Find the largest output amount (this is the staked amount, change is smaller) */
+                    uint64_t maxOutput = 0;
+                    for (const auto &output : transaction.outputs)
+                    {
+                        if (output.amount > maxOutput)
+                        {
+                            maxOutput = output.amount;
+                        }
+                    }
+                    displayAmount = maxOutput;
+                }
+                else
+                {
+                    displayAmount = (outgoingAmount > incomingAmount) ? (outgoingAmount - incomingAmount) : 0;
+                }
+
                 Pastella::TransactionReference txRef;
                 txRef.txHash = txHash;
                 txRef.timestamp = block.timestamp;
-                txRef.amount = amount;
+                txRef.amount = displayAmount;
                 txRef.blockHeight = blockIndex;
                 txRef.type = isStakeDeposit ? 4 : 3; /* STAKE_DEPOSIT or OUTGOING */
 
@@ -4336,6 +4382,58 @@ namespace Pastella
                     {
                         txRef.toAddresses.push_back(recipientAddr);
                     }
+                }
+
+                m_addressBalances[address].transactions.push_back(txRef);
+                addressesChangedInBlock.insert(address);
+            }
+
+            /* Process pure incoming addresses (only receiving, no outgoing) */
+            for (const auto &address : pureIncomingAddresses)
+            {
+                uint64_t amount = incomingAddresses.at(address);
+
+                Pastella::TransactionReference txRef;
+                txRef.txHash = txHash;
+                txRef.timestamp = block.timestamp;
+                txRef.amount = amount;
+                txRef.blockHeight = blockIndex;
+                txRef.type = 2; /* INCOMING */
+
+                /* fromAddresses = senders (all outgoing addresses) */
+                for (const auto &[senderAddr, _] : outgoingAddresses)
+                {
+                    txRef.fromAddresses.push_back(senderAddr);
+                }
+
+                /* toAddresses = this address only */
+                txRef.toAddresses.push_back(address);
+
+                m_addressBalances[address].transactions.push_back(txRef);
+                addressesChangedInBlock.insert(address);
+            }
+
+            /* Process pure outgoing addresses (only sending, no incoming) */
+            for (const auto &address : pureOutgoingAddresses)
+            {
+                uint64_t amount = outgoingAddresses.at(address);
+                /* For STAKE_DEPOSIT, show staked amount without fee (fee shown separately) */
+                /* For regular OUTGOING, show the full amount */
+
+                Pastella::TransactionReference txRef;
+                txRef.txHash = txHash;
+                txRef.timestamp = block.timestamp;
+                txRef.amount = amount; /* Show staked amount without fee (fee is separate) */
+                txRef.blockHeight = blockIndex;
+                txRef.type = isStakeDeposit ? 4 : 3; /* STAKE_DEPOSIT or OUTGOING */
+
+                /* fromAddresses = this address (sender) */
+                txRef.fromAddresses.push_back(address);
+
+                /* toAddresses = all recipients */
+                for (const auto &recipientAddr : allToAddresses)
+                {
+                    txRef.toAddresses.push_back(recipientAddr);
                 }
 
                 m_addressBalances[address].transactions.push_back(txRef);
@@ -4560,6 +4658,28 @@ namespace Pastella
         details.firstTxTimestamp = addressInfo.balanceInfo.firstTxTimestamp;
         details.lastTxTimestamp = addressInfo.balanceInfo.lastTxTimestamp;
         details.totalTransactions = addressInfo.transactions.size();
+
+        /* Deduct active staked amounts from available balance
+         * Staked funds are locked and not available for spending until the stake matures */
+        auto stakingPool = getStakingPool();
+        if (stakingPool)
+        {
+            std::vector<Pastella::StakingEntry> addressStakes = stakingPool->getStakesByAddress(address);
+            uint64_t totalStakedAndLocked = 0;
+            for (const auto &stake : addressStakes)
+            {
+                /* Only deduct active stakes that haven't matured yet */
+                if (stake.isActive)
+                {
+                    totalStakedAndLocked += stake.amount;
+                }
+            }
+            /* Subtract locked staked amounts from available balance */
+            if (totalStakedAndLocked > 0 && totalStakedAndLocked <= details.totalBalance)
+            {
+                details.totalBalance -= totalStakedAndLocked;
+            }
+        }
 
         /* Get transaction list from index - already sorted by block height during index build */
         const auto &txRefs = addressInfo.transactions;
