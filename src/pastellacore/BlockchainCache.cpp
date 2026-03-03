@@ -217,11 +217,11 @@ namespace Pastella
             alreadyGeneratedTransactions = lastBlockInfo.alreadyGeneratedTransactions + cachedTransactions.size() + 1;
 
             /* Debug logging for alreadyGeneratedCoins accumulation */
-            std::cout << "DEBUG_CACHE_ACCUMULATION: Height " << cachedBlock.getBlockIndex()
-                      << " lastBlockInfo.alreadyGeneratedCoins: " << lastBlockInfo.alreadyGeneratedCoins
-                      << " generatedCoins: " << generatedCoins
-                      << " new alreadyGeneratedCoins: " << alreadyGeneratedCoins
-                      << " (" << (alreadyGeneratedCoins / 100000000.0) << " " << WalletConfig::ticker << ")" << std::endl;
+            logger(Logging::DEBUGGING) << "DEBUG_CACHE_ACCUMULATION: Height " << cachedBlock.getBlockIndex()
+                                        << " lastBlockInfo.alreadyGeneratedCoins: " << lastBlockInfo.alreadyGeneratedCoins
+                                        << " generatedCoins: " << generatedCoins
+                                        << " new alreadyGeneratedCoins: " << alreadyGeneratedCoins
+                                        << " (" << (alreadyGeneratedCoins / 100000000.0) << " " << WalletConfig::ticker << ")";
         }
 
         CachedBlockInfo blockInfo;
@@ -635,8 +635,8 @@ namespace Pastella
                         {
                             if (parentUtxo.spent)
                             {
-                                logger(Logging::WARNING) << "Parent UTXO already spent: tx=" << keyInput.transactionHash
-                                                          << " output=" << keyInput.outputIndex;
+                                logger(Logging::DEBUGGING) << "Parent UTXO already spent: tx=" << keyInput.transactionHash
+                                                           << " output=" << keyInput.outputIndex;
                             }
                             else
                             {
