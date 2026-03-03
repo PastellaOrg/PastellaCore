@@ -4717,7 +4717,59 @@ namespace Pastella
             endIdx = totalTxs;
         }
 
-        /* Convert transaction references to full transaction details */
+        /* STEP 1: Calculate totals from ALL transactions (not just current page) */
+        for (const auto &txRef : txRefs)
+        {
+            switch (txRef.type)
+            {
+                case 0: /* MINING */
+                    details.totalIncoming += txRef.amount;
+                    break;
+
+                case 1: /* STAKE_REWARD */
+                    details.totalIncoming += txRef.amount;
+                    details.totalIncomingStakingRewards += txRef.amount;
+                    break;
+
+                case 2: /* INCOMING */
+                    details.totalIncoming += txRef.amount;
+                    break;
+
+                case 3: /* OUTGOING */
+                case 4: /* STAKE_DEPOSIT */
+                    /* For OUTGOING and STAKE_DEPOSIT, we need to get the fee
+                     * Since we haven't fetched transaction details yet, we'll add the amount now
+                     * and add fees in a second pass */
+                    details.totalOutgoing += txRef.amount;
+                    if (txRef.type == 4)
+                    {
+                        details.totalOutgoingStakes += txRef.amount;
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        /* STEP 2: Add fees for outgoing transactions (second pass) */
+        for (const auto &txRef : txRefs)
+        {
+            if (txRef.type == 3 || txRef.type == 4) /* OUTGOING or STAKE_DEPOSIT */
+            {
+                try
+                {
+                    const TransactionDetails txDetails = getTransactionDetails(txRef.txHash);
+                    details.totalOutgoing += txDetails.fee;
+                }
+                catch (const std::exception &e)
+                {
+                    logger(Logging::WARNING) << "Error getting transaction details for fee calculation: " << e.what();
+                }
+            }
+        }
+
+        /* STEP 3: Convert transaction references to full transaction details for paginated page */
         uint64_t currentBalance = details.totalBalance; /* Start with known final balance */
 
         /* Process in reverse to calculate balance correctly (from newest to oldest) */
@@ -4748,7 +4800,6 @@ namespace Pastella
                     case 1: /* STAKE_REWARD */
                         txType = Pastella::TransactionType::STAKE_REWARD;
                         fee = 0;
-                        details.totalIncomingStakingRewards += txRef.amount;
                         break;
 
                     case 2: /* INCOMING */
@@ -4762,7 +4813,6 @@ namespace Pastella
 
                     case 4: /* STAKE_DEPOSIT */
                         txType = Pastella::TransactionType::STAKE_DEPOSIT;
-                        details.totalOutgoingStakes += txRef.amount;
                         break;
 
                     default:
@@ -4796,26 +4846,6 @@ namespace Pastella
                     currentBalance -= displayAmount;
                 }
                 walletTx.balanceAfter = currentBalance;
-
-                /* Update statistics */
-                if (txType == Pastella::TransactionType::MINING)
-                {
-                    /* Mining rewards are incoming but NOT staking rewards */
-                    details.totalIncoming += displayAmount;
-                }
-                else if (txType == Pastella::TransactionType::STAKE_REWARD)
-                {
-                    details.totalIncoming += displayAmount;
-                    /* totalIncomingStakingRewards already updated above */
-                }
-                else if (txType == Pastella::TransactionType::INCOMING)
-                {
-                    details.totalIncoming += displayAmount;
-                }
-                else if (txType == Pastella::TransactionType::OUTGOING || txType == Pastella::TransactionType::STAKE_DEPOSIT)
-                {
-                    details.totalOutgoing += (displayAmount + fee);
-                }
 
                 details.transactions.push_back(walletTx);
             }
