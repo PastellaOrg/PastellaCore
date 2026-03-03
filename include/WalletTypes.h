@@ -22,6 +22,8 @@ namespace WalletTypes
         uint64_t amount;
         /* Daemon doesn't supply this, blockchain cache api does. */
         std::optional<uint64_t> globalOutputIndex;
+        /* Sender address for this output (who sent the funds) */
+        std::optional<std::string> from;
     };
 
     /* A coinbase transaction (i.e., a miner reward, there is one of these in
@@ -833,6 +835,10 @@ namespace WalletTypes
     inline void to_json(nlohmann::json &j, const KeyOutput &k)
     {
         j = {{"key", k.key}, {"amount", k.amount}};
+        if (k.from.has_value())
+        {
+            j["from"] = k.from.value();
+        }
     }
 
     inline void from_json(const nlohmann::json &j, KeyOutput &k)

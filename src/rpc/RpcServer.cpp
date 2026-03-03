@@ -12,6 +12,8 @@
 #include <iostream>
 #include <set>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "version.h"
 
@@ -864,6 +866,88 @@ std::tuple<Error, uint16_t> RpcServer::getWalletSyncData(
         return {SUCCESS, 500};
     }
 
+    /* OPTIMIZATION: Batch collect all transaction hashes for input address lookups
+     * This avoids doing individual database queries for each input */
+    std::unordered_set<Crypto::Hash> txHashesToLookup;
+    std::unordered_map<std::pair<Crypto::Hash, uint32_t>, std::string, boost::hash<std::pair<Crypto::Hash, uint32_t>>> addressCache;
+
+    /* Collect all transaction hashes from inputs */
+    for (const auto &block : walletBlocks)
+    {
+        for (const auto &transaction : block.transactions)
+        {
+            for (const auto &input : transaction.keyInputs)
+            {
+                bool hasValidUtxoRef = false;
+                for (size_t i = 0; i < sizeof(input.transactionHash.data); i++) {
+                    if (input.transactionHash.data[i] != 0) {
+                        hasValidUtxoRef = true;
+                        break;
+                    }
+                }
+                if (hasValidUtxoRef || input.outputIndex != 0) {
+                    txHashesToLookup.insert(input.transactionHash);
+                }
+            }
+        }
+        for (const auto &transaction : block.stakingTransactions)
+        {
+            for (const auto &input : transaction.keyInputs)
+            {
+                bool hasValidUtxoRef = false;
+                for (size_t i = 0; i < sizeof(input.transactionHash.data); i++) {
+                    if (input.transactionHash.data[i] != 0) {
+                        hasValidUtxoRef = true;
+                        break;
+                    }
+                }
+                if (hasValidUtxoRef || input.outputIndex != 0) {
+                    txHashesToLookup.insert(input.transactionHash);
+                }
+            }
+        }
+    }
+
+    /* Batch lookup all transactions */
+    if (!txHashesToLookup.empty())
+    {
+        try
+        {
+            std::vector<Crypto::Hash> txHashVec(txHashesToLookup.begin(), txHashesToLookup.end());
+            std::vector<Crypto::Hash> missedTransactions;
+            std::vector<Pastella::BinaryArray> txBinaries;
+            m_core->getTransactions(txHashVec, txBinaries, missedTransactions);
+
+            /* Parse transactions and build address cache */
+            for (const auto &txBinary : txBinaries)
+            {
+                if (!txBinary.empty())
+                {
+                    Pastella::CachedTransaction cachedTx(txBinary);
+                    const Pastella::Transaction& referencedTx = cachedTx.getTransaction();
+                    Crypto::Hash txHash = cachedTx.getTransactionHash();
+
+                    /* Cache all outputs for this transaction */
+                    for (size_t i = 0; i < referencedTx.outputs.size(); i++)
+                    {
+                        const auto& output = referencedTx.outputs[i];
+                        if (output.target.type() == typeid(Pastella::KeyOutput))
+                        {
+                            const Pastella::KeyOutput& keyOutput = boost::get<Pastella::KeyOutput>(output.target);
+                            Crypto::PublicKey publicKey = keyOutput.key;
+                            std::string address = Utilities::publicKeyToAddress(publicKey);
+                            addressCache[{txHash, static_cast<uint32_t>(i)}] = address;
+                        }
+                    }
+                }
+            }
+        }
+        catch (const std::exception& e)
+        {
+            /* Failed to batch lookup - addresses will be omitted */
+        }
+    }
+
     writer.Key("items");
     writer.StartArray();
     {
@@ -980,6 +1064,13 @@ std::tuple<Error, uint16_t> RpcServer::getWalletSyncData(
 
                                         writer.Key("outputIndex");
                                         writer.Uint64(input.outputIndex);
+
+                                        /* Get the 'to' address (recipient of the UTXO being spent) from cache */
+                                        auto cacheIt = addressCache.find({input.transactionHash, input.outputIndex});
+                                        if (cacheIt != addressCache.end()) {
+                                            writer.Key("to");
+                                            writer.String(cacheIt->second);
+                                        }
                                     }
                                 }
                                 writer.EndObject();
@@ -1065,6 +1156,13 @@ std::tuple<Error, uint16_t> RpcServer::getWalletSyncData(
 
                                         writer.Key("outputIndex");
                                         writer.Uint64(input.outputIndex);
+
+                                        /* Get the 'to' address (recipient of the UTXO being spent) from cache */
+                                        auto cacheIt = addressCache.find({input.transactionHash, input.outputIndex});
+                                        if (cacheIt != addressCache.end()) {
+                                            writer.Key("to");
+                                            writer.String(cacheIt->second);
+                                        }
                                     }
                                 }
                                 writer.EndObject();

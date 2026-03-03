@@ -35,6 +35,7 @@
 #include <numeric>
 #include <set>
 #include <system/Timer.h>
+#include <unordered_map>
 #include <unordered_set>
 #include <utilities/Container.h>
 #include <utilities/FormatTools.h>
@@ -838,6 +839,13 @@ namespace Pastella
                 rawBlocks = mainChain->getBlocksByHeight(startIndex, endIndex);
             }
 
+            /* OPTIMIZATION: Batch collect all transaction hashes we need to look up
+             * This avoids doing individual database queries for each transaction */
+            std::unordered_set<Crypto::Hash> txHashesToLookup;
+
+            /* First pass: collect all transaction hashes and create raw transactions */
+            std::vector<std::pair<WalletTypes::WalletBlockInfo, std::vector<WalletTypes::RawTransaction>>> pendingBlocks;
+
             for (const auto rawBlock : rawBlocks)
             {
                 BlockTemplate block;
@@ -857,9 +865,105 @@ namespace Pastella
                     walletBlock.coinbaseTransaction = getRawCoinbaseTransaction(block.baseTransaction);
                 }
 
+                std::vector<WalletTypes::RawTransaction> pendingTransactions;
+
                 for (const auto &transaction : rawBlock.transactions)
                 {
                     WalletTypes::RawTransaction rawTx = getRawTransaction(transaction);
+
+                    /* Collect the first input's transaction hash for lookup */
+                    if (!rawTx.keyInputs.empty())
+                    {
+                        txHashesToLookup.insert(rawTx.keyInputs[0].transactionHash);
+                    }
+
+                    pendingTransactions.push_back(rawTx);
+                }
+
+                pendingBlocks.push_back({walletBlock, pendingTransactions});
+            }
+
+            /* Batch lookup: Get all referenced transactions at once */
+            std::unordered_map<Crypto::Hash, Pastella::Transaction> cachedReferencedTxs;
+
+            if (!txHashesToLookup.empty())
+            {
+                try
+                {
+                    std::vector<Crypto::Hash> txHashVec(txHashesToLookup.begin(), txHashesToLookup.end());
+                    std::vector<Crypto::Hash> missedTransactions;
+                    std::vector<Pastella::BinaryArray> txBinaries;
+                    mainChain->getRawTransactions(txHashVec, txBinaries, missedTransactions);
+
+                    /* Cache the parsed transactions */
+                    for (const auto &txBinary : txBinaries)
+                    {
+                        if (!txBinary.empty())
+                        {
+                            Pastella::CachedTransaction cachedTx(txBinary);
+                            cachedReferencedTxs[cachedTx.getTransactionHash()] = cachedTx.getTransaction();
+                        }
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    LoggerRef loggerSync(logger.getLogger(), "Core.Sync");
+                    loggerSync(Logging::WARNING) << "Failed to batch lookup referenced transactions: " << e.what();
+                }
+            }
+
+            /* Second pass: Populate addresses and finalize blocks */
+            for (auto &[walletBlock, transactions] : pendingBlocks)
+            {
+                for (auto &rawTx : transactions)
+                {
+                    /* Get sender address from first input (if inputs exist)
+                     * The sender is the recipient of the first input's referenced output */
+                    std::string fromAddress;
+                    if (!rawTx.keyInputs.empty())
+                    {
+                        try
+                        {
+                            const Pastella::KeyInput &keyInput = rawTx.keyInputs[0];
+
+                            /* Look up in cache */
+                            auto it = cachedReferencedTxs.find(keyInput.transactionHash);
+                            if (it != cachedReferencedTxs.end())
+                            {
+                                const Pastella::Transaction& referencedTx = it->second;
+
+                                /* Get the output being spent */
+                                if (keyInput.outputIndex < referencedTx.outputs.size())
+                                {
+                                    const auto& output = referencedTx.outputs[keyInput.outputIndex];
+
+                                    /* Extract public key from output (KeyOutput type) */
+                                    if (output.target.type() == typeid(Pastella::KeyOutput))
+                                    {
+                                        const Pastella::KeyOutput& keyOutput = boost::get<Pastella::KeyOutput>(output.target);
+                                        Crypto::PublicKey publicKey = keyOutput.key;
+
+                                        /* Convert public key to address */
+                                        fromAddress = Utilities::publicKeyToAddress(publicKey);
+                                    }
+                                }
+                            }
+                        }
+                        catch (const std::exception& e)
+                        {
+                            /* Failed to extract from address - leave empty */
+                            fromAddress = "";
+                        }
+                    }
+
+                    /* Add from address to all outputs */
+                    if (!fromAddress.empty())
+                    {
+                        for (auto &output : rawTx.keyOutputs)
+                        {
+                            output.from = fromAddress;
+                        }
+                    }
 
                     /* Check if this is a staking transaction by looking for staking data in extra field */
                     std::vector<Pastella::TransactionExtraField> extraFields;
@@ -1068,7 +1172,7 @@ namespace Pastella
         /* Transaction public key, used for decrypting transactions along with
         transaction.transactionPublicKey = parsedExtra.transactionPublicKey;
 
-        
+
 
         /* Store the raw extra data for staking detection */
         transaction.extra = t.extra;
