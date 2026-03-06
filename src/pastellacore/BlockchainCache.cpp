@@ -454,6 +454,14 @@ namespace Pastella
             return false; /* UTXO doesn't exist */
         }
 
+        /* Log when UTXO is marked as spent for debugging */
+        if (utxo.spent)
+        {
+            logger(Logging::WARNING) << "isUtxoUnspent: UTXO " << Common::podToHex(transactionHash)
+                                      << ":" << outputIndex << " is marked as SPENT (spentBlockIndex="
+                                      << utxo.spentBlockIndex << ")";
+        }
+
         return !utxo.spent; /* UTXO exists, return spent status */
     }
 

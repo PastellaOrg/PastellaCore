@@ -503,9 +503,31 @@ namespace Pastella
         }
         else
         {
-            logger(Logging::DEBUGGING) << context
-                                       << "Block verification failed, dropping connection: " << result.message();
-            context.m_state = PastellaConnectionContext::state_shutdown;
+            /* Handle block verification failures more gracefully
+             * Transaction validation errors could be due to local database issues,
+             * not necessarily malicious behavior. Don't drop connection for these. */
+            if (result == error::AddBlockErrorCondition::TRANSACTION_VALIDATION_FAILED)
+            {
+                logger(Logging::WARNING) << context
+                                         << "Block rejected due to transaction validation error (possible local database issue): "
+                                         << result.message();
+                /* Don't drop connection - allow sync to continue from this peer */
+                context.m_state = PastellaConnectionContext::state_synchronizing;
+            }
+            else if (result == error::AddBlockErrorCondition::DESERIALIZATION_FAILED)
+            {
+                /* Deserialization errors indicate malicious peer sending bad data */
+                logger(Logging::DEBUGGING) << context
+                                           << "Block deserialization failed, dropping connection: " << result.message();
+                context.m_state = PastellaConnectionContext::state_shutdown;
+            }
+            else
+            {
+                /* Other validation errors */
+                logger(Logging::DEBUGGING) << context
+                                           << "Block verification failed, dropping connection: " << result.message();
+                context.m_state = PastellaConnectionContext::state_shutdown;
+            }
         }
 
         return 1;
@@ -704,12 +726,16 @@ namespace Pastella
 
             auto addResult = m_core.addBlock(cachedBlocks[index], std::move(rawBlocks[index]));
             if (addResult == error::AddBlockErrorCondition::BLOCK_VALIDATION_FAILED
-                || addResult == error::AddBlockErrorCondition::TRANSACTION_VALIDATION_FAILED
-                || addResult == error::AddBlockErrorCondition::DESERIALIZATION_FAILED)
+                || addResult == error::AddBlockErrorCondition::TRANSACTION_VALIDATION_FAILED)
             {
                 logger(Logging::DEBUGGING)
-                    << context << "Block verification failed, dropping connection: " << addResult.message();
-                context.m_state = PastellaConnectionContext::state_shutdown;
+                    << context << "Block validation error: " << addResult.message();
+                return 1;
+            }
+            else if (addResult == error::AddBlockErrorCondition::DESERIALIZATION_FAILED)
+            {
+                logger(Logging::DEBUGGING)
+                    << context << "Block deserialization failed: " << addResult.message();
                 return 1;
             }
             else if (addResult == error::AddBlockErrorCondition::BLOCK_REJECTED)
@@ -852,9 +878,31 @@ namespace Pastella
             }
             else
             {
-                logger(Logging::DEBUGGING)
-                    << context << "Block verification failed, dropping connection: " << result.message();
-                context.m_state = PastellaConnectionContext::state_shutdown;
+                /* Handle block verification failures more gracefully */
+                if (result == error::AddBlockErrorCondition::TRANSACTION_VALIDATION_FAILED)
+                {
+                    logger(Logging::WARNING)
+                        << context << "Lite block rejected due to transaction validation error: " << result.message();
+                    /* Don't drop connection - request chain instead */
+                    context.m_state = PastellaConnectionContext::state_synchronizing;
+                    NOTIFY_REQUEST_CHAIN::request r = boost::value_initialized<NOTIFY_REQUEST_CHAIN::request>();
+                    r.block_ids = m_core.buildSparseChain();
+                    logger(Logging::TRACE) << context
+                                           << "-->>NOTIFY_REQUEST_CHAIN: m_block_ids.size()=" << r.block_ids.size();
+                    post_notify<NOTIFY_REQUEST_CHAIN>(*m_p2p, r, context);
+                }
+                else if (result == error::AddBlockErrorCondition::DESERIALIZATION_FAILED)
+                {
+                    logger(Logging::DEBUGGING)
+                        << context << "Lite block deserialization failed, dropping connection: " << result.message();
+                    context.m_state = PastellaConnectionContext::state_shutdown;
+                }
+                else
+                {
+                    logger(Logging::DEBUGGING)
+                        << context << "Block verification failed, dropping connection: " << result.message();
+                    context.m_state = PastellaConnectionContext::state_shutdown;
+                }
             }
         }
         else

@@ -662,6 +662,63 @@ namespace Pastella
         auto deletingTransactionHashes = requestTransactionHashesFromBlockIndex(splitBlockIndex);
         requestDeleteTransactions(writeBatch, deletingTransactionHashes);
 
+        /* UTXO SPENT STATUS RESET: Reset spent flag for UTXOs spent in blocks being removed
+         *
+         * When blocks are removed during split/rewind, the UTXOs they spent must be
+         * marked as unspent again. Otherwise, they'll still be marked as spent when
+         * the chain is rebuilt, causing "invalid global index" validation errors.
+         *
+         * We query the spent UTXO database for all UTXOs spent in the blocks being
+         * removed and reset their spent status to false. */
+        logger(Logging::DEBUGGING) << "Resetting spent status for UTXOs spent in blocks from "
+            << splitBlockIndex << " to " << currentTop;
+
+        try
+        {
+            /* Query all spent UTXOs and reset those spent in the blocks being removed */
+            BlockchainReadBatch utxoReadBatch;
+            utxoReadBatch.requestAllUtxos();
+
+            auto utxoResult = readDatabase(utxoReadBatch);
+            const auto &allUtxos = utxoResult.getUtxos();
+
+            int utxosReset = 0;
+            for (const auto &utxoPair : allUtxos)
+            {
+                const UtxoOutput &utxo = utxoPair.second;
+
+                /* If this UTXO was spent in a block being removed, reset it */
+                if (utxo.spent && utxo.spentBlockIndex >= splitBlockIndex)
+                {
+                    /* Reset spent status */
+                    UtxoOutput updatedUtxo = utxo;
+                    updatedUtxo.spent = false;
+                    updatedUtxo.spentBlockIndex = 0;
+
+                    /* Write updated UTXO */
+                    writeBatch.insertUtxo(utxo.transactionHash, utxo.outputIndex, updatedUtxo);
+
+                    /* Remove from spent UTXO index */
+                    writeBatch.removeSpentUtxo(utxo.transactionHash, utxo.outputIndex);
+
+                    utxosReset++;
+
+                    logger(Logging::TRACE) << "Reset UTXO spent status: tx="
+                        << Common::podToHex(utxo.transactionHash)
+                        << " output=" << utxo.outputIndex
+                        << " amount=" << utxo.amount
+                        << " (was spent in block " << utxo.spentBlockIndex << ")";
+                }
+            }
+
+            logger(Logging::INFO) << "Reset spent status for " << utxosReset << " UTXOs during split";
+        }
+        catch (const std::exception &e)
+        {
+            logger(Logging::ERROR) << "Failed to reset UTXO spent status during split: " << e.what();
+            /* Continue anyway - better to have some stale data than fail the split */
+        }
+
         std::vector<ExtendedTransactionInfo> extendedTransactions;
         if (!requestExtendedTransactionInfos(deletingTransactionHashes, database, extendedTransactions))
         {
