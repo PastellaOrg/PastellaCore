@@ -153,58 +153,7 @@ std::error_code RocksDBWrapper::write(IWriteBatch &batch, bool sync)
         rocksdbBatch.Delete(rocksdb::Slice(key));
     }
 
-    /* Pre-write validation: warn on empty batch */
     size_t totalOperations = rawData.size() + rawKeys.size();
-    if (totalOperations == 0)
-    {
-        logger(WARNING) << "[DB-WRITE] Empty write batch - nothing to write";
-        return std::error_code();
-    }
-
-    /* UTXO WRITE DIAGNOSTIC: Count UTXOs in batch before writing */
-    size_t utxoCount = 0;
-    size_t transactionCount = 0;
-    size_t spentTxCount = 0;
-    size_t blockCount = 0;
-    size_t miscCount = 0;
-
-    for (const auto &kvPair : rawData)
-    {
-        if (!kvPair.first.empty())
-        {
-            uint8_t prefix = static_cast<uint8_t>(kvPair.first[0]);
-            if (prefix == 0x68) // UTXO_KEY_TO_UTXO_PREFIX ('h')
-            {
-                utxoCount++;
-            }
-            else if (prefix == 0x01) // TRANSACTION_HASH_TO_TRANSACTION_INFO_PREFIX
-            {
-                transactionCount++;
-            }
-            else if (prefix == 0x62) // BLOCK_INDEX_TO_KEY_IMAGE_PREFIX (spent txs)
-            {
-                spentTxCount++;
-            }
-            else if (prefix == 0x63) // BLOCK_INDEX_TO_BLOCK_HASH_PREFIX
-            {
-                blockCount++;
-            }
-            else
-            {
-                miscCount++;
-            }
-        }
-    }
-
-    logger(INFO) << "[DB-WRITE] Atomic batch: " << totalOperations << " operations"
-                 << " | UTXOs: " << utxoCount
-                 << " | Transactions: " << transactionCount
-                 << " | SpentTxs: " << spentTxCount
-                 << " | Blocks: " << blockCount
-                 << " | Other: " << miscCount
-                 << " | Deletes: " << rawKeys.size()
-                 << " | Sync: " << (sync ? "YES" : "NO")
-                 << " | WAL: ENABLED";
 
     /* CRITICAL: Retry logic for transient failures
      * RocksDB writes can fail due to temporary I/O issues or locks.
@@ -224,7 +173,7 @@ std::error_code RocksDBWrapper::write(IWriteBatch &batch, bool sync)
         attempt++;
         if (attempt < MAX_RETRIES)
         {
-            logger(WARNING) << "[DB-WRITE] Write attempt " << attempt << " failed: "
+            logger(WARNING) << "Database write attempt " << attempt << " failed: "
                            << status.ToString() << " - Retrying...";
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
@@ -232,14 +181,11 @@ std::error_code RocksDBWrapper::write(IWriteBatch &batch, bool sync)
 
     if (!status.ok())
     {
-        logger(ERROR) << "[DB-WRITE] CRITICAL: All write attempts failed. Error: "
-                      << status.ToString()
-                      << " | Operations: " << totalOperations
-                      << " | This may indicate database corruption or I/O failure";
+        logger(ERROR) << "Failed to write to database after " << MAX_RETRIES << " attempts: "
+                      << status.ToString();
         return make_error_code(Pastella::error::DataBaseErrorCodes::INTERNAL_ERROR);
     }
 
-    logger(INFO) << "[DB-WRITE] Atomic write completed successfully";
     return std::error_code();
 }
 

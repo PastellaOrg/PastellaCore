@@ -710,7 +710,6 @@ namespace Pastella
                 }
             }
 
-            logger(Logging::INFO) << "Reset spent status for " << utxosReset << " UTXOs during split";
         }
         catch (const std::exception &e)
         {
@@ -1029,13 +1028,6 @@ namespace Pastella
 
                 batch.insertUtxo(transactionCacheInfo.transactionHash, poi.outputIndex, utxo);
 
-                /* UTXO WRITE DIAGNOSTIC: Log at INFO level for easy visibility */
-                logger(Logging::INFO) << "[UTXO-WRITE] Creating UTXO: tx="
-                                      << Common::podToHex(transactionCacheInfo.transactionHash)
-                                      << " output=" << poi.outputIndex
-                                      << " amount=" << utxo.amount
-                                      << " block=" << blockIndex;
-
                 /* GLOBAL INDEX TRACKING REMOVED - insertKeyOutputInfo call removed */
                 // batch.insertKeyOutputInfo(output.amount, globalIndex, outputInfo);
             }
@@ -1119,13 +1111,6 @@ namespace Pastella
 
                         batch.insertUtxo(keyInput.transactionHash, keyInput.outputIndex, utxo);
                         batch.insertSpentUtxo(keyInput.transactionHash, keyInput.outputIndex, blockIndex);
-
-                        /* UTXO SPEND DIAGNOSTIC: Log at INFO level */
-                        logger(Logging::INFO) << "[UTXO-SPEND] Marked UTXO as spent: tx="
-                                              << Common::podToHex(keyInput.transactionHash)
-                                              << " output=" << keyInput.outputIndex
-                                              << " amount=" << utxo.amount
-                                              << " in block " << blockIndex;
                     }
                 }
                 else
@@ -1296,11 +1281,6 @@ namespace Pastella
 
         insertBlockTimestamp(batch, cachedBlock.getBlock().timestamp, cachedBlock.getBlockHash());
 
-        /* UTXO WRITE DIAGNOSTIC: Log before database write */
-        logger(Logging::INFO) << "[UTXO-WRITE] About to write block " << cachedBlock.getBlockHash()
-                              << " at height " << (getTopBlockIndex() + 1)
-                              << " with " << (cachedTransactions.size() + 1) << " transactions to database";
-
         /* CRITICAL: Use sync write to ensure UTXOs are immediately available for spending
          *
          * When a block is mined, the UTXOs it creates must be immediately visible for
@@ -1322,10 +1302,6 @@ namespace Pastella
             logger(Logging::ERROR) << "push block " << cachedBlock.getBlockHash() << " write failed: " << res.message();
             throw std::runtime_error(res.message());
         }
-
-        /* UTXO WRITE DIAGNOSTIC: Log successful write */
-        logger(Logging::INFO) << "[UTXO-WRITE] Successfully wrote block " << cachedBlock.getBlockHash()
-                              << " at height " << (getTopBlockIndex() + 1) << " to database";
 
         topBlockIndex = *topBlockIndex + 1;
         topBlockHash = cachedBlock.getBlockHash();

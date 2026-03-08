@@ -216,15 +216,6 @@ BlockchainWriteBatch &BlockchainWriteBatch::insertUtxo(
     /* Serialize value using KVBinary */
     std::string value = DB::serialize(utxo, "utxo");
 
-    std::cout << "[UTXO-DEBUG] insertUtxo: tx=" << Common::podToHex(transactionHash)
-              << " output=" << outputIndex
-              << " amount=" << utxo.amount
-              << " key_size=" << key.size()
-              << " value_size=" << value.size()
-              << " key_prefix=" << key[0]
-              << " (expected: h)"
-              << std::endl;
-
     rawDataToInsert.emplace_back(std::make_pair(key, value));
 
     return *this;
@@ -281,13 +272,6 @@ BlockchainWriteBatch &BlockchainWriteBatch::insertSpentUtxo(
     /* Value: spentBlockIndex as 4-byte big-endian */
     uint32_t beBlockIndex = swap32be(spentBlockIndex);
     std::string value(reinterpret_cast<const char*>(&beBlockIndex), 4);
-
-    std::cout << "[UTXO-DEBUG] insertSpentUtxo: tx=" << Common::podToHex(transactionHash)
-              << " output=" << outputIndex
-              << " spentBlock=" << spentBlockIndex
-              << " key_prefix=" << key[0]
-              << " (expected: i)"
-              << std::endl;
 
     rawDataToInsert.emplace_back(std::make_pair(key, value));
 
