@@ -6,6 +6,11 @@
 #include "BlockchainWriteBatch.h"
 
 #include "DBUtils.h"
+#include "UtxoOutput.h"
+#include "common/StringTools.h"
+
+#include <iostream>
+#include <arpa/inet.h>
 
 using namespace Pastella;
 
@@ -192,18 +197,35 @@ BlockchainWriteBatch &BlockchainWriteBatch::insertUtxo(
 {
     /* UTXO SYSTEM: Insert or update a UTXO in the database
      *
-     * Key: (transactionHash, outputIndex) composite key
+     * Key: "h" (1 byte) + transactionHash (32 bytes) + outputIndex (4 bytes big-endian)
      * Value: Complete UtxoOutput structure with all fields
      *
-     * Called when:
-     * - Transaction output is created (initial UTXO creation)
-     * - UTXO is spent (update spent status)
-     * - Reorg handling (restore UTXO status) */
-    rawDataToInsert.emplace_back(
-        DB::serialize(
-            DB::UTXO_KEY_TO_UTXO_PREFIX,
-            std::make_pair(transactionHash, outputIndex),
-            utxo));
+     * Using custom key construction to ensure prefix is at position 0
+     * This allows proper identification of UTXO keys in RocksDBWrapper::write() */
+
+    /* Manually construct key with prefix at position 0 */
+    std::string key;
+    key.reserve(37); // 1 + 32 + 4
+    key.push_back('h'); // UTXO_KEY_TO_UTXO_PREFIX as first byte
+    key.append(reinterpret_cast<const char*>(transactionHash.data), 32);
+
+    /* Convert outputIndex to big-endian */
+    uint32_t beIndex = htobe32(outputIndex);
+    key.append(reinterpret_cast<const char*>(&beIndex), 4);
+
+    /* Serialize value using KVBinary */
+    std::string value = DB::serialize(utxo, "utxo");
+
+    std::cout << "[UTXO-DEBUG] insertUtxo: tx=" << Common::podToHex(transactionHash)
+              << " output=" << outputIndex
+              << " amount=" << utxo.amount
+              << " key_size=" << key.size()
+              << " value_size=" << value.size()
+              << " key_prefix=" << key[0]
+              << " (expected: h)"
+              << std::endl;
+
+    rawDataToInsert.emplace_back(std::make_pair(key, value));
 
     return *this;
 }
@@ -245,11 +267,29 @@ BlockchainWriteBatch &BlockchainWriteBatch::insertSpentUtxo(
      * - Undo spends during blockchain reorganization
      * - Track which UTXOs were spent in which blocks
      * - Restore UTXO status when rolling back blocks */
-    rawDataToInsert.emplace_back(
-        DB::serialize(
-            DB::UTXO_SPENT_PREFIX,
-            std::make_pair(transactionHash, outputIndex),
-            spentBlockIndex));
+
+    /* Manually construct key with prefix at position 0 */
+    std::string key;
+    key.reserve(37); // 1 + 32 + 4
+    key.push_back('i'); // UTXO_SPENT_PREFIX as first byte
+    key.append(reinterpret_cast<const char*>(transactionHash.data), 32);
+
+    /* Convert outputIndex to big-endian */
+    uint32_t beIndex = htobe32(outputIndex);
+    key.append(reinterpret_cast<const char*>(&beIndex), 4);
+
+    /* Value: spentBlockIndex as 4-byte big-endian */
+    uint32_t beBlockIndex = htobe32(spentBlockIndex);
+    std::string value(reinterpret_cast<const char*>(&beBlockIndex), 4);
+
+    std::cout << "[UTXO-DEBUG] insertSpentUtxo: tx=" << Common::podToHex(transactionHash)
+              << " output=" << outputIndex
+              << " spentBlock=" << spentBlockIndex
+              << " key_prefix=" << key[0]
+              << " (expected: i)"
+              << std::endl;
+
+    rawDataToInsert.emplace_back(std::make_pair(key, value));
 
     return *this;
 }
@@ -263,16 +303,23 @@ BlockchainWriteBatch &BlockchainWriteBatch::removeUtxo(
      * This is used during reorg handling to remove UTXOs that
      * are being rolled back. The UTXO spent tracking is also
      * removed to maintain consistency. */
-    rawKeysToRemove.emplace_back(
-        DB::serializeKey(
-            DB::UTXO_KEY_TO_UTXO_PREFIX,
-            std::make_pair(transactionHash, outputIndex)));
 
-    /* Also remove from spent tracking if present */
-    rawKeysToRemove.emplace_back(
-        DB::serializeKey(
-            DB::UTXO_SPENT_PREFIX,
-            std::make_pair(transactionHash, outputIndex)));
+    /* Create UTXO key */
+    std::string key;
+    key.reserve(37);
+    key.push_back('h');
+    key.append(reinterpret_cast<const char*>(transactionHash.data), 32);
+    uint32_t beIndex = htobe32(outputIndex);
+    key.append(reinterpret_cast<const char*>(&beIndex), 4);
+    rawKeysToRemove.emplace_back(key);
+
+    /* Create spent UTXO key */
+    std::string spentKey;
+    spentKey.reserve(37);
+    spentKey.push_back('i');
+    spentKey.append(reinterpret_cast<const char*>(transactionHash.data), 32);
+    spentKey.append(reinterpret_cast<const char*>(&beIndex), 4);
+    rawKeysToRemove.emplace_back(spentKey);
 
     return *this;
 }
@@ -285,10 +332,15 @@ BlockchainWriteBatch &BlockchainWriteBatch::removeSpentUtxo(
      *
      * Used during reorg handling when un-spending a UTXO
      * (restoring it to unspent state) */
-    rawKeysToRemove.emplace_back(
-        DB::serializeKey(
-            DB::UTXO_SPENT_PREFIX,
-            std::make_pair(transactionHash, outputIndex)));
+
+    /* Create spent UTXO key */
+    std::string key;
+    key.reserve(37);
+    key.push_back('i');
+    key.append(reinterpret_cast<const char*>(transactionHash.data), 32);
+    uint32_t beIndex = htobe32(outputIndex);
+    key.append(reinterpret_cast<const char*>(&beIndex), 4);
+    rawKeysToRemove.emplace_back(key);
 
     return *this;
 }

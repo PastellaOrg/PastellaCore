@@ -181,5 +181,12 @@ namespace Pastella
         std::atomic<size_t> m_peersCount;
 
         Tools::ObserverManager<IPastellaProtocolObserver> m_observerManager;
+
+        /* Peer validation failure tracking: Track peers that send invalid blocks
+         * to automatically drop connections and continue syncing from other peers */
+        std::map<boost::uuids::uuid, uint32_t> m_peerValidationFailures;
+        std::set<boost::uuids::uuid> m_badPeers;
+        static const uint32_t MAX_PEER_FAILURES = 3;
+        mutable std::mutex m_badPeersMutex;
     };
 } // namespace Pastella

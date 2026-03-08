@@ -215,10 +215,30 @@ namespace Pastella
         }
     }
 
-    void PastellaProtocolHandler::onConnectionOpened(PastellaConnectionContext &context) {}
+    void PastellaProtocolHandler::onConnectionOpened(PastellaConnectionContext &context)
+    {
+        /* Check if this peer was previously marked as bad */
+        {
+            std::lock_guard<std::mutex> lock(m_badPeersMutex);
+            const boost::uuids::uuid &peerId = context.m_connection_id;
+            if (m_badPeers.find(peerId) != m_badPeers.end())
+            {
+                logger(Logging::WARNING)
+                    << context << "Connection opened from peer previously marked as bad (validation failures)";
+            }
+        }
+    }
 
     void PastellaProtocolHandler::onConnectionClosed(PastellaConnectionContext &context)
     {
+        /* Clean up peer failure tracking when connection closes */
+        {
+            std::lock_guard<std::mutex> lock(m_badPeersMutex);
+            const boost::uuids::uuid &peerId = context.m_connection_id;
+            m_peerValidationFailures.erase(peerId);
+            /* Note: We keep peers in m_badPeers set across reconnects to remember bad peers */
+        }
+
         bool updated = false;
         {
             std::lock_guard<std::mutex> lock(m_observedHeightMutex);
@@ -251,6 +271,18 @@ namespace Pastella
     bool PastellaProtocolHandler::start_sync(PastellaConnectionContext &context)
     {
         logger(Logging::TRACE) << context << "Starting synchronization";
+
+        /* Skip syncing from bad peers */
+        {
+            std::lock_guard<std::mutex> lock(m_badPeersMutex);
+            const boost::uuids::uuid &peerId = context.m_connection_id;
+            if (m_badPeers.find(peerId) != m_badPeers.end())
+            {
+                logger(Logging::WARNING)
+                    << context << "Refusing to sync from peer marked as bad (validation failures)";
+                return false;
+            }
+        }
 
         if (context.m_state == PastellaConnectionContext::state_synchronizing)
         {
@@ -503,15 +535,29 @@ namespace Pastella
         }
         else
         {
-            /* Handle block verification failures more gracefully
-             * Transaction validation errors could be due to local database issues,
-             * not necessarily malicious behavior. Don't drop connection for these. */
-            if (result == error::AddBlockErrorCondition::TRANSACTION_VALIDATION_FAILED)
+            /* Handle block verification failures with peer tracking */
+            if (result == error::AddBlockErrorCondition::BLOCK_VALIDATION_FAILED
+                || result == error::AddBlockErrorCondition::TRANSACTION_VALIDATION_FAILED)
             {
-                logger(Logging::WARNING) << context
-                                         << "Block rejected due to transaction validation error (possible local database issue): "
-                                         << result.message();
-                /* Don't drop connection - allow sync to continue from this peer */
+                /* Track peer validation failures */
+                std::lock_guard<std::mutex> lock(m_badPeersMutex);
+                const boost::uuids::uuid &peerId = context.m_connection_id;
+                m_peerValidationFailures[peerId]++;
+
+                uint32_t failures = m_peerValidationFailures[peerId];
+                logger(Logging::WARNING)
+                    << context << "Block validation error (" << failures << "/" << MAX_PEER_FAILURES << "): " << result.message();
+
+                if (failures >= MAX_PEER_FAILURES)
+                {
+                    m_badPeers.insert(peerId);
+                    logger(Logging::ERROR)
+                        << context << "Peer marked as bad after " << failures << " validation failures. Dropping connection.";
+                    context.m_state = PastellaConnectionContext::state_shutdown;
+                    return 1;
+                }
+
+                /* Don't drop connection yet, but stop processing - allow peer to try again */
                 context.m_state = PastellaConnectionContext::state_synchronizing;
             }
             else if (result == error::AddBlockErrorCondition::DESERIALIZATION_FAILED)
@@ -728,14 +774,34 @@ namespace Pastella
             if (addResult == error::AddBlockErrorCondition::BLOCK_VALIDATION_FAILED
                 || addResult == error::AddBlockErrorCondition::TRANSACTION_VALIDATION_FAILED)
             {
-                logger(Logging::DEBUGGING)
-                    << context << "Block validation error: " << addResult.message();
+                /* Track peer validation failures and drop bad peers */
+                std::lock_guard<std::mutex> lock(m_badPeersMutex);
+                const boost::uuids::uuid &peerId = context.m_connection_id;
+                m_peerValidationFailures[peerId]++;
+
+                uint32_t failures = m_peerValidationFailures[peerId];
+                logger(Logging::WARNING)
+                    << context << "Block validation error (" << failures << "/" << MAX_PEER_FAILURES << "): " << addResult.message();
+
+                if (failures >= MAX_PEER_FAILURES)
+                {
+                    /* Mark as bad peer and drop connection */
+                    m_badPeers.insert(peerId);
+                    logger(Logging::ERROR)
+                        << context << "Peer marked as bad after " << failures << " validation failures. Dropping connection.";
+                    context.m_state = PastellaConnectionContext::state_shutdown;
+                    return 1;
+                }
+
+                /* Don't drop connection yet, but stop processing this batch - allow peer to try again */
                 return 1;
             }
             else if (addResult == error::AddBlockErrorCondition::DESERIALIZATION_FAILED)
             {
+                /* Deserialization errors indicate malicious peer - drop immediately */
                 logger(Logging::DEBUGGING)
                     << context << "Block deserialization failed: " << addResult.message();
+                context.m_state = PastellaConnectionContext::state_shutdown;
                 return 1;
             }
             else if (addResult == error::AddBlockErrorCondition::BLOCK_REJECTED)
@@ -754,6 +820,19 @@ namespace Pastella
                 context.m_needed_objects.clear();
                 context.m_requested_objects.clear();
                 return 1;
+            }
+
+            /* Reset failure counter on successful block - peer is recovering */
+            {
+                std::lock_guard<std::mutex> lock(m_badPeersMutex);
+                const boost::uuids::uuid &peerId = context.m_connection_id;
+                auto it = m_peerValidationFailures.find(peerId);
+                if (it != m_peerValidationFailures.end() && it->second > 0)
+                {
+                    logger(Logging::DEBUGGING)
+                        << context << "Peer successfully sent valid block, resetting failure count (was: " << it->second << ")";
+                    m_peerValidationFailures.erase(it);
+                }
             }
 
             m_dispatcher.yield();
@@ -878,12 +957,29 @@ namespace Pastella
             }
             else
             {
-                /* Handle block verification failures more gracefully */
-                if (result == error::AddBlockErrorCondition::TRANSACTION_VALIDATION_FAILED)
+                /* Handle block verification failures with peer tracking */
+                if (result == error::AddBlockErrorCondition::BLOCK_VALIDATION_FAILED
+                    || result == error::AddBlockErrorCondition::TRANSACTION_VALIDATION_FAILED)
                 {
+                    /* Track peer validation failures */
+                    std::lock_guard<std::mutex> lock(m_badPeersMutex);
+                    const boost::uuids::uuid &peerId = context.m_connection_id;
+                    m_peerValidationFailures[peerId]++;
+
+                    uint32_t failures = m_peerValidationFailures[peerId];
                     logger(Logging::WARNING)
-                        << context << "Lite block rejected due to transaction validation error: " << result.message();
-                    /* Don't drop connection - request chain instead */
+                        << context << "Lite block validation error (" << failures << "/" << MAX_PEER_FAILURES << "): " << result.message();
+
+                    if (failures >= MAX_PEER_FAILURES)
+                    {
+                        m_badPeers.insert(peerId);
+                        logger(Logging::ERROR)
+                            << context << "Peer marked as bad after " << failures << " validation failures. Dropping connection.";
+                        context.m_state = PastellaConnectionContext::state_shutdown;
+                        return 1;
+                    }
+
+                    /* Request chain again to try syncing from this peer */
                     context.m_state = PastellaConnectionContext::state_synchronizing;
                     NOTIFY_REQUEST_CHAIN::request r = boost::value_initialized<NOTIFY_REQUEST_CHAIN::request>();
                     r.block_ids = m_core.buildSparseChain();

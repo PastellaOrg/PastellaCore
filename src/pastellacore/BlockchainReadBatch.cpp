@@ -211,12 +211,36 @@ std::vector<std::string> BlockchainReadBatch::getRawKeys() const
     DB::serializeKeys(rawKeys, DB::CLOSEST_TIMESTAMP_BLOCK_INDEX_PREFIX, state.closestTimestampBlockIndex);
     DB::serializeKeys(rawKeys, DB::TIMESTAMP_TO_BLOCKHASHES_PREFIX, state.blockHashesByTimestamp);
 
-    /* UTXO SYSTEM: Serialize UTXO database keys
+    /* UTXO SYSTEM: Serialize UTXO database keys using custom format
      *
      * utxos: Maps (transactionHash, outputIndex) -> UtxoOutput
-     * spentUtxos: Maps (transactionHash, outputIndex) -> spentBlockIndex */
-    DB::serializeKeys(rawKeys, DB::UTXO_KEY_TO_UTXO_PREFIX, state.utxos);
-    DB::serializeKeys(rawKeys, DB::UTXO_SPENT_PREFIX, state.spentUtxos);
+     * spentUtxos: Maps (transactionHash, outputIndex) -> spentBlockIndex
+     *
+     * Using custom serialization to ensure prefix is at position 0:
+     * Key format: prefix(1 byte) + transactionHash(32 bytes) + outputIndex(4 bytes big-endian) */
+    for (const auto &utxoPair : state.utxos)
+    {
+        const auto &key = utxoPair.first;
+        std::string rawKey;
+        rawKey.reserve(37);
+        rawKey.push_back('h');
+        rawKey.append(reinterpret_cast<const char*>(key.first.data), 32);
+        uint32_t beIndex = htobe32(key.second);
+        rawKey.append(reinterpret_cast<const char*>(&beIndex), 4);
+        rawKeys.emplace_back(rawKey);
+    }
+
+    for (const auto &spentUtxoPair : state.spentUtxos)
+    {
+        const auto &key = spentUtxoPair.first;
+        std::string rawKey;
+        rawKey.reserve(37);
+        rawKey.push_back('i');
+        rawKey.append(reinterpret_cast<const char*>(key.first.data), 32);
+        uint32_t beIndex = htobe32(key.second);
+        rawKey.append(reinterpret_cast<const char*>(&beIndex), 4);
+        rawKeys.emplace_back(rawKey);
+    }
 
     if (state.lastBlockIndex.second)
     {

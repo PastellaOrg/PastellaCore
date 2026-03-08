@@ -141,6 +141,50 @@ std::error_code RocksDBWrapper::write(IWriteBatch &batch, bool sync)
         rocksdbBatch.Delete(rocksdb::Slice(key));
     }
 
+    /* UTXO WRITE DIAGNOSTIC: Count UTXOs in batch before writing */
+    size_t utxoCount = 0;
+    size_t transactionCount = 0;
+    size_t spentTxCount = 0;
+    size_t blockCount = 0;
+    size_t miscCount = 0;
+
+    for (const auto &kvPair : rawData)
+    {
+        if (!kvPair.first.empty())
+        {
+            uint8_t prefix = static_cast<uint8_t>(kvPair.first[0]);
+            if (prefix == 0x68) // UTXO_KEY_TO_UTXO_PREFIX ('h')
+            {
+                utxoCount++;
+            }
+            else if (prefix == 0x01) // TRANSACTION_HASH_TO_TRANSACTION_INFO_PREFIX
+            {
+                transactionCount++;
+            }
+            else if (prefix == 0x62) // BLOCK_INDEX_TO_KEY_IMAGE_PREFIX (spent txs)
+            {
+                spentTxCount++;
+            }
+            else if (prefix == 0x63) // BLOCK_INDEX_TO_BLOCK_HASH_PREFIX
+            {
+                blockCount++;
+            }
+            else
+            {
+                miscCount++;
+            }
+        }
+    }
+
+    logger(INFO) << "[UTXO-WRITE] RocksDB writing: " << rawData.size() << " items total"
+                 << " | UTXOs: " << utxoCount
+                 << " | Transactions: " << transactionCount
+                 << " | SpentTxs: " << spentTxCount
+                 << " | Blocks: " << blockCount
+                 << " | Other: " << miscCount
+                 << " | Keys to remove: " << rawKeys.size()
+                 << " | Sync: " << (sync ? "YES" : "NO");
+
     rocksdb::Status status = db->Write(writeOptions, &rocksdbBatch);
 
     if (!status.ok())
@@ -150,6 +194,8 @@ std::error_code RocksDBWrapper::write(IWriteBatch &batch, bool sync)
     }
     else
     {
+        /* UTXO WRITE DIAGNOSTIC: Confirm successful write */
+        logger(INFO) << "[UTXO-WRITE] RocksDB write completed successfully";
         return std::error_code();
     }
 }

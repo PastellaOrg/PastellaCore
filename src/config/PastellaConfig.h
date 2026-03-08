@@ -266,7 +266,7 @@ namespace Pastella
 
 
   const size_t   BLOCKS_IDS_SYNCHRONIZING_DEFAULT_COUNT                    = 10000;           // by default, blocks ids count in synchronizing
-  const uint64_t BLOCKS_SYNCHRONIZING_DEFAULT_COUNT                        = 20;              // by default, blocks count in blocks downloading
+  const uint64_t BLOCKS_SYNCHRONIZING_DEFAULT_COUNT                        = 100;             // by default, blocks count in blocks downloading
   const size_t   COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT                     = 100;
   const int      P2P_DEFAULT_PORT                                          = 21000;           // P2P Port
   const int      RPC_DEFAULT_PORT                                          = 21001;           // RPC Port
@@ -274,8 +274,8 @@ namespace Pastella
   const size_t   P2P_LOCAL_WHITE_PEERLIST_LIMIT                            = 1000;
   const size_t   P2P_LOCAL_GRAY_PEERLIST_LIMIT                             = 5000;
 
-  const uint8_t  P2P_CURRENT_VERSION                                       = 2;                // Current version
-  const uint8_t  P2P_MINIMUM_VERSION                                       = 2;                // Minimum supported version
+  const uint8_t  P2P_CURRENT_VERSION                                       = 3;                // Current version
+  const uint8_t  P2P_MINIMUM_VERSION                                       = 3;                // Minimum supported version
   const uint8_t  P2P_UPGRADE_WINDOW                                        = 1;                // Version to upgrade from
 
   const uint8_t  P2P_LITE_BLOCKS_PROPOGATION_VERSION                       = 0;
