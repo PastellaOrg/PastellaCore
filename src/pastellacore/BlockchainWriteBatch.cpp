@@ -8,9 +8,9 @@
 #include "DBUtils.h"
 #include "UtxoOutput.h"
 #include "common/StringTools.h"
+#include "common/int-util.h"
 
 #include <iostream>
-#include <arpa/inet.h>
 
 using namespace Pastella;
 
@@ -210,7 +210,7 @@ BlockchainWriteBatch &BlockchainWriteBatch::insertUtxo(
     key.append(reinterpret_cast<const char*>(transactionHash.data), 32);
 
     /* Convert outputIndex to big-endian */
-    uint32_t beIndex = htobe32(outputIndex);
+    uint32_t beIndex = swap32be(outputIndex);
     key.append(reinterpret_cast<const char*>(&beIndex), 4);
 
     /* Serialize value using KVBinary */
@@ -275,11 +275,11 @@ BlockchainWriteBatch &BlockchainWriteBatch::insertSpentUtxo(
     key.append(reinterpret_cast<const char*>(transactionHash.data), 32);
 
     /* Convert outputIndex to big-endian */
-    uint32_t beIndex = htobe32(outputIndex);
+    uint32_t beIndex = swap32be(outputIndex);
     key.append(reinterpret_cast<const char*>(&beIndex), 4);
 
     /* Value: spentBlockIndex as 4-byte big-endian */
-    uint32_t beBlockIndex = htobe32(spentBlockIndex);
+    uint32_t beBlockIndex = swap32be(spentBlockIndex);
     std::string value(reinterpret_cast<const char*>(&beBlockIndex), 4);
 
     std::cout << "[UTXO-DEBUG] insertSpentUtxo: tx=" << Common::podToHex(transactionHash)
@@ -309,7 +309,7 @@ BlockchainWriteBatch &BlockchainWriteBatch::removeUtxo(
     key.reserve(37);
     key.push_back('h');
     key.append(reinterpret_cast<const char*>(transactionHash.data), 32);
-    uint32_t beIndex = htobe32(outputIndex);
+    uint32_t beIndex = swap32be(outputIndex);
     key.append(reinterpret_cast<const char*>(&beIndex), 4);
     rawKeysToRemove.emplace_back(key);
 
@@ -338,7 +338,7 @@ BlockchainWriteBatch &BlockchainWriteBatch::removeSpentUtxo(
     key.reserve(37);
     key.push_back('i');
     key.append(reinterpret_cast<const char*>(transactionHash.data), 32);
-    uint32_t beIndex = htobe32(outputIndex);
+    uint32_t beIndex = swap32be(outputIndex);
     key.append(reinterpret_cast<const char*>(&beIndex), 4);
     rawKeysToRemove.emplace_back(key);
 

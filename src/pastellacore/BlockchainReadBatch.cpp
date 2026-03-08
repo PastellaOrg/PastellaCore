@@ -6,6 +6,7 @@
 #include "BlockchainReadBatch.h"
 
 #include "DBUtils.h"
+#include "common/int-util.h"
 
 #include <boost/range/combine.hpp>
 #include <config/Constants.h>
@@ -225,7 +226,7 @@ std::vector<std::string> BlockchainReadBatch::getRawKeys() const
         rawKey.reserve(37);
         rawKey.push_back('h');
         rawKey.append(reinterpret_cast<const char*>(key.first.data), 32);
-        uint32_t beIndex = htobe32(key.second);
+        uint32_t beIndex = swap32be(key.second);
         rawKey.append(reinterpret_cast<const char*>(&beIndex), 4);
         rawKeys.emplace_back(rawKey);
     }
@@ -237,7 +238,7 @@ std::vector<std::string> BlockchainReadBatch::getRawKeys() const
         rawKey.reserve(37);
         rawKey.push_back('i');
         rawKey.append(reinterpret_cast<const char*>(key.first.data), 32);
-        uint32_t beIndex = htobe32(key.second);
+        uint32_t beIndex = swap32be(key.second);
         rawKey.append(reinterpret_cast<const char*>(&beIndex), 4);
         rawKeys.emplace_back(rawKey);
     }
