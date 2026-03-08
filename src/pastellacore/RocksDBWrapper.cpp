@@ -58,7 +58,7 @@ void RocksDBWrapper::init(const DataBaseConfig &config)
          *
          * If old format is detected, user must resync the blockchain. */
         rocksdb::ReadOptions readOptions;
-        std::unique_ptr<rocksdb::Iterator> it(db->NewIterator(readOptions));
+        std::unique_ptr<rocksdb::Iterator> it(dbPtr->NewIterator(readOptions));
 
         /* Seek to the UTXO prefix area */
         it->Seek(rocksdb::Slice("h"));
@@ -89,7 +89,7 @@ void RocksDBWrapper::init(const DataBaseConfig &config)
                 logger(ERROR) << "Detected key size: " << key.size() << " bytes (expected: 37 bytes)";
                 logger(ERROR) << "====================================================";
 
-                dbPtr->Close();
+                /* Close and delete the database before throwing */
                 delete dbPtr;
                 throw std::runtime_error("Old database format detected. Please resync from scratch.");
             }
