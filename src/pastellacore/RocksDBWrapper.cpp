@@ -49,6 +49,51 @@ void RocksDBWrapper::init(const DataBaseConfig &config)
     if (status.ok())
     {
         logger(INFO) << "DB opened in " << dataDir;
+
+        /* DATABASE FORMAT VERSION CHECK: Detect old UTXO key format
+         *
+         * The UTXO system was changed to use a custom key format:
+         * - Old format: KVBinary serialized keys (~84 bytes, prefix not at position 0)
+         * - New format: Custom 37-byte keys with prefix 'h' at position 0
+         *
+         * If old format is detected, user must resync the blockchain. */
+        rocksdb::ReadOptions readOptions;
+        std::unique_ptr<rocksdb::Iterator> it(db->NewIterator(readOptions));
+
+        /* Seek to the UTXO prefix area */
+        it->Seek(rocksdb::Slice("h"));
+
+        if (it->Valid())
+        {
+            const rocksdb::Slice &key = it->key();
+
+            /* Old format keys are much longer than new format (37 bytes)
+             * Old KVBinary format: ~84 bytes
+             * New custom format: exactly 37 bytes */
+            if (key.size() != 37)
+            {
+                logger(ERROR) << "====================================================";
+                logger(ERROR) << " Old database format detected!";
+                logger(ERROR) << "====================================================";
+                logger(ERROR) << "";
+                logger(ERROR) << "Your database is using the old UTXO key format.";
+                logger(ERROR) << "This version of Pastella uses a new, optimized format.";
+                logger(ERROR) << "";
+                logger(ERROR) << "YOU MUST RESYNC YOUR BLOCKCHAIN FROM SCRATCH.";
+                logger(ERROR) << "";
+                logger(ERROR) << "To resync:";
+                logger(ERROR) << "  1. Stop the daemon";
+                logger(ERROR) << "  2. Delete or move your database folder: " << dataDir;
+                logger(ERROR) << "  3. Start the daemon again (it will resync from peers)";
+                logger(ERROR) << "";
+                logger(ERROR) << "Detected key size: " << key.size() << " bytes (expected: 37 bytes)";
+                logger(ERROR) << "====================================================";
+
+                dbPtr->Close();
+                delete dbPtr;
+                throw std::runtime_error("Old database format detected. Please resync from scratch.");
+            }
+        }
     }
     else if (!status.ok() && status.IsInvalidArgument())
     {
