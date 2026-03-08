@@ -686,9 +686,8 @@ namespace Pastella
             for (const auto &utxoPair : allUtxos)
             {
                 const UtxoOutput &utxo = utxoPair.second;
-
-                /* If this UTXO was spent in a block being removed, reset it */
-                if (utxo.spent && utxo.spentBlockIndex >= splitBlockIndex)
+                /* CRITICAL FIX: Reset UTXOs spent AFTER split point (blocks being removed) */
+                if (utxo.spent && utxo.spentBlockIndex > splitBlockIndex)
                 {
                     /* Reset spent status */
                     UtxoOutput updatedUtxo = utxo;

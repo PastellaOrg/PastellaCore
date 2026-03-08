@@ -150,22 +150,9 @@ namespace Pastella
             {
                 if (input.type() == typeid(KeyInput))
                 {
-                    /* TRANSPARENT SYSTEM: Spent tracking happens during validation, not here
-                     *
-                     * This function is called during blockchain reorganizations to extract
-                     * spent outputs from transactions being removed.
-                     *
-                     * Why returning empty state is correct:
-                     * 1. Actual spent tracking is in validateTransactionInputs() via spentTransactions
-                     * 2. During validation, spent outputs are added to validator state
-                     * 3. This extraction function is for reorg handling, not validation
-                     * 4. The spent status is persisted in database, not extracted from tx
-                     *
-                     * Original: Extracted keyImages for reorg processing
-                     * Transparent system: Spent transaction hashes tracked persistently
-                     *
-                     * See: DatabaseBlockchainCache.cpp:1163-1164 for persistence */
-                    (void)input;
+                    const KeyInput &keyInput = boost::get<KeyInput>(input);
+                    /* Track the transaction hash that created the UTXO being spent */
+                    spentOutputs.spentTransactions.insert(keyInput.transactionHash);
                 }
                 else
                 {

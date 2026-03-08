@@ -6,6 +6,8 @@
 #include "RocksDBWrapper.h"
 
 #include <cstdint>
+#include <thread>
+#include <chrono>
 
 #include "DataBaseErrors.h"
 #include "rocksdb/cache.h"
@@ -125,8 +127,18 @@ std::error_code RocksDBWrapper::write(IWriteBatch &batch)
 
 std::error_code RocksDBWrapper::write(IWriteBatch &batch, bool sync)
 {
+    /* CRITICAL FIX: Improved database write atomicity and error handling
+     *
+     * RocksDB provides atomic writes via WriteBatch - all operations succeed or none do.
+     * This fix adds:
+     * 1. Pre-write validation
+     * 2. WAL (Write-Ahead Log) enforcement for crash recovery
+     * 3. Retry logic for transient failures
+     * 4. Better error context for debugging */
+
     rocksdb::WriteOptions writeOptions;
     writeOptions.sync = sync;
+    writeOptions.disableWAL = false; /* CRITICAL: Ensure WAL is enabled for crash recovery */
 
     rocksdb::WriteBatch rocksdbBatch;
     std::vector<std::pair<std::string, std::string>> rawData(batch.extractRawDataToInsert());
@@ -139,6 +151,14 @@ std::error_code RocksDBWrapper::write(IWriteBatch &batch, bool sync)
     for (const std::string &key : rawKeys)
     {
         rocksdbBatch.Delete(rocksdb::Slice(key));
+    }
+
+    /* Pre-write validation: warn on empty batch */
+    size_t totalOperations = rawData.size() + rawKeys.size();
+    if (totalOperations == 0)
+    {
+        logger(WARNING) << "[DB-WRITE] Empty write batch - nothing to write";
+        return std::error_code();
     }
 
     /* UTXO WRITE DIAGNOSTIC: Count UTXOs in batch before writing */
@@ -176,28 +196,51 @@ std::error_code RocksDBWrapper::write(IWriteBatch &batch, bool sync)
         }
     }
 
-    logger(INFO) << "[UTXO-WRITE] RocksDB writing: " << rawData.size() << " items total"
+    logger(INFO) << "[DB-WRITE] Atomic batch: " << totalOperations << " operations"
                  << " | UTXOs: " << utxoCount
                  << " | Transactions: " << transactionCount
                  << " | SpentTxs: " << spentTxCount
                  << " | Blocks: " << blockCount
                  << " | Other: " << miscCount
-                 << " | Keys to remove: " << rawKeys.size()
-                 << " | Sync: " << (sync ? "YES" : "NO");
+                 << " | Deletes: " << rawKeys.size()
+                 << " | Sync: " << (sync ? "YES" : "NO")
+                 << " | WAL: ENABLED";
 
-    rocksdb::Status status = db->Write(writeOptions, &rocksdbBatch);
+    /* CRITICAL: Retry logic for transient failures
+     * RocksDB writes can fail due to temporary I/O issues or locks.
+     * A small retry window helps recover from transient errors. */
+    rocksdb::Status status;
+    const int MAX_RETRIES = 3;
+    int attempt = 0;
+
+    while (attempt < MAX_RETRIES)
+    {
+        status = db->Write(writeOptions, &rocksdbBatch);
+        if (status.ok())
+        {
+            break;
+        }
+
+        attempt++;
+        if (attempt < MAX_RETRIES)
+        {
+            logger(WARNING) << "[DB-WRITE] Write attempt " << attempt << " failed: "
+                           << status.ToString() << " - Retrying...";
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
 
     if (!status.ok())
     {
-        logger(ERROR) << "Can't write to DB. " << status.ToString();
+        logger(ERROR) << "[DB-WRITE] CRITICAL: All write attempts failed. Error: "
+                      << status.ToString()
+                      << " | Operations: " << totalOperations
+                      << " | This may indicate database corruption or I/O failure";
         return make_error_code(Pastella::error::DataBaseErrorCodes::INTERNAL_ERROR);
     }
-    else
-    {
-        /* UTXO WRITE DIAGNOSTIC: Confirm successful write */
-        logger(INFO) << "[UTXO-WRITE] RocksDB write completed successfully";
-        return std::error_code();
-    }
+
+    logger(INFO) << "[DB-WRITE] Atomic write completed successfully";
+    return std::error_code();
 }
 
 std::error_code RocksDBWrapper::read(IReadBatch &batch)
